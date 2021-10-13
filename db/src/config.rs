@@ -222,6 +222,16 @@ pub struct ClientConfig {
 
     ///The number of bad requests to generate for every 10 million operations.
     pub bad_ptm: usize,
+
+    /// num kv for multi-type
+    pub multi_kv: Vec<u32>,
+    /// cpu computation for multi-type
+    pub multi_ord: Vec<u32>,
+    /// compute rpc rate for each type or not
+    pub multi_rpc: bool,
+    /// our partition
+    /// TODO: make this automatic
+    pub partition: i32,
 }
 
 impl ClientConfig {
