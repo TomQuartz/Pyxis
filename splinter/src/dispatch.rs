@@ -26,6 +26,7 @@ use db::e2d2::interface::*;
 use db::log::*;
 use db::rpc;
 use db::wireformat::*;
+use rand::{Rng, XorShiftRng};
 
 /// A simple RPC request generator for Sandstorm.
 pub struct Sender {
@@ -47,6 +48,8 @@ pub struct Sender {
 
     // The number of destination UDP ports a packet can be sent to.
     dst_ports: u16,
+
+    rng: Box<dyn Rng>,
 }
 
 impl Sender {
@@ -101,6 +104,9 @@ impl Sender {
         mac_header.dst = config.parse_server_mac();
         mac_header.set_etype(0x0800);
 
+        let seed: [u32; 4] = rand::random::<[u32; 4]>();
+
+
         Sender {
             net_port: port.clone(),
             req_udp_header: udp_header,
@@ -108,6 +114,7 @@ impl Sender {
             req_mac_header: mac_header,
             requests_sent: Cell::new(0),
             dst_ports: dst_ports,
+            rng: Box::new(XorShiftRng::from_seed(seed)),
         }
     }
 
@@ -256,10 +263,11 @@ impl Sender {
 
     /// Computes the destination UDP port given a tenant identifier.
     #[inline]
-    fn get_dst_port(&self, tenant: u32) -> u16 {
+    fn get_dst_port(&mut self, tenant: u32) -> u16 {
         // The two least significant bytes of the tenant id % the total number of destination
         // ports.
-        (tenant & 0xffff) as u16 & (self.dst_ports - 1)
+        // (tenant & 0xffff) as u16 & (self.dst_ports - 1)
+        self.rng.gen::<u16>() % self.dst_ports;
     }
 
     /// Sends a request/packet parsed upto IP out the network interface.

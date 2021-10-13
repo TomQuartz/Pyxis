@@ -30,6 +30,8 @@ pub struct PushbackState {
     pub commit_payload: Vec<u8>,
     /// A list of the records in Read-set for the extension.
     pub readset: Vec<KV>,
+    /// type_idx for multitype
+    pub type_idx: u32,
 }
 
 // Functions need to manipulate `PushbackState` struct.
@@ -38,11 +40,12 @@ impl PushbackState {
     ///
     /// # Return
     /// A new object for PushbackState struct.
-    pub fn new(number: u32, record_len: usize) -> PushbackState {
+    pub fn new(number: u32, record_len: usize, type_idx: u32) -> PushbackState {
         PushbackState {
             op_num: 1,
             commit_payload: Vec::with_capacity(number as usize * record_len),
             readset: Vec::with_capacity(number as usize),
+            type_idx: type_idx,
         }
     }
 

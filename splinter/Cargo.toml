@@ -68,6 +68,10 @@ path = "src/bin/client/pushback-kayak.rs"
 name = "ycsb-t-kayak"
 path = "src/bin/client/ycsb-t-kayak.rs"
 
+[[bin]]
+name = "pushback-oursk"
+path = "src/bin/client/pushback-ours.rs"
+
 [dependencies]
 order-stat   = "0.1.3"
 bincode      = "1.0"
