@@ -443,9 +443,9 @@ where
         // partition = -1 if not ours
         let o = self.workload.borrow_mut().rng.gen::<u32>() % 10000;
         if self.partition > 0 {
-            if self.partition > type_idx as i32{
+            if self.partition > type_idx as i32 {
                 true
-            } else if self.partition < type_idx as i32{
+            } else if self.partition < type_idx as i32 {
                 false
             } else {
                 o >= (self.ext_p[0] * 100.0) as u32
@@ -856,6 +856,19 @@ where
 
                     // Debug output
                     //                        info!("rate {} d_rate {} ext_p {} op {}", rate, d_rate, self.ext_p, self.last_op);
+                    if self.master {
+                        trace!(
+                            "rdtsc {} len {} tail {} out {} recvd {} rate {} d_rate {} ext_p {:?}",
+                            xloop_rdtsc,
+                            len,
+                            self.kth,
+                            self.max_out,
+                            self.recvd,
+                            xloop_rate,
+                            delta_rate,
+                            self.ext_p
+                        );
+                    }
                     // trace!("rdtsc {} len {} tail {} out {} recvd {} rate {} d_rate {} ext_p {} off {} XL",
                     //       xloop_rdtsc, len, self.kth, self.max_out, self.recvd, xloop_rate, delta_rate, self.ext_p, bounded_offset_X);
                 }
@@ -1015,7 +1028,7 @@ fn main() {
     assert!(senders_receivers.len() == 8);
 
     // Setup 1 senders, and receivers.
-    for i in 0..1 {
+    for i in 0..8 {
         // First, retrieve a tx-rx queue pair from Netbricks
         let port = net_context
             .rx_queues
