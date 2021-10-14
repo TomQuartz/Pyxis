@@ -264,6 +264,7 @@ impl Sender {
         // ports.
         // (tenant & 0xffff) as u16 & (self.dst_ports - 1)
         random::<u16>() % self.dst_ports
+        // 0
     }
 
     /// Sends a request/packet parsed upto IP out the network interface.

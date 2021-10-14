@@ -375,6 +375,9 @@ where
         } else {
             1
         };
+        if master{
+            println!("cumulative prob {:?}",cum_prob);
+        }
 
         PushbackRecvSend {
             receiver: dispatch::Receiver::new(rx_port),
@@ -506,7 +509,6 @@ where
                 self.workload.borrow_mut().abc(
                     |tenant, key, ord| {
                         unsafe {
-                            let mut p_get = self.payload_pushback.borrow_mut();
                             p_get[16..20].copy_from_slice(&{
                                 transmute::<u32, [u8; 4]>(self.multi_types[type_idx].num_kv.to_le())
                             });
@@ -1028,7 +1030,7 @@ fn main() {
     assert!(senders_receivers.len() == 8);
 
     // Setup 1 senders, and receivers.
-    for i in 0..8 {
+    for i in 0..1 {
         // First, retrieve a tx-rx queue pair from Netbricks
         let port = net_context
             .rx_queues
