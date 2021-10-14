@@ -9,6 +9,66 @@ name = "splinter"
 path = "src/lib.rs"
 
 [[bin]]
+name = "sanity"
+path = "src/bin/client/sanity.rs"
+
+[[bin]]
+name = "tao"
+path = "src/bin/client/tao.rs"
+
+[[bin]]
+name = "bad"
+path = "src/bin/client/bad.rs"
+
+[[bin]]
+name = "ycsb"
+path = "src/bin/client/ycsb.rs"
+
+[[bin]]
+name = "long"
+path = "src/bin/client/long.rs"
+
+[[bin]]
+name = "aggregate"
+path = "src/bin/client/aggregate.rs"
+
+[[bin]]
+name = "pushback"
+path = "src/bin/client/pushback.rs"
+
+[[bin]]
+name = "ycsb-abce"
+path = "src/bin/client/ycsb-abce.rs"
+
+[[bin]]
+name = "analysis"
+path = "src/bin/client/analysis.rs"
+
+[[bin]]
+name = "auth"
+path = "src/bin/client/auth.rs"
+
+[[bin]]
+name = "client"
+path = "src/bin/client/client.rs"
+
+[[bin]]
+name = "ycsb-t"
+path = "src/bin/client/ycsb-t.rs"
+
+[[bin]]
+name = "checksum"
+path = "src/bin/client/checksum.rs"
+
+[[bin]]
+name = "pushback-kayak"
+path = "src/bin/client/pushback-kayak.rs"
+
+[[bin]]
+name = "ycsb-t-kayak"
+path = "src/bin/client/ycsb-t-kayak.rs"
+
+[[bin]]
 name = "pushback-ours"
 path = "src/bin/client/pushback-ours.rs"
 

@@ -53,7 +53,6 @@ use zipf::ZipfDistribution;
 
 // Flag to indicate that the client has finished sending and receiving the packets.
 static mut FINISHED: bool = false;
-static mut 
 
 // Flag to indicate that the client can generate Compute Request based on some distribution.
 static mut ORD_DIST: bool = false;
@@ -161,15 +160,18 @@ impl Pushback {
     }
 }
 
-struct MultiType{
+struct MultiType {
     num_kv: u32,
     order: u32,
 }
-impl MultiType{
-    fn new(multi_kv: &Vec<u32>, multi_ord: &Vec<u32>)->Vec<MultiType>{
-        multi_types=Vec<MultiType>();
-        for (kv,ord) in multi_kv.iter().zip(multi_ord.iter()){
-            multi_types.push(MultiType{*kv,*ord});
+impl MultiType {
+    fn new(multi_kv: &Vec<u32>, multi_ord: &Vec<u32>) -> Vec<MultiType> {
+        let mut multi_types = Vec::<MultiType>::new();
+        for (kv, ord) in multi_kv.iter().zip(multi_ord.iter()) {
+            multi_types.push(MultiType {
+                num_kv: *kv,
+                order: *ord,
+            });
         }
         multi_types
     }
@@ -272,7 +274,6 @@ where
     xloop_last_rate: f32,
     // xloop_last_X: f32,
     xloop_last_X: Vec<f32>,
-    
     rloop_last_recvd: u64,
     rloop_last_rdtsc: u64,
     rloop_last_out: f32,
@@ -289,11 +290,10 @@ where
 
     // The length of the record.
     record_len: usize,
-    
     // modified here
     // num_types: u32,
     multi_types: Vec<MultiType>,
-    cum_prob: Vec<f32>,
+    cum_prob: Vec<u32>,
     partition: i32,
 }
 
@@ -358,14 +358,23 @@ where
             transmute::<u16, [u8; 2]>((config.key_len as u16).to_le())
         });
         payload_put.resize(payload_len, 0);
-        
         // modified here
-        let estimated_load = config.multi_ord.iter().map(|&x|1/(x as f32)).collect();
-        let total:f32 = estimated_load.iter().sum();
-        let mut cumsum:f32=0.0;
-        let cum_prob=estimated_load.iter().map(|&x|{cumsum+=x/total;cumsum*10000 as u32}).collect();
+        let estimated_load: Vec<f32> = config.multi_ord.iter().map(|&x| 1.0 / (x as f32)).collect();
+        let total: f32 = estimated_load.iter().sum();
+        let mut cumsum: f32 = 0.0;
+        let cum_prob: Vec<u32> = estimated_load
+            .iter()
+            .map(|&x| {
+                cumsum += x / total;
+                (cumsum * 10000.0) as u32
+            })
+            .collect();
         // the number of rpc rate to compute
-        let num_x = if config.partition<0 && config.multi_rpc{config.multi_kv.len() as u32}else{1};
+        let num_x = if config.partition < 0 && config.multi_rpc {
+            config.multi_kv.len()
+        } else {
+            1
+        };
 
         PushbackRecvSend {
             receiver: dispatch::Receiver::new(rx_port),
@@ -430,21 +439,21 @@ where
         }
     }
 
-    fn native_or_rpc(type_idx:i32)->bool{
+    fn native_or_rpc(&mut self, type_idx: usize) -> bool {
         // partition = -1 if not ours
         let o = self.workload.borrow_mut().rng.gen::<u32>() % 10000;
-        if self.partition > 0{
-            if self.partition > type_idx{
+        if self.partition > 0 {
+            if self.partition > type_idx as i32{
                 true
-            }else if self.partition<type_idx{
+            } else if self.partition < type_idx as i32{
                 false
-            }else{
-                o>=(self.ext_p[0]*100.0) as u32
+            } else {
+                o >= (self.ext_p[0] * 100.0) as u32
             }
-        }else if self.ext_p.len()>1{
-            o>=(self.ext_p[type_idx]*100.0) as u32
-        }else{
-            o>=(self.ext_p[0]*100.0) as u32
+        } else if self.ext_p.len() > 1 {
+            o >= (self.ext_p[type_idx] * 100.0) as u32
+        } else {
+            o >= (self.ext_p[0] * 100.0) as u32
         }
     }
 
@@ -464,7 +473,7 @@ where
         // }
 
         let o = self.workload.borrow_mut().rng.gen::<u32>() % 10000;
-        let type_idx:i32 = self.cum_prob.iter().position(|&x|x>o) as i32;
+        let type_idx: usize = self.cum_prob.iter().position(|&x| x >= o).unwrap();
         // self.num = self.multi_types[type_idx].num_kv;
         // self.ord = self.multi_types[type_idx].order;
 
@@ -475,16 +484,17 @@ where
             let curr = cycles::rdtsc();
 
             // let o = self.workload.borrow_mut().rng.gen::<u32>() % 10000 >= (self.ext_p * 100.0) as u32;
-            let o = native_or_rpc(type_idx);
+            let o = self.native_or_rpc(type_idx);
             if o == true {
                 // Configured to issue native RPCs, issue a regular get()/put() operation.
                 self.workload.borrow_mut().abc(
                     |tenant, key, _ord| self.sender.send_get(tenant, 1, key, curr),
                     |tenant, key, val, _ord| self.sender.send_put(tenant, 1, key, val, curr),
                 );
-                self.native_state
-                    .borrow_mut()
-                    .insert(curr, PushbackState::new(self.num, self.record_len as usize, type_idx));
+                self.native_state.borrow_mut().insert(
+                    curr,
+                    PushbackState::new(self.num, self.record_len as usize, type_idx),
+                );
                 self.outstanding += 1;
             } else {
                 // Configured to issue invoke() RPCs.
@@ -641,7 +651,10 @@ where
                                     RpcStatus::StatusOk => {
                                         let record = p.get_payload();
                                         state.update_rwset(&record, self.key_len);
-                                        let MultiType{num_kv:n,order:o}=self.multi_types[state.type_idx];
+                                        let MultiType {
+                                            num_kv: n,
+                                            order: o,
+                                        } = self.multi_types[state.type_idx];
                                         if state.op_num == n as u8 {
                                             /*let start = cycles::rdtsc();
                                             while cycles::rdtsc() - start < self.ord as u64 {}*/
@@ -755,9 +768,10 @@ where
                     && packet_recvd_signal
                     && (xloop_rdtsc - self.xloop_last_rdtsc > 2400000000 / self.xloop_factor as u64)
                     && len > 100
-                    && len % self.xloop_factor == 0 && self.partition<0 
-                    // NOTE: currently we do parameter sweep for rpc rate
-                    // remove the last condition if we use kayak's x-loop to compute rpc rate
+                    && len % self.xloop_factor == 0
+                    && self.partition < 0
+                // NOTE: currently we do parameter sweep for rpc rate
+                // remove the last condition if we use kayak's x-loop to compute rpc rate
                 {
                     // first calc the rate
                     let xloop_rate = 2.4e6 * (self.recvd - self.xloop_last_recvd) as f32
@@ -768,12 +782,10 @@ where
                     let delta_rate = xloop_rate - self.xloop_last_rate;
                     self.xloop_last_rate = xloop_rate;
 
-                    for i in 0..self.ext_p.len(){
+                    for i in 0..self.ext_p.len() {
                         let delta_X = self.ext_p[i] - self.xloop_last_X[i];
                         self.xloop_last_X[i] = self.ext_p[i];
-    
                         let grad = 2.0 * delta_rate / delta_X;
-    
                         let mut bounded_offset_X: f32 = -1.0;
                         if grad > 0.0 {
                             if grad < 1.0 {
@@ -792,7 +804,6 @@ where
                                 bounded_offset_X = grad;
                             }
                         }
-    
                         let new_X = bounded_offset_X + self.ext_p[i];
                         if new_X > 100.0 || new_X < 0.0 {
                             self.ext_p[i] -= bounded_offset_X; // bounce back
