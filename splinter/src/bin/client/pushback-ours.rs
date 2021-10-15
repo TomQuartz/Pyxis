@@ -771,7 +771,7 @@ where
                     && (xloop_rdtsc - self.xloop_last_rdtsc > 2400000000 / self.xloop_factor as u64)
                     && len > 100
                     && len % self.xloop_factor == 0
-                    && self.partition < 0
+                    // && self.partition < 0
                 // NOTE: currently we do parameter sweep for rpc rate
                 // remove the last condition if we use kayak's x-loop to compute rpc rate
                 {

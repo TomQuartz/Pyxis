@@ -73,7 +73,7 @@ do
     sed -i -e "${line_max_out}c max_out = ${t}" ${CLIENTTOML_PATH}
     echo "max_out = ${t}" >> ${OUTPUT}
     echo "" >> ${OUTPUT}
-    # sudo env RUST_LOG=debug LD_LIBRARY_PATH=../net/target/native ./target/release/pushback-ours >> ${OUTPUT}
+    sudo env RUST_LOG=debug LD_LIBRARY_PATH=../net/target/native ./target/release/pushback-ours >> ${OUTPUT}
 done
 
 
@@ -119,7 +119,7 @@ do
             # Print one configuration
             echo "partition = ${p}" >> ${OUTPUT}
             echo "invoke_p = ${r}" >> ${OUTPUT}
-            # sudo env RUST_LOG=debug LD_LIBRARY_PATH=../net/target/native ./target/release/pushback-ours >> ${OUTPUT}
+            sudo env RUST_LOG=debug LD_LIBRARY_PATH=../net/target/native ./target/release/pushback-ours >> ${OUTPUT}
             echo "" >> ${OUTPUT}
         done
     done
