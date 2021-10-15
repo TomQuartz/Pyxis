@@ -11,6 +11,7 @@ line_max_out=87
 line_multi_kv=98
 line_multi_ord=99
 line_partition=101
+line_equal_ratio=103
 
 num_type=$1
 max_out=(1 2 4 8 16 32)

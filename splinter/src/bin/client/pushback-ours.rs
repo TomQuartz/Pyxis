@@ -364,16 +364,16 @@ where
         let total: f32 = estimated_load.iter().sum();
         let mut cumsum: f32 = 0.0;
         let cum_prob: Vec<u32> = if config.equal_ratio {
+            (1..=n_types)
+                .map(|x| (x * 10000 / n_types) as u32)
+                .collect()
+        } else {
             estimated_load
                 .iter()
                 .map(|&x| {
                     cumsum += x / total;
                     (cumsum * 10000.0) as u32
                 })
-                .collect()
-        } else {
-            (1..n_types)
-                .map(|x| (x * 10000 / n_types) as u32)
                 .collect()
         };
         // the number of rpc rate to compute
