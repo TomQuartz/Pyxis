@@ -232,6 +232,8 @@ pub struct ClientConfig {
     /// our partition
     /// TODO: make this automatic
     pub partition: i32,
+    /// sender threads
+    pub num_sender: usize,
 }
 
 impl ClientConfig {
