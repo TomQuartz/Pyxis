@@ -409,7 +409,7 @@ where
             finished: false,
             outstanding: 0,
             manager: RefCell::new(TaskManager::new(Arc::clone(&masterservice))),
-            native_state: RefCell::new(HashMap::with_capacity(32)),
+            native_state: RefCell::new(HashMap::with_capacity(64)),
             num: number,
             ord: order,
             ord1: order,
@@ -445,11 +445,11 @@ where
     fn native_or_rpc(&mut self, type_idx: usize) -> bool {
         // partition = -1 if not ours
         let o = self.workload.borrow_mut().rng.gen::<u32>() % 10000;
-        if self.partition > 0 {
-            if self.partition > type_idx as i32 {
-                true
-            } else if self.partition < type_idx as i32 {
+        if self.partition >= 0 {
+            if (type_idx as i32) < self.partition {
                 false
+            } else if self.partition < type_idx as i32 {
+                true
             } else {
                 o >= (self.ext_p[0] * 100.0) as u32
             }
@@ -1030,7 +1030,7 @@ fn main() {
     assert!(senders_receivers.len() == 8);
 
     // Setup 1 senders, and receivers.
-    for i in 0..1 {
+    for i in 0..config.num_sender {
         // First, retrieve a tx-rx queue pair from Netbricks
         let port = net_context
             .rx_queues

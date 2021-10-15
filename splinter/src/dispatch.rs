@@ -262,9 +262,8 @@ impl Sender {
     fn get_dst_port(&self, tenant: u32) -> u16 {
         // The two least significant bytes of the tenant id % the total number of destination
         // ports.
-        // (tenant & 0xffff) as u16 & (self.dst_ports - 1)
-        random::<u16>() % self.dst_ports
-        // 0
+        (tenant & 0xffff) as u16 & (self.dst_ports - 1)
+        // random::<u16>() % self.dst_ports
     }
 
     /// Sends a request/packet parsed upto IP out the network interface.
