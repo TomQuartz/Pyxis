@@ -359,24 +359,31 @@ where
         });
         payload_put.resize(payload_len, 0);
         // modified here
+        let n_types = config.multi_kv.len();
         let estimated_load: Vec<f32> = config.multi_ord.iter().map(|&x| 1.0 / (x as f32)).collect();
         let total: f32 = estimated_load.iter().sum();
         let mut cumsum: f32 = 0.0;
-        let cum_prob: Vec<u32> = estimated_load
-            .iter()
-            .map(|&x| {
-                cumsum += x / total;
-                (cumsum * 10000.0) as u32
-            })
-            .collect();
+        let cum_prob: Vec<u32> = if config.equal_ratio {
+            estimated_load
+                .iter()
+                .map(|&x| {
+                    cumsum += x / total;
+                    (cumsum * 10000.0) as u32
+                })
+                .collect()
+        } else {
+            (1..n_types)
+                .map(|x| (x * 10000 / n_types) as u32)
+                .collect()
+        };
         // the number of rpc rate to compute
         let num_x = if config.partition < 0 && config.multi_rpc {
             config.multi_kv.len()
         } else {
             1
         };
-        if master{
-            println!("cumulative prob {:?}",cum_prob);
+        if master {
+            println!("cumulative prob {:?}", cum_prob);
         }
 
         PushbackRecvSend {
@@ -771,7 +778,7 @@ where
                     && (xloop_rdtsc - self.xloop_last_rdtsc > 2400000000 / self.xloop_factor as u64)
                     && len > 100
                     && len % self.xloop_factor == 0
-                    // && self.partition < 0
+                // && self.partition < 0
                 // NOTE: currently we do parameter sweep for rpc rate
                 // remove the last condition if we use kayak's x-loop to compute rpc rate
                 {

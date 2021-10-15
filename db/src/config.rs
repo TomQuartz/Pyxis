@@ -234,6 +234,9 @@ pub struct ClientConfig {
     pub partition: i32,
     /// sender threads
     pub num_sender: usize,
+    /// equal ratio among all types
+    /// if false, the ratio is inversely proportional to job duration
+    pub equal_ratio: bool,
 }
 
 impl ClientConfig {

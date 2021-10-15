@@ -112,15 +112,9 @@ do
     for p in ${partition[@]}
     do
         sed -i -e "${line_partition}c partition = ${p}" ${CLIENTTOML_PATH}
-        # loop invoke_p
-        for r in ${invoke_p[@]}
-        do
-            sed -i -e "${line_invoke_p}c invoke_p = ${r}" ${CLIENTTOML_PATH}
-            # Print one configuration
-            echo "partition = ${p}" >> ${OUTPUT}
-            echo "invoke_p = ${r}" >> ${OUTPUT}
-            sudo env RUST_LOG=debug LD_LIBRARY_PATH=../net/target/native ./target/release/pushback-ours >> ${OUTPUT}
-            echo "" >> ${OUTPUT}
-        done
+        # Print one configuration
+        echo "partition = ${p}" >> ${OUTPUT}
+        sudo env RUST_LOG=debug LD_LIBRARY_PATH=../net/target/native ./target/release/pushback-ours >> ${OUTPUT}
+        echo "" >> ${OUTPUT}
     done
 done
