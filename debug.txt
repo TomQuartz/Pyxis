@@ -1,0 +1,1856 @@
+INFO:pushback_ours: Starting up Sandstorm client with config ClientConfig { mac_address: "9c:dc:71:56:af:b5", ip_address: "10.10.1.2", nic_pci: "0000:03:00.1", server_mac_address: "9c:dc:71:5e:2f:71", server_ip_address: "10.10.1.1", server_udp_ports: 8, num_tenants: 8, install_addr: "127.0.0.1:7700", workload: "PUSHBACK", open_load: false, use_invoke: true, slo: 240000, kayak_rloop_factor: 4000, kayak_xloop_factor: 40000, invoke_p: 100, max_out: 8, bimodal: true, bimodal_interval: 4800000000, order2: 4000, key_len: 30, value_len: 100, n_keys: 1000000, put_pct: 5, enable_scan: false, scan_range: 10, skew: 0.99, tenant_skew: 0.1, num_reqs: 64000000, req_rate: 500000, num_aggr: 2, order: 1, combined: true, assocs_p: 40, long_pct: 20, yield_f: 0, bad_ptm: 1, multi_kv: [2, 2], multi_ord: [240, 24000], multi_rpc: false, partition: -1, num_sender: 8, equal_ratio: true, learnable: true, bimodal_interval2: 4800000000, bimodal_ratio: [0, 0], bimodal_rpc: [0, 20], output_factor: 4 }
+INFO:pushback_ours: Populating extension for 8 tenants
+Failed to detect # of NUMA nodes from: /sys/devices/system/node/possible. Assuming a single-node system...
+EAL: Detected 20 lcore(s)
+EAL: Probing VFIO support...
+Devname: "0000:03:00.1"
+EAL: PCI device 0000:03:00.1 on NUMA socket 0
+EAL:   probe driver: 15b3:1015 net_mlx5
+PMD: net_mlx5: PCI information matches, using device "mlx5_3" (SR-IOV: false, MPS: true)
+PMD: net_mlx5: 1 port(s) detected
+PMD: net_mlx5: MPS is enabled
+PMD: net_mlx5: port 1 MAC address is 9c:dc:71:56:af:b5
+PMD: net_mlx5: 0x7fda3efee440: TX queues number update: 0 -> 8
+PMD: net_mlx5: 0x7fda3efee440: RX queues number update: 0 -> 8
+INFO:pushback_ours: Successfully added PushbackRecvSend with rx-tx queue 5.
+INFO:pushback_ours: Successfully added PushbackRecvSend with rx-tx queue 0.
+INFO:pushback_ours: Successfully added PushbackRecvSend with rx-tx queue 1.
+INFO:pushback_ours: Successfully added PushbackRecvSend with rx-tx queue 7.
+INFO:pushback_ours: Successfully added PushbackRecvSend with rx-tx queue 6.
+INFO:pushback_ours: Successfully added PushbackRecvSend with rx-tx queue 3.
+INFO:pushback_ours: Successfully added PushbackRecvSend with rx-tx queue 4.
+INFO:pushback_ours: Successfully added PushbackRecvSend with rx-tx queue 2.
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Received many responses...
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Received many responses...
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Received many responses...
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Received many responses...
+INFO:splinter::dispatch: Received many responses...
+INFO:splinter::dispatch: Received many responses...
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Received many responses...
+rdtsc 2448201103498404 tail 0 tput 0 modal 1 rpc [100.0]
+INFO:splinter::dispatch: Received many responses...
+rdtsc 2448201703521099 tail 414274 tput 0 modal 0 rpc [100.0]
+rdtsc 2448202303531632 tail 410674 tput 26 modal 0 rpc [100.0]
+rdtsc 2448202903556661 tail 406841 tput 26 modal 0 rpc [100.0]
+rdtsc 2448203503569189 tail 420214 tput 121 modal 0 rpc [100.0]
+rdtsc 2448204103578762 tail 408459 tput 121 modal 0 rpc [100.0]
+rdtsc 2448204703586925 tail 406774 tput 162 modal 0 rpc [100.0]
+rdtsc 2448205303602993 tail 413672 tput 162 modal 0 rpc [100.0]
+rdtsc 2448205903621902 tail 415654 tput 268 modal 0 rpc [100.0]
+rdtsc 2448206503638372 tail 414630 tput 268 modal 1 rpc [100.0]
+TRACE:pushback_ours: rdtsc 2448207020903868 last_rdtsc 2448198709570392 recvd 200000 last_recvd 0 rate 57.75247 last_rate 0 ext_p [100.0] modal 1
+TRACE:pushback_ours: rdtsc 2448207020903868 d_rate 57.75247 ext_p 97.666565 off 2.3334332 modal 1
+rdtsc 2448207103639260 tail 415576 tput 382 modal 1 rpc [97.666565]
+rdtsc 2448207703655682 tail 413782 tput 382 modal 1 rpc [97.666565]
+rdtsc 2448208303680558 tail 413758 tput 382 modal 1 rpc [97.666565]
+rdtsc 2448208903704180 tail 406830 tput 382 modal 1 rpc [97.666565]
+TRACE:pushback_ours: rdtsc 2448209386350972 last_rdtsc 2448207020903868 recvd 280000 last_recvd 200000 rate 81.16859 last_rate 57.75247 ext_p [97.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448209386350972 d_rate 23.416119 ext_p 92.666565 off -5 modal 1
+rdtsc 2448209503726203 tail 410385 tput 434 modal 1 rpc [92.666565]
+rdtsc 2448210103748991 tail 413551 tput 434 modal 1 rpc [92.666565]
+TRACE:pushback_ours: rdtsc 2448210570044811 last_rdtsc 2448209386350972 recvd 320000 last_recvd 280000 rate 81.10205 last_rate 81.16859 ext_p [92.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448210570044811 d_rate -0.06653595 ext_p 93.666565 off 1 modal 1
+TRACE:pushback_ours: rdtsc 2448210570110709 last_rdtsc 2448210570044811 recvd 320000 last_recvd 320000 rate 0 last_rate 81.10205 ext_p [93.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448210570110709 d_rate -81.10205 ext_p 88.666565 off -5 modal 1
+rdtsc 2448210703764408 tail 414934 tput 272 modal 1 rpc [88.666565]
+rdtsc 2448211303770759 tail 408231 tput 272 modal 0 rpc [88.666565]
+rdtsc 2448211903787589 tail 408812 tput 443 modal 0 rpc [88.666565]
+rdtsc 2448212503788309 tail 416862 tput 443 modal 0 rpc [88.666565]
+TRACE:pushback_ours: rdtsc 2448212937827304 last_rdtsc 2448210570110709 recvd 400000 last_recvd 320000 rate 81.09078 last_rate 0 ext_p [88.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448212937827304 d_rate 81.09078 ext_p 83.666565 off -5 modal 0
+rdtsc 2448213103804365 tail 417301 tput 633 modal 0 rpc [83.666565]
+rdtsc 2448213703816350 tail 409848 tput 633 modal 0 rpc [83.666565]
+rdtsc 2448214303834047 tail 410590 tput 633 modal 0 rpc [83.666565]
+rdtsc 2448214903841262 tail 417778 tput 633 modal 0 rpc [83.666565]
+rdtsc 2448215503861671 tail 410523 tput 633 modal 0 rpc [83.666565]
+rdtsc 2448216103885404 tail 409063 tput 633 modal 1 rpc [83.666565]
+rdtsc 2448216703897140 tail 413164 tput 633 modal 1 rpc [83.666565]
+rdtsc 2448217303922274 tail 407344 tput 633 modal 1 rpc [83.666565]
+rdtsc 2448217903944951 tail 412027 tput 633 modal 1 rpc [83.666565]
+rdtsc 2448218503972299 tail 411797 tput 633 modal 1 rpc [83.666565]
+rdtsc 2448219103989642 tail 411229 tput 633 modal 1 rpc [83.666565]
+rdtsc 2448219704006439 tail 414690 tput 633 modal 1 rpc [83.666565]
+TRACE:pushback_ours: rdtsc 2448220042673100 last_rdtsc 2448212937827304 recvd 640000 last_recvd 400000 rate 81.07143 last_rate 81.09078 ext_p [83.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448220042673100 d_rate -0.019355774 ext_p 84.666565 off 1 modal 1
+rdtsc 2448220304017620 tail 408655 tput 633 modal 1 rpc [84.666565]
+rdtsc 2448220904023068 tail 418984 tput 633 modal 0 rpc [84.666565]
+rdtsc 2448221504029086 tail 414087 tput 633 modal 0 rpc [84.666565]
+rdtsc 2448222104036463 tail 407317 tput 633 modal 0 rpc [84.666565]
+rdtsc 2448222704052576 tail 408909 tput 567 modal 0 rpc [84.666565]
+rdtsc 2448223304075058 tail 421638 tput 567 modal 0 rpc [84.666565]
+rdtsc 2448223904098284 tail 409728 tput 567 modal 0 rpc [84.666565]
+rdtsc 2448224504107932 tail 407745 tput 567 modal 0 rpc [84.666565]
+TRACE:pushback_ours: rdtsc 2448224778983871 last_rdtsc 2448220042673100 recvd 800000 last_recvd 640000 rate 81.07576 last_rate 81.07143 ext_p [84.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448224778983871 d_rate 0.004333496 ext_p 85.666565 off 1 modal 0
+TRACE:pushback_ours: rdtsc 2448224779058319 last_rdtsc 2448224778983871 recvd 800000 last_recvd 800000 rate 0 last_rate 81.07576 ext_p [85.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448224779058319 d_rate -81.07576 ext_p 80.666565 off -5 modal 0
+rdtsc 2448225104119821 tail 406610 tput 486 modal 0 rpc [80.666565]
+rdtsc 2448225704146236 tail 412520 tput 486 modal 1 rpc [80.666565]
+rdtsc 2448226304171160 tail 403842 tput 486 modal 1 rpc [80.666565]
+rdtsc 2448226904186190 tail 416242 tput 486 modal 1 rpc [80.666565]
+TRACE:pushback_ours: rdtsc 2448227151516648 last_rdtsc 2448224779058319 recvd 880000 last_recvd 800000 rate 80.92872 last_rate 0 ext_p [80.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448227151516648 d_rate 80.92872 ext_p 75.666565 off -5 modal 1
+rdtsc 2448227504206482 tail 413801 tput 647 modal 1 rpc [75.666565]
+rdtsc 2448228104230485 tail 413425 tput 647 modal 1 rpc [75.666565]
+rdtsc 2448228704232129 tail 414312 tput 647 modal 1 rpc [75.666565]
+rdtsc 2448229304240898 tail 410118 tput 647 modal 1 rpc [75.666565]
+rdtsc 2448229904252343 tail 412778 tput 647 modal 1 rpc [75.666565]
+rdtsc 2448230504263038 tail 418261 tput 647 modal 0 rpc [75.666565]
+rdtsc 2448231104282676 tail 426975 tput 647 modal 0 rpc [75.666565]
+rdtsc 2448231704288133 tail 418041 tput 647 modal 0 rpc [75.666565]
+rdtsc 2448232304301909 tail 410043 tput 647 modal 0 rpc [75.666565]
+rdtsc 2448232904314884 tail 413215 tput 647 modal 0 rpc [75.666565]
+rdtsc 2448233504327034 tail 411024 tput 647 modal 0 rpc [75.666565]
+rdtsc 2448234104333298 tail 415076 tput 647 modal 0 rpc [75.666565]
+TRACE:pushback_ours: rdtsc 2448234266716146 last_rdtsc 2448227151516648 recvd 1120000 last_recvd 880000 rate 80.95345 last_rate 80.92872 ext_p [75.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448234266716146 d_rate 0.024734497 ext_p 74.666565 off -1 modal 0
+rdtsc 2448234704338500 tail 415131 tput 647 modal 0 rpc [74.666565]
+rdtsc 2448235304354946 tail 409594 tput 647 modal 1 rpc [74.666565]
+TRACE:pushback_ours: rdtsc 2448235451530341 last_rdtsc 2448234266716146 recvd 1160000 last_recvd 1120000 rate 81.02536 last_rate 80.95345 ext_p [74.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448235451530341 d_rate 0.07190704 ext_p 73.666565 off -1 modal 1
+TRACE:pushback_ours: rdtsc 2448235451594046 last_rdtsc 2448235451530341 recvd 1160000 last_recvd 1160000 rate 0 last_rate 81.02536 ext_p [73.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448235451594046 d_rate -81.02536 ext_p 78.666565 off 5 modal 1
+TRACE:pushback_ours: rdtsc 2448235451669655 last_rdtsc 2448235451594046 recvd 1160000 last_recvd 1160000 rate 0 last_rate 0 ext_p [78.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448235451669655 d_rate 0 ext_p 77.666565 off -1 modal 1
+rdtsc 2448235904377671 tail 412267 tput 486 modal 1 rpc [77.666565]
+rdtsc 2448236504391477 tail 416430 tput 486 modal 1 rpc [77.666565]
+TRACE:pushback_ours: rdtsc 2448236636721597 last_rdtsc 2448235451669655 recvd 1200000 last_recvd 1160000 rate 81.00911 last_rate 0 ext_p [77.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448236636721597 d_rate 81.00911 ext_p 72.666565 off -5 modal 1
+rdtsc 2448237104414448 tail 420239 tput 648 modal 1 rpc [72.666565]
+rdtsc 2448237704423775 tail 415466 tput 648 modal 1 rpc [72.666565]
+TRACE:pushback_ours: rdtsc 2448237822224187 last_rdtsc 2448236636721597 recvd 1240000 last_recvd 1200000 rate 80.97831 last_rate 81.00911 ext_p [72.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448237822224187 d_rate -0.030799866 ext_p 73.666565 off 1 modal 1
+rdtsc 2448238304423982 tail 420029 tput 647 modal 1 rpc [73.666565]
+rdtsc 2448238904435106 tail 414286 tput 647 modal 1 rpc [73.666565]
+TRACE:pushback_ours: rdtsc 2448239007866199 last_rdtsc 2448237822224187 recvd 1280000 last_recvd 1240000 rate 80.968796 last_rate 80.97831 ext_p [73.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448239007866199 d_rate -0.009513855 ext_p 72.666565 off -1 modal 1
+rdtsc 2448239504444865 tail 410007 tput 647 modal 1 rpc [72.666565]
+rdtsc 2448240104445948 tail 417295 tput 647 modal 0 rpc [72.666565]
+rdtsc 2448240704446746 tail 412321 tput 647 modal 0 rpc [72.666565]
+rdtsc 2448241304458398 tail 418975 tput 647 modal 0 rpc [72.666565]
+TRACE:pushback_ours: rdtsc 2448241377440610 last_rdtsc 2448239007866199 recvd 1360000 last_recvd 1280000 rate 81.02721 last_rate 80.968796 ext_p [72.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448241377440610 d_rate 0.058410645 ext_p 71.666565 off -1 modal 0
+rdtsc 2448241904484747 tail 406528 tput 648 modal 0 rpc [71.666565]
+rdtsc 2448242504489946 tail 421274 tput 648 modal 0 rpc [71.666565]
+rdtsc 2448243104502114 tail 413873 tput 648 modal 0 rpc [71.666565]
+rdtsc 2448243704534784 tail 409200 tput 648 modal 0 rpc [71.666565]
+rdtsc 2448244304541951 tail 412795 tput 648 modal 0 rpc [71.666565]
+rdtsc 2448244904558250 tail 418034 tput 648 modal 1 rpc [71.666565]
+TRACE:pushback_ours: rdtsc 2448244934294580 last_rdtsc 2448241377440610 recvd 1480000 last_recvd 1360000 rate 80.97043 last_rate 81.02721 ext_p [71.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448244934294580 d_rate -0.056777954 ext_p 72.666565 off 1 modal 1
+rdtsc 2448245504559579 tail 418660 tput 647 modal 1 rpc [72.666565]
+rdtsc 2448246104579634 tail 417663 tput 647 modal 1 rpc [72.666565]
+TRACE:pushback_ours: rdtsc 2448246119476971 last_rdtsc 2448244934294580 recvd 1520000 last_recvd 1480000 rate 81.0002 last_rate 80.97043 ext_p [72.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448246119476971 d_rate 0.029769897 ext_p 73.666565 off 1 modal 1
+rdtsc 2448246704600148 tail 410211 tput 648 modal 1 rpc [73.666565]
+rdtsc 2448247304611338 tail 416121 tput 648 modal 1 rpc [73.666565]
+rdtsc 2448247904615052 tail 420848 tput 648 modal 1 rpc [73.666565]
+rdtsc 2448248504629581 tail 413133 tput 648 modal 1 rpc [73.666565]
+rdtsc 2448249104646240 tail 412926 tput 648 modal 1 rpc [73.666565]
+rdtsc 2448249704669661 tail 418852 tput 648 modal 0 rpc [73.666565]
+rdtsc 2448250304679276 tail 409232 tput 648 modal 0 rpc [73.666565]
+TRACE:pushback_ours: rdtsc 2448250860830487 last_rdtsc 2448246119476971 recvd 1680000 last_recvd 1520000 rate 80.98953 last_rate 81.0002 ext_p [73.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448250860830487 d_rate -0.010665894 ext_p 72.666565 off -1 modal 0
+rdtsc 2448250904681688 tail 410125 tput 647 modal 0 rpc [72.666565]
+rdtsc 2448251504706924 tail 408994 tput 647 modal 0 rpc [72.666565]
+rdtsc 2448252104711445 tail 413034 tput 647 modal 0 rpc [72.666565]
+rdtsc 2448252704732703 tail 411121 tput 647 modal 0 rpc [72.666565]
+TRACE:pushback_ours: rdtsc 2448253231173936 last_rdtsc 2448250860830487 recvd 1760000 last_recvd 1680000 rate 81.00092 last_rate 80.98953 ext_p [72.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448253231173936 d_rate 0.011390686 ext_p 71.666565 off -1 modal 0
+rdtsc 2448253304736369 tail 412063 tput 567 modal 0 rpc [71.666565]
+rdtsc 2448253904759328 tail 411850 tput 567 modal 0 rpc [71.666565]
+rdtsc 2448254504770791 tail 411078 tput 648 modal 1 rpc [71.666565]
+rdtsc 2448255104797623 tail 412393 tput 648 modal 1 rpc [71.666565]
+rdtsc 2448255704798370 tail 413364 tput 648 modal 1 rpc [71.666565]
+rdtsc 2448256304800830 tail 411062 tput 648 modal 1 rpc [71.666565]
+rdtsc 2448256904821437 tail 413901 tput 648 modal 1 rpc [71.666565]
+rdtsc 2448257504826474 tail 407306 tput 648 modal 1 rpc [71.666565]
+rdtsc 2448258104829825 tail 411144 tput 648 modal 1 rpc [71.666565]
+rdtsc 2448258704852085 tail 410877 tput 648 modal 1 rpc [71.666565]
+TRACE:pushback_ours: rdtsc 2448259156143663 last_rdtsc 2448253231173936 recvd 1960000 last_recvd 1760000 rate 81.01308 last_rate 81.00092 ext_p [71.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448259156143663 d_rate 0.0121536255 ext_p 70.666565 off -1 modal 1
+TRACE:pushback_ours: rdtsc 2448259156213458 last_rdtsc 2448259156143663 recvd 1960000 last_recvd 1960000 rate 0 last_rate 81.01308 ext_p [70.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448259156213458 d_rate -81.01308 ext_p 75.666565 off 5 modal 1
+TRACE:pushback_ours: rdtsc 2448259156290312 last_rdtsc 2448259156213458 recvd 1960000 last_recvd 1960000 rate 0 last_rate 0 ext_p [75.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448259156290312 d_rate 0 ext_p 74.666565 off -1 modal 1
+rdtsc 2448259304857137 tail 409423 tput 567 modal 0 rpc [74.666565]
+rdtsc 2448259904861157 tail 414315 tput 567 modal 0 rpc [74.666565]
+rdtsc 2448260504872689 tail 408884 tput 567 modal 0 rpc [74.666565]
+rdtsc 2448261104882013 tail 407655 tput 567 modal 0 rpc [74.666565]
+rdtsc 2448261704904156 tail 405867 tput 567 modal 0 rpc [74.666565]
+rdtsc 2448262304913624 tail 417126 tput 567 modal 0 rpc [74.666565]
+rdtsc 2448262904925429 tail 404967 tput 486 modal 0 rpc [74.666565]
+rdtsc 2448263504926107 tail 409729 tput 486 modal 0 rpc [74.666565]
+TRACE:pushback_ours: rdtsc 2448263895970674 last_rdtsc 2448259156290312 recvd 2120000 last_recvd 1960000 rate 81.01812 last_rate 0 ext_p [74.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448263895970674 d_rate 81.01812 ext_p 69.666565 off -5 modal 0
+TRACE:pushback_ours: rdtsc 2448263896055262 last_rdtsc 2448263895970674 recvd 2120000 last_recvd 2120000 rate 0 last_rate 81.01812 ext_p [69.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448263896055262 d_rate -81.01812 ext_p 74.666565 off 5 modal 0
+rdtsc 2448264104956287 tail 412318 tput 567 modal 1 rpc [74.666565]
+rdtsc 2448264704960493 tail 410478 tput 567 modal 1 rpc [74.666565]
+rdtsc 2448265304969205 tail 408354 tput 567 modal 1 rpc [74.666565]
+rdtsc 2448265904994987 tail 409140 tput 567 modal 1 rpc [74.666565]
+TRACE:pushback_ours: rdtsc 2448266267307159 last_rdtsc 2448263896055262 recvd 2200000 last_recvd 2120000 rate 80.96989 last_rate 0 ext_p [74.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448266267307159 d_rate 80.96989 ext_p 79.666565 off 5 modal 1
+TRACE:pushback_ours: rdtsc 2448266267373741 last_rdtsc 2448266267307159 recvd 2200000 last_recvd 2200000 rate 0 last_rate 80.96989 ext_p [79.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448266267373741 d_rate -80.96989 ext_p 74.666565 off -5 modal 1
+rdtsc 2448266504999073 tail 415661 tput 567 modal 1 rpc [74.666565]
+rdtsc 2448267105015291 tail 413830 tput 567 modal 1 rpc [74.666565]
+TRACE:pushback_ours: rdtsc 2448267453734925 last_rdtsc 2448266267373741 recvd 2240000 last_recvd 2200000 rate 80.91971 last_rate 0 ext_p [74.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448267453734925 d_rate 80.91971 ext_p 69.666565 off -5 modal 1
+rdtsc 2448267705031803 tail 413395 tput 647 modal 1 rpc [69.666565]
+rdtsc 2448268305063693 tail 412679 tput 647 modal 1 rpc [69.666565]
+TRACE:pushback_ours: rdtsc 2448268639782471 last_rdtsc 2448267453734925 recvd 2280000 last_recvd 2240000 rate 80.94111 last_rate 80.91971 ext_p [69.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448268639782471 d_rate 0.021400452 ext_p 68.666565 off -1 modal 1
+rdtsc 2448268905083439 tail 413451 tput 647 modal 0 rpc [68.666565]
+rdtsc 2448269505083889 tail 412258 tput 647 modal 0 rpc [68.666565]
+TRACE:pushback_ours: rdtsc 2448269825525157 last_rdtsc 2448268639782471 recvd 2320000 last_recvd 2280000 rate 80.961914 last_rate 80.94111 ext_p [68.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448269825525157 d_rate 0.020805359 ext_p 67.666565 off -1 modal 0
+rdtsc 2448270105098250 tail 415431 tput 647 modal 0 rpc [67.666565]
+rdtsc 2448270705105294 tail 408495 tput 647 modal 0 rpc [67.666565]
+rdtsc 2448271305106608 tail 412034 tput 647 modal 0 rpc [67.666565]
+rdtsc 2448271905115803 tail 600731 tput 647 modal 0 rpc [67.666565]
+rdtsc 2448272505124356 tail 770921 tput 647 modal 0 rpc [67.666565]
+rdtsc 2448273105130587 tail 689185 tput 647 modal 0 rpc [67.666565]
+rdtsc 2448273705141345 tail 413881 tput 647 modal 1 rpc [67.666565]
+rdtsc 2448274305151242 tail 417178 tput 647 modal 1 rpc [67.666565]
+rdtsc 2448274905165105 tail 410498 tput 647 modal 1 rpc [67.666565]
+rdtsc 2448275505172572 tail 405355 tput 647 modal 1 rpc [67.666565]
+rdtsc 2448276105173319 tail 409555 tput 647 modal 1 rpc [67.666565]
+rdtsc 2448276705185172 tail 408276 tput 647 modal 1 rpc [67.666565]
+TRACE:pushback_ours: rdtsc 2448276942042447 last_rdtsc 2448269825525157 recvd 2560000 last_recvd 2320000 rate 80.93846 last_rate 80.961914 ext_p [67.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448276942042447 d_rate -0.023452759 ext_p 68.666565 off 1 modal 1
+TRACE:pushback_ours: rdtsc 2448276942117009 last_rdtsc 2448276942042447 recvd 2560000 last_recvd 2560000 rate 0 last_rate 80.93846 ext_p [68.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448276942117009 d_rate -80.93846 ext_p 63.666565 off -5 modal 1
+rdtsc 2448277305193191 tail 408540 tput 567 modal 1 rpc [63.666565]
+rdtsc 2448277905214221 tail 407605 tput 567 modal 1 rpc [63.666565]
+TRACE:pushback_ours: rdtsc 2448278128558581 last_rdtsc 2448276942117009 recvd 2600000 last_recvd 2560000 rate 80.91422 last_rate 0 ext_p [63.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448278128558581 d_rate 80.91422 ext_p 58.666565 off -5 modal 1
+rdtsc 2448278505229308 tail 413439 tput 647 modal 0 rpc [58.666565]
+rdtsc 2448279105245175 tail 420453 tput 647 modal 0 rpc [58.666565]
+TRACE:pushback_ours: rdtsc 2448279315472578 last_rdtsc 2448278128558581 recvd 2640000 last_recvd 2600000 rate 80.88201 last_rate 80.91422 ext_p [58.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448279315472578 d_rate -0.032211304 ext_p 59.666565 off 1 modal 0
+TRACE:pushback_ours: rdtsc 2448279315557685 last_rdtsc 2448279315472578 recvd 2640000 last_recvd 2640000 rate 0 last_rate 80.88201 ext_p [59.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448279315557685 d_rate -80.88201 ext_p 54.666565 off -5 modal 0
+rdtsc 2448279705263271 tail 410056 tput 567 modal 0 rpc [54.666565]
+rdtsc 2448280305282753 tail 413465 tput 567 modal 0 rpc [54.666565]
+rdtsc 2448280905293922 tail 413906 tput 486 modal 0 rpc [54.666565]
+rdtsc 2448281505303405 tail 413128 tput 486 modal 0 rpc [54.666565]
+rdtsc 2448282105328341 tail 412084 tput 486 modal 0 rpc [54.666565]
+rdtsc 2448282705352683 tail 408821 tput 486 modal 0 rpc [54.666565]
+rdtsc 2448283305357168 tail 412029 tput 486 modal 1 rpc [54.666565]
+rdtsc 2448283905374328 tail 411781 tput 486 modal 1 rpc [54.666565]
+rdtsc 2448284505394398 tail 416365 tput 567 modal 1 rpc [54.666565]
+rdtsc 2448285105415056 tail 412516 tput 567 modal 1 rpc [54.666565]
+rdtsc 2448285705440556 tail 419519 tput 567 modal 1 rpc [54.666565]
+rdtsc 2448286305453948 tail 415779 tput 567 modal 1 rpc [54.666565]
+TRACE:pushback_ours: rdtsc 2448286439587527 last_rdtsc 2448279315557685 recvd 2880000 last_recvd 2640000 rate 80.85311 last_rate 0 ext_p [54.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448286439587527 d_rate 80.85311 ext_p 49.666565 off -5 modal 1
+rdtsc 2448286905473169 tail 414207 tput 647 modal 1 rpc [49.666565]
+rdtsc 2448287505485259 tail 414170 tput 647 modal 1 rpc [49.666565]
+TRACE:pushback_ours: rdtsc 2448287627332767 last_rdtsc 2448286439587527 recvd 2920000 last_recvd 2880000 rate 80.82541 last_rate 80.85311 ext_p [49.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448287627332767 d_rate -0.027702332 ext_p 50.666565 off 1 modal 1
+rdtsc 2448288105497409 tail 417233 tput 647 modal 0 rpc [50.666565]
+rdtsc 2448288705498501 tail 416612 tput 485 modal 0 rpc [50.666565]
+rdtsc 2448289305515826 tail 410481 tput 485 modal 0 rpc [50.666565]
+rdtsc 2448289905520923 tail 408331 tput 485 modal 0 rpc [50.666565]
+rdtsc 2448290505532224 tail 421888 tput 485 modal 0 rpc [50.666565]
+rdtsc 2448291105549780 tail 413362 tput 485 modal 0 rpc [50.666565]
+rdtsc 2448291705565626 tail 412737 tput 485 modal 0 rpc [50.666565]
+rdtsc 2448292305590199 tail 417945 tput 485 modal 0 rpc [50.666565]
+rdtsc 2448292905592107 tail 411241 tput 485 modal 1 rpc [50.666565]
+rdtsc 2448293505601518 tail 408591 tput 566 modal 1 rpc [50.666565]
+rdtsc 2448294105623004 tail 410268 tput 566 modal 1 rpc [50.666565]
+rdtsc 2448294705631341 tail 410919 tput 566 modal 1 rpc [50.666565]
+TRACE:pushback_ours: rdtsc 2448294750425370 last_rdtsc 2448287627332767 recvd 3160000 last_recvd 2920000 rate 80.86375 last_rate 80.82541 ext_p [50.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448294750425370 d_rate 0.038337708 ext_p 51.666565 off 1 modal 1
+rdtsc 2448295305645150 tail 414913 tput 566 modal 1 rpc [51.666565]
+rdtsc 2448295905664827 tail 416177 tput 485 modal 1 rpc [51.666565]
+rdtsc 2448296505669378 tail 416520 tput 485 modal 1 rpc [51.666565]
+rdtsc 2448297105683841 tail 418228 tput 485 modal 1 rpc [51.666565]
+TRACE:pushback_ours: rdtsc 2448297125503281 last_rdtsc 2448294750425370 recvd 3240000 last_recvd 3160000 rate 80.839455 last_rate 80.86375 ext_p [51.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448297125503281 d_rate -0.024291992 ext_p 50.666565 off -1 modal 1
+rdtsc 2448297705695100 tail 419313 tput 485 modal 0 rpc [50.666565]
+rdtsc 2448298305698667 tail 409214 tput 565 modal 0 rpc [50.666565]
+rdtsc 2448298905710271 tail 414174 tput 565 modal 0 rpc [50.666565]
+rdtsc 2448299505744663 tail 408054 tput 565 modal 0 rpc [50.666565]
+rdtsc 2448300105763557 tail 421971 tput 565 modal 0 rpc [50.666565]
+rdtsc 2448300705781509 tail 410213 tput 646 modal 0 rpc [50.666565]
+rdtsc 2448301305792516 tail 412564 tput 646 modal 0 rpc [50.666565]
+rdtsc 2448301905810189 tail 415643 tput 647 modal 0 rpc [50.666565]
+rdtsc 2448302505823884 tail 412407 tput 647 modal 1 rpc [50.666565]
+rdtsc 2448303105824238 tail 413086 tput 647 modal 1 rpc [50.666565]
+rdtsc 2448303705828081 tail 419865 tput 647 modal 1 rpc [50.666565]
+rdtsc 2448304305835797 tail 412420 tput 566 modal 1 rpc [50.666565]
+rdtsc 2448304905862110 tail 407967 tput 566 modal 1 rpc [50.666565]
+rdtsc 2448305505867516 tail 417566 tput 566 modal 1 rpc [50.666565]
+rdtsc 2448306105893970 tail 410007 tput 566 modal 1 rpc [50.666565]
+rdtsc 2448306705917064 tail 422047 tput 566 modal 1 rpc [50.666565]
+rdtsc 2448307305921297 tail 410688 tput 566 modal 0 rpc [50.666565]
+rdtsc 2448307905943956 tail 417163 tput 566 modal 0 rpc [50.666565]
+rdtsc 2448308505954159 tail 410740 tput 566 modal 0 rpc [50.666565]
+rdtsc 2448309105965031 tail 416317 tput 647 modal 0 rpc [50.666565]
+rdtsc 2448309705967815 tail 404053 tput 647 modal 0 rpc [50.666565]
+rdtsc 2448310305992367 tail 414474 tput 647 modal 0 rpc [50.666565]
+rdtsc 2448310905994302 tail 416624 tput 647 modal 0 rpc [50.666565]
+rdtsc 2448311505995424 tail 415806 tput 647 modal 0 rpc [50.666565]
+rdtsc 2448312106016496 tail 414598 tput 647 modal 1 rpc [50.666565]
+rdtsc 2448312706038906 tail 414171 tput 647 modal 1 rpc [50.666565]
+rdtsc 2448313306053711 tail 421053 tput 647 modal 1 rpc [50.666565]
+rdtsc 2448313906087533 tail 408594 tput 647 modal 1 rpc [50.666565]
+rdtsc 2448314506112475 tail 412603 tput 647 modal 1 rpc [50.666565]
+TRACE:pushback_ours: rdtsc 2448314943965700 last_rdtsc 2448297125503281 recvd 3840000 last_recvd 3240000 rate 80.815056 last_rate 80.839455 ext_p [50.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448314943965700 d_rate -0.024398804 ext_p 51.666565 off 1 modal 1
+rdtsc 2448315106115196 tail 420425 tput 647 modal 1 rpc [51.666565]
+rdtsc 2448315706124109 tail 408006 tput 647 modal 1 rpc [51.666565]
+TRACE:pushback_ours: rdtsc 2448316131032469 last_rdtsc 2448314943965700 recvd 3880000 last_recvd 3840000 rate 80.87161 last_rate 80.815056 ext_p [51.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448316131032469 d_rate 0.0565567 ext_p 52.666565 off 1 modal 1
+rdtsc 2448316306143162 tail 414695 tput 647 modal 1 rpc [52.666565]
+rdtsc 2448316906150836 tail 419185 tput 647 modal 0 rpc [52.666565]
+rdtsc 2448317506160319 tail 412970 tput 646 modal 0 rpc [52.666565]
+rdtsc 2448318106168380 tail 413271 tput 484 modal 0 rpc [52.666565]
+rdtsc 2448318706169613 tail 417700 tput 485 modal 0 rpc [52.666565]
+rdtsc 2448319306203516 tail 415367 tput 485 modal 0 rpc [52.666565]
+TRACE:pushback_ours: rdtsc 2448319694643216 last_rdtsc 2448316131032469 recvd 4000000 last_recvd 3880000 rate 80.8169 last_rate 80.87161 ext_p [52.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448319694643216 d_rate -0.05471039 ext_p 51.666565 off -1 modal 0
+rdtsc 2448319906212306 tail 418602 tput 485 modal 0 rpc [51.666565]
+rdtsc 2448320506235499 tail 411479 tput 485 modal 0 rpc [51.666565]
+rdtsc 2448321106259847 tail 420009 tput 485 modal 0 rpc [51.666565]
+rdtsc 2448321706282311 tail 407142 tput 404 modal 1 rpc [51.666565]
+TRACE:pushback_ours: rdtsc 2448322070100162 last_rdtsc 2448319694643216 recvd 4080000 last_recvd 4000000 rate 80.82655 last_rate 80.8169 ext_p [51.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448322070100162 d_rate 0.009651184 ext_p 50.666565 off -1 modal 1
+TRACE:pushback_ours: rdtsc 2448322070170596 last_rdtsc 2448322070100162 recvd 4080000 last_recvd 4080000 rate 0 last_rate 80.82655 ext_p [50.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448322070170596 d_rate -80.82655 ext_p 55.666565 off 5 modal 1
+rdtsc 2448322306297800 tail 404175 tput 324 modal 1 rpc [55.666565]
+rdtsc 2448322906299168 tail 412745 tput 324 modal 1 rpc [55.666565]
+TRACE:pushback_ours: rdtsc 2448323256949530 last_rdtsc 2448322070170596 recvd 4120000 last_recvd 4080000 rate 80.89123 last_rate 0 ext_p [55.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448323256949530 d_rate 80.89123 ext_p 60.666565 off 5 modal 1
+rdtsc 2448323506304910 tail 412332 tput 403 modal 1 rpc [60.666565]
+rdtsc 2448324106519755 tail 413067 tput 403 modal 1 rpc [60.666565]
+TRACE:pushback_ours: rdtsc 2448324443829996 last_rdtsc 2448323256949530 recvd 4160000 last_recvd 4120000 rate 80.8843 last_rate 80.89123 ext_p [60.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448324443829996 d_rate -0.0069274902 ext_p 59.666565 off -1 modal 1
+rdtsc 2448324706534455 tail 744542 tput 403 modal 1 rpc [59.666565]
+rdtsc 2448325306535916 tail 739550 tput 484 modal 1 rpc [59.666565]
+rdtsc 2448325906545063 tail 457373 tput 484 modal 1 rpc [59.666565]
+rdtsc 2448326506551660 tail 416537 tput 565 modal 0 rpc [59.666565]
+rdtsc 2448327106575084 tail 405047 tput 566 modal 0 rpc [59.666565]
+rdtsc 2448327706594032 tail 409091 tput 647 modal 0 rpc [59.666565]
+rdtsc 2448328306597902 tail 403109 tput 646 modal 0 rpc [59.666565]
+rdtsc 2448328906612632 tail 419320 tput 646 modal 0 rpc [59.666565]
+TRACE:pushback_ours: rdtsc 2448329191760334 last_rdtsc 2448324443829996 recvd 4320000 last_recvd 4160000 rate 80.87735 last_rate 80.8843 ext_p [59.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448329191760334 d_rate -0.0069503784 ext_p 60.666565 off 1 modal 0
+rdtsc 2448329506647576 tail 418642 tput 646 modal 0 rpc [60.666565]
+rdtsc 2448330106650273 tail 410108 tput 565 modal 0 rpc [60.666565]
+rdtsc 2448330706677810 tail 415427 tput 565 modal 0 rpc [60.666565]
+rdtsc 2448331306691637 tail 411665 tput 565 modal 1 rpc [60.666565]
+rdtsc 2448331906701951 tail 416062 tput 565 modal 1 rpc [60.666565]
+rdtsc 2448332506711815 tail 415033 tput 565 modal 1 rpc [60.666565]
+rdtsc 2448333106719288 tail 411237 tput 565 modal 1 rpc [60.666565]
+rdtsc 2448333706744335 tail 408442 tput 565 modal 1 rpc [60.666565]
+TRACE:pushback_ours: rdtsc 2448333939155253 last_rdtsc 2448329191760334 recvd 4480000 last_recvd 4320000 rate 80.88647 last_rate 80.87735 ext_p [60.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448333939155253 d_rate 0.009117126 ext_p 61.666565 off 1 modal 1
+rdtsc 2448334306761921 tail 409680 tput 565 modal 1 rpc [61.666565]
+rdtsc 2448334906773258 tail 404054 tput 566 modal 1 rpc [61.666565]
+TRACE:pushback_ours: rdtsc 2448335125264140 last_rdtsc 2448333939155253 recvd 4520000 last_recvd 4480000 rate 80.93692 last_rate 80.88647 ext_p [61.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448335125264140 d_rate 0.050453186 ext_p 62.666565 off 1 modal 1
+rdtsc 2448335506805652 tail 419016 tput 566 modal 1 rpc [62.666565]
+rdtsc 2448336106819500 tail 420356 tput 566 modal 0 rpc [62.666565]
+rdtsc 2448336706834956 tail 412772 tput 566 modal 0 rpc [62.666565]
+rdtsc 2448337306851051 tail 412990 tput 566 modal 0 rpc [62.666565]
+rdtsc 2448337906869636 tail 409309 tput 566 modal 0 rpc [62.666565]
+rdtsc 2448338506892970 tail 412690 tput 566 modal 0 rpc [62.666565]
+rdtsc 2448339106916568 tail 415062 tput 566 modal 0 rpc [62.666565]
+rdtsc 2448339706923693 tail 413320 tput 566 modal 0 rpc [62.666565]
+rdtsc 2448340306946034 tail 402631 tput 566 modal 0 rpc [62.666565]
+rdtsc 2448340906953582 tail 413857 tput 566 modal 1 rpc [62.666565]
+TRACE:pushback_ours: rdtsc 2448341057015928 last_rdtsc 2448335125264140 recvd 4720000 last_recvd 4520000 rate 80.92045 last_rate 80.93692 ext_p [62.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448341057015928 d_rate -0.016471863 ext_p 61.666565 off -1 modal 1
+rdtsc 2448341506979598 tail 414604 tput 566 modal 1 rpc [61.666565]
+rdtsc 2448342106986666 tail 416859 tput 647 modal 1 rpc [61.666565]
+rdtsc 2448342707012223 tail 406353 tput 647 modal 1 rpc [61.666565]
+rdtsc 2448343307030817 tail 403084 tput 647 modal 1 rpc [61.666565]
+rdtsc 2448343907039400 tail 415389 tput 647 modal 1 rpc [61.666565]
+rdtsc 2448344507051256 tail 405213 tput 646 modal 1 rpc [61.666565]
+TRACE:pushback_ours: rdtsc 2448344616511935 last_rdtsc 2448341057015928 recvd 4840000 last_recvd 4720000 rate 80.91033 last_rate 80.92045 ext_p [61.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448344616511935 d_rate -0.010116577 ext_p 62.666565 off 1 modal 1
+TRACE:pushback_ours: rdtsc 2448344616579900 last_rdtsc 2448344616511935 recvd 4840000 last_recvd 4840000 rate 0 last_rate 80.91033 ext_p [62.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448344616579900 d_rate -80.91033 ext_p 57.666565 off -5 modal 1
+rdtsc 2448345107056050 tail 413292 tput 566 modal 1 rpc [57.666565]
+rdtsc 2448345707059956 tail 410397 tput 485 modal 0 rpc [57.666565]
+rdtsc 2448346307087919 tail 417862 tput 485 modal 0 rpc [57.666565]
+rdtsc 2448346907098335 tail 408087 tput 486 modal 0 rpc [57.666565]
+rdtsc 2448347507101434 tail 406932 tput 486 modal 0 rpc [57.666565]
+rdtsc 2448348107102085 tail 420003 tput 486 modal 0 rpc [57.666565]
+TRACE:pushback_ours: rdtsc 2448348177463134 last_rdtsc 2448344616579900 recvd 4960000 last_recvd 4840000 rate 80.87881 last_rate 0 ext_p [57.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448348177463134 d_rate 80.87881 ext_p 52.666565 off -5 modal 0
+rdtsc 2448348707122671 tail 419352 tput 566 modal 0 rpc [52.666565]
+rdtsc 2448349307128161 tail 414144 tput 647 modal 0 rpc [52.666565]
+rdtsc 2448349907143611 tail 411833 tput 647 modal 0 rpc [52.666565]
+rdtsc 2448350507146215 tail 407298 tput 646 modal 1 rpc [52.666565]
+TRACE:pushback_ours: rdtsc 2448350551666554 last_rdtsc 2448348177463134 recvd 5040000 last_recvd 4960000 rate 80.86923 last_rate 80.87881 ext_p [52.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448350551666554 d_rate -0.00957489 ext_p 53.666565 off 1 modal 1
+TRACE:pushback_ours: rdtsc 2448350551729728 last_rdtsc 2448350551666554 recvd 5040000 last_recvd 5040000 rate 0 last_rate 80.86923 ext_p [53.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448350551729728 d_rate -80.86923 ext_p 48.666565 off -5 modal 1
+TRACE:pushback_ours: rdtsc 2448350551805994 last_rdtsc 2448350551729728 recvd 5040000 last_recvd 5040000 rate 0 last_rate 0 ext_p [48.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448350551805994 d_rate 0 ext_p 47.666565 off -1 modal 1
+rdtsc 2448351107165373 tail 409428 tput 566 modal 1 rpc [47.666565]
+rdtsc 2448351707175003 tail 415632 tput 566 modal 1 rpc [47.666565]
+rdtsc 2448352307200533 tail 409233 tput 566 modal 1 rpc [47.666565]
+rdtsc 2448352907205429 tail 407935 tput 405 modal 1 rpc [47.666565]
+TRACE:pushback_ours: rdtsc 2448352928355864 last_rdtsc 2448350551805994 recvd 5120000 last_recvd 5040000 rate 80.78938 last_rate 0 ext_p [47.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448352928355864 d_rate 80.78938 ext_p 42.666565 off -5 modal 1
+rdtsc 2448353507210808 tail 409969 tput 485 modal 1 rpc [42.666565]
+rdtsc 2448354107229720 tail 409890 tput 566 modal 1 rpc [42.666565]
+TRACE:pushback_ours: rdtsc 2448354117209880 last_rdtsc 2448352928355864 recvd 5160000 last_recvd 5120000 rate 80.75003 last_rate 80.78938 ext_p [42.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448354117209880 d_rate -0.039352417 ext_p 43.666565 off 1 modal 1
+rdtsc 2448354707252478 tail 406018 tput 566 modal 1 rpc [43.666565]
+rdtsc 2448355307271540 tail 414491 tput 566 modal 0 rpc [43.666565]
+rdtsc 2448355907273127 tail 407158 tput 566 modal 0 rpc [43.666565]
+rdtsc 2448356507282604 tail 411878 tput 566 modal 0 rpc [43.666565]
+rdtsc 2448357107302071 tail 409244 tput 566 modal 0 rpc [43.666565]
+rdtsc 2448357707319756 tail 416786 tput 566 modal 0 rpc [43.666565]
+rdtsc 2448358307337615 tail 408487 tput 566 modal 0 rpc [43.666565]
+rdtsc 2448358907351520 tail 419169 tput 566 modal 0 rpc [43.666565]
+rdtsc 2448359507370471 tail 409849 tput 566 modal 0 rpc [43.666565]
+TRACE:pushback_ours: rdtsc 2448360058415679 last_rdtsc 2448354117209880 recvd 5360000 last_recvd 5160000 rate 80.79168 last_rate 80.75003 ext_p [43.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448360058415679 d_rate 0.041648865 ext_p 44.666565 off 1 modal 1
+rdtsc 2448360107396592 tail 413025 tput 566 modal 1 rpc [44.666565]
+rdtsc 2448360707408379 tail 418179 tput 647 modal 1 rpc [44.666565]
+rdtsc 2448361307420418 tail 418798 tput 647 modal 1 rpc [44.666565]
+rdtsc 2448361907445534 tail 419862 tput 647 modal 1 rpc [44.666565]
+rdtsc 2448362507469300 tail 411358 tput 647 modal 1 rpc [44.666565]
+rdtsc 2448363107475432 tail 410547 tput 647 modal 1 rpc [44.666565]
+TRACE:pushback_ours: rdtsc 2448363623204184 last_rdtsc 2448360058415679 recvd 5480000 last_recvd 5360000 rate 80.7902 last_rate 80.79168 ext_p [44.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448363623204184 d_rate -0.0014801025 ext_p 43.666565 off -1 modal 1
+rdtsc 2448363707492445 tail 422074 tput 647 modal 1 rpc [43.666565]
+rdtsc 2448364307519868 tail 411942 tput 647 modal 1 rpc [43.666565]
+rdtsc 2448364907531688 tail 420837 tput 647 modal 0 rpc [43.666565]
+rdtsc 2448365507553390 tail 408335 tput 647 modal 0 rpc [43.666565]
+rdtsc 2448366107560500 tail 424276 tput 647 modal 0 rpc [43.666565]
+rdtsc 2448366707586162 tail 410791 tput 566 modal 0 rpc [43.666565]
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+rdtsc 2448367307592396 tail 419571 tput 565 modal 0 rpc [43.666565]
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+rdtsc 2448367907593608 tail 413385 tput 646 modal 0 rpc [43.666565]
+TRACE:pushback_ours: rdtsc 2448368379279069 last_rdtsc 2448363623204184 recvd 5640000 last_recvd 5480000 rate 80.738846 last_rate 80.7902 ext_p [43.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448368379279069 d_rate -0.051353455 ext_p 44.666565 off 1 modal 0
+rdtsc 2448368507597532 tail 412100 tput 646 modal 0 rpc [44.666565]
+rdtsc 2448369107621028 tail 412249 tput 646 modal 0 rpc [44.666565]
+rdtsc 2448369707647503 tail 410014 tput 646 modal 1 rpc [44.666565]
+rdtsc 2448370307654895 tail 423187 tput 646 modal 1 rpc [44.666565]
+TRACE:pushback_ours: rdtsc 2448370756964280 last_rdtsc 2448368379279069 recvd 5720000 last_recvd 5640000 rate 80.75081 last_rate 80.738846 ext_p [44.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448370756964280 d_rate 0.011962891 ext_p 45.666565 off 1 modal 1
+rdtsc 2448370907664606 tail 417449 tput 646 modal 1 rpc [45.666565]
+rdtsc 2448371507677194 tail 408256 tput 646 modal 1 rpc [45.666565]
+rdtsc 2448372107677224 tail 410841 tput 646 modal 1 rpc [45.666565]
+rdtsc 2448372707677413 tail 417759 tput 646 modal 1 rpc [45.666565]
+rdtsc 2448373307701884 tail 413280 tput 646 modal 1 rpc [45.666565]
+rdtsc 2448373907714376 tail 416308 tput 565 modal 1 rpc [45.666565]
+rdtsc 2448374507721810 tail 411845 tput 566 modal 0 rpc [45.666565]
+rdtsc 2448375107732271 tail 404718 tput 566 modal 0 rpc [45.666565]
+rdtsc 2448375707732844 tail 409381 tput 566 modal 0 rpc [45.666565]
+rdtsc 2448376307751180 tail 415035 tput 566 modal 0 rpc [45.666565]
+rdtsc 2448376907753268 tail 414058 tput 566 modal 0 rpc [45.666565]
+rdtsc 2448377507771664 tail 418995 tput 647 modal 0 rpc [45.666565]
+rdtsc 2448378107783034 tail 417693 tput 647 modal 0 rpc [45.666565]
+rdtsc 2448378707786961 tail 408115 tput 647 modal 0 rpc [45.666565]
+rdtsc 2448379307795376 tail 408545 tput 647 modal 1 rpc [45.666565]
+rdtsc 2448379907800401 tail 411963 tput 647 modal 1 rpc [45.666565]
+rdtsc 2448380507824842 tail 416744 tput 647 modal 1 rpc [45.666565]
+rdtsc 2448381107828049 tail 416431 tput 566 modal 1 rpc [45.666565]
+rdtsc 2448381707848887 tail 408157 tput 566 modal 1 rpc [45.666565]
+rdtsc 2448382307865501 tail 405377 tput 566 modal 1 rpc [45.666565]
+rdtsc 2448382907888187 tail 411658 tput 566 modal 1 rpc [45.666565]
+rdtsc 2448383507890797 tail 411285 tput 566 modal 1 rpc [45.666565]
+rdtsc 2448384107896242 tail 415398 tput 566 modal 0 rpc [45.666565]
+rdtsc 2448384707919681 tail 414845 tput 647 modal 0 rpc [45.666565]
+TRACE:pushback_ours: rdtsc 2448385017747900 last_rdtsc 2448370756964280 recvd 6200000 last_recvd 5720000 rate 80.78097 last_rate 80.75081 ext_p [45.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448385017747900 d_rate 0.030158997 ext_p 46.666565 off 1 modal 0
+rdtsc 2448385307920014 tail 417576 tput 647 modal 0 rpc [46.666565]
+rdtsc 2448385907920221 tail 406796 tput 647 modal 0 rpc [46.666565]
+rdtsc 2448386507927304 tail 414099 tput 647 modal 0 rpc [46.666565]
+rdtsc 2448387107934402 tail 418915 tput 647 modal 0 rpc [46.666565]
+rdtsc 2448387707940543 tail 418405 tput 647 modal 0 rpc [46.666565]
+rdtsc 2448388307959179 tail 414182 tput 647 modal 0 rpc [46.666565]
+rdtsc 2448388907967522 tail 415996 tput 647 modal 1 rpc [46.666565]
+rdtsc 2448389507988636 tail 404746 tput 647 modal 1 rpc [46.666565]
+rdtsc 2448390107997729 tail 420617 tput 647 modal 1 rpc [46.666565]
+rdtsc 2448390707997768 tail 417144 tput 647 modal 1 rpc [46.666565]
+TRACE:pushback_ours: rdtsc 2448390959602098 last_rdtsc 2448385017747900 recvd 6400000 last_recvd 6200000 rate 80.78287 last_rate 80.78097 ext_p [46.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448390959602098 d_rate 0.0018997192 ext_p 47.666565 off 1 modal 1
+TRACE:pushback_ours: rdtsc 2448390959678391 last_rdtsc 2448390959602098 recvd 6400000 last_recvd 6400000 rate 0 last_rate 80.78287 ext_p [47.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448390959678391 d_rate -80.78287 ext_p 42.666565 off -5 modal 1
+rdtsc 2448391308021060 tail 417376 tput 567 modal 1 rpc [42.666565]
+rdtsc 2448391908039147 tail 417325 tput 567 modal 1 rpc [42.666565]
+TRACE:pushback_ours: rdtsc 2448392147275314 last_rdtsc 2448390959678391 recvd 6440000 last_recvd 6400000 rate 80.83551 last_rate 0 ext_p [42.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448392147275314 d_rate 80.83551 ext_p 37.666565 off -5 modal 1
+rdtsc 2448392508069744 tail 407529 tput 647 modal 1 rpc [37.666565]
+rdtsc 2448393108086241 tail 410412 tput 647 modal 1 rpc [37.666565]
+rdtsc 2448393708117924 tail 409852 tput 647 modal 0 rpc [37.666565]
+rdtsc 2448394308131631 tail 415545 tput 647 modal 0 rpc [37.666565]
+rdtsc 2448394908137082 tail 415395 tput 647 modal 0 rpc [37.666565]
+rdtsc 2448395508141246 tail 402007 tput 647 modal 0 rpc [37.666565]
+rdtsc 2448396108141780 tail 419052 tput 647 modal 0 rpc [37.666565]
+rdtsc 2448396708143442 tail 413124 tput 566 modal 0 rpc [37.666565]
+rdtsc 2448397308161685 tail 645303 tput 566 modal 0 rpc [37.666565]
+rdtsc 2448397908186360 tail 735639 tput 566 modal 0 rpc [37.666565]
+rdtsc 2448398508205533 tail 707767 tput 566 modal 1 rpc [37.666565]
+rdtsc 2448399108214143 tail 405967 tput 566 modal 1 rpc [37.666565]
+rdtsc 2448399708236037 tail 414615 tput 566 modal 1 rpc [37.666565]
+rdtsc 2448400308259071 tail 415075 tput 566 modal 1 rpc [37.666565]
+TRACE:pushback_ours: rdtsc 2448400471408827 last_rdtsc 2448392147275314 recvd 6720000 last_recvd 6440000 rate 80.729126 last_rate 80.83551 ext_p [37.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448400471408827 d_rate -0.10638428 ext_p 38.666565 off 1 modal 1
+rdtsc 2448400908280209 tail 413366 tput 566 modal 1 rpc [38.666565]
+rdtsc 2448401508298011 tail 410393 tput 566 modal 1 rpc [38.666565]
+TRACE:pushback_ours: rdtsc 2448401660360031 last_rdtsc 2448400471408827 recvd 6760000 last_recvd 6720000 rate 80.74343 last_rate 80.729126 ext_p [38.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448401660360031 d_rate 0.014305115 ext_p 39.666565 off 1 modal 1
+rdtsc 2448402108306276 tail 412099 tput 566 modal 1 rpc [39.666565]
+rdtsc 2448402708319230 tail 409919 tput 566 modal 1 rpc [39.666565]
+TRACE:pushback_ours: rdtsc 2448402848529879 last_rdtsc 2448401660360031 recvd 6800000 last_recvd 6760000 rate 80.79653 last_rate 80.74343 ext_p [39.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448402848529879 d_rate 0.053100586 ext_p 40.666565 off 1 modal 1
+rdtsc 2448403308338541 tail 415908 tput 566 modal 0 rpc [40.666565]
+rdtsc 2448403908350364 tail 408596 tput 566 modal 0 rpc [40.666565]
+rdtsc 2448404508368661 tail 412419 tput 566 modal 0 rpc [40.666565]
+rdtsc 2448405108393216 tail 412204 tput 566 modal 0 rpc [40.666565]
+rdtsc 2448405708397218 tail 411123 tput 566 modal 0 rpc [40.666565]
+rdtsc 2448406308421290 tail 417801 tput 566 modal 0 rpc [40.666565]
+rdtsc 2448406908441543 tail 401298 tput 647 modal 0 rpc [40.666565]
+rdtsc 2448407508464901 tail 408352 tput 647 modal 0 rpc [40.666565]
+rdtsc 2448408108489384 tail 411686 tput 647 modal 1 rpc [40.666565]
+rdtsc 2448408708500220 tail 420415 tput 647 modal 1 rpc [40.666565]
+rdtsc 2448409308512376 tail 409621 tput 647 modal 1 rpc [40.666565]
+rdtsc 2448409908530154 tail 405484 tput 647 modal 1 rpc [40.666565]
+rdtsc 2448410508532593 tail 420460 tput 647 modal 1 rpc [40.666565]
+rdtsc 2448411108545676 tail 417162 tput 647 modal 1 rpc [40.666565]
+rdtsc 2448411708562434 tail 414817 tput 647 modal 1 rpc [40.666565]
+rdtsc 2448412308581124 tail 408319 tput 647 modal 1 rpc [40.666565]
+TRACE:pushback_ours: rdtsc 2448412361907009 last_rdtsc 2448402848529879 recvd 7120000 last_recvd 6800000 rate 80.72843 last_rate 80.79653 ext_p [40.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448412361907009 d_rate -0.068099976 ext_p 39.666565 off -1 modal 1
+rdtsc 2448412908593898 tail 416124 tput 647 modal 0 rpc [39.666565]
+rdtsc 2448413508603306 tail 415905 tput 647 modal 0 rpc [39.666565]
+rdtsc 2448414108608280 tail 417325 tput 647 modal 0 rpc [39.666565]
+rdtsc 2448414708610161 tail 410328 tput 647 modal 0 rpc [39.666565]
+rdtsc 2448415308613422 tail 414127 tput 566 modal 0 rpc [39.666565]
+rdtsc 2448415908626085 tail 412399 tput 566 modal 0 rpc [39.666565]
+rdtsc 2448416508626628 tail 412639 tput 566 modal 0 rpc [39.666565]
+rdtsc 2448417108648720 tail 414697 tput 565 modal 0 rpc [39.666565]
+rdtsc 2448417708654156 tail 416301 tput 565 modal 1 rpc [39.666565]
+rdtsc 2448418308668301 tail 417350 tput 565 modal 1 rpc [39.666565]
+TRACE:pushback_ours: rdtsc 2448418309131099 last_rdtsc 2448412361907009 recvd 7320000 last_recvd 7120000 rate 80.70992 last_rate 80.72843 ext_p [39.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448418309131099 d_rate -0.018508911 ext_p 40.666565 off 1 modal 1
+TRACE:pushback_ours: rdtsc 2448418309194684 last_rdtsc 2448418309131099 recvd 7320000 last_recvd 7320000 rate 0 last_rate 80.70992 ext_p [40.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448418309194684 d_rate -80.70992 ext_p 35.666565 off -5 modal 1
+rdtsc 2448418908668652 tail 409702 tput 485 modal 1 rpc [35.666565]
+TRACE:pushback_ours: rdtsc 2448419498499576 last_rdtsc 2448418309194684 recvd 7360000 last_recvd 7320000 rate 80.71942 last_rate 0 ext_p [35.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448419498499576 d_rate 80.71942 ext_p 30.666565 off -5 modal 1
+rdtsc 2448419508670866 tail 414659 tput 565 modal 1 rpc [30.666565]
+rdtsc 2448420108676734 tail 411431 tput 646 modal 1 rpc [30.666565]
+rdtsc 2448420708685656 tail 416316 tput 646 modal 1 rpc [30.666565]
+rdtsc 2448421308686280 tail 412096 tput 646 modal 1 rpc [30.666565]
+rdtsc 2448421908688269 tail 422291 tput 647 modal 1 rpc [30.666565]
+rdtsc 2448422508703026 tail 419971 tput 647 modal 0 rpc [30.666565]
+TRACE:pushback_ours: rdtsc 2448423067841442 last_rdtsc 2448419498499576 recvd 7480000 last_recvd 7360000 rate 80.68713 last_rate 80.71942 ext_p [30.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448423067841442 d_rate -0.032287598 ext_p 31.666565 off 1 modal 0
+rdtsc 2448423108715680 tail 422588 tput 647 modal 0 rpc [31.666565]
+rdtsc 2448423708752343 tail 413576 tput 647 modal 0 rpc [31.666565]
+rdtsc 2448424308753549 tail 413964 tput 647 modal 0 rpc [31.666565]
+rdtsc 2448424908773124 tail 410901 tput 566 modal 0 rpc [31.666565]
+rdtsc 2448425508781092 tail 416474 tput 566 modal 0 rpc [31.666565]
+rdtsc 2448426108788808 tail 412259 tput 647 modal 0 rpc [31.666565]
+TRACE:pushback_ours: rdtsc 2448426639098679 last_rdtsc 2448423067841442 recvd 7600000 last_recvd 7480000 rate 80.64386 last_rate 80.68713 ext_p [31.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448426639098679 d_rate -0.043273926 ext_p 30.666565 off -1 modal 0
+TRACE:pushback_ours: rdtsc 2448426639165888 last_rdtsc 2448426639098679 recvd 7600000 last_recvd 7600000 rate 0 last_rate 80.64386 ext_p [30.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448426639165888 d_rate -80.64386 ext_p 35.666565 off 5 modal 0
+rdtsc 2448426708796287 tail 417435 tput 567 modal 0 rpc [35.666565]
+rdtsc 2448427308797448 tail 407149 tput 567 modal 1 rpc [35.666565]
+rdtsc 2448427908799293 tail 422686 tput 567 modal 1 rpc [35.666565]
+rdtsc 2448428508806253 tail 415136 tput 567 modal 1 rpc [35.666565]
+rdtsc 2448429108829614 tail 415040 tput 567 modal 1 rpc [35.666565]
+rdtsc 2448429708832647 tail 414258 tput 567 modal 1 rpc [35.666565]
+TRACE:pushback_ours: rdtsc 2448430207788999 last_rdtsc 2448426639165888 recvd 7720000 last_recvd 7600000 rate 80.70339 last_rate 0 ext_p [35.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448430207788999 d_rate 80.70339 ext_p 40.666565 off 5 modal 1
+rdtsc 2448430308857484 tail 415896 tput 647 modal 1 rpc [40.666565]
+rdtsc 2448430908878346 tail 408310 tput 647 modal 1 rpc [40.666565]
+TRACE:pushback_ours: rdtsc 2448431397300066 last_rdtsc 2448430207788999 recvd 7760000 last_recvd 7720000 rate 80.70543 last_rate 80.70339 ext_p [40.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448431397300066 d_rate 0.0020370483 ext_p 41.666565 off 1 modal 1
+rdtsc 2448431508899403 tail 415975 tput 647 modal 1 rpc [41.666565]
+rdtsc 2448432108921381 tail 411734 tput 647 modal 0 rpc [41.666565]
+rdtsc 2448432708937893 tail 401634 tput 647 modal 0 rpc [41.666565]
+rdtsc 2448433308959028 tail 424629 tput 647 modal 0 rpc [41.666565]
+TRACE:pushback_ours: rdtsc 2448433776566481 last_rdtsc 2448431397300066 recvd 7840000 last_recvd 7760000 rate 80.69714 last_rate 80.70543 ext_p [41.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448433776566481 d_rate -0.008285522 ext_p 40.666565 off -1 modal 0
+rdtsc 2448433908969000 tail 408271 tput 647 modal 0 rpc [40.666565]
+rdtsc 2448434508973659 tail 416670 tput 647 modal 0 rpc [40.666565]
+TRACE:pushback_ours: rdtsc 2448434965460475 last_rdtsc 2448433776566481 recvd 7880000 last_recvd 7840000 rate 80.74732 last_rate 80.69714 ext_p [40.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448434965460475 d_rate 0.050178528 ext_p 39.666565 off -1 modal 0
+rdtsc 2448435108975024 tail 409862 tput 647 modal 0 rpc [39.666565]
+rdtsc 2448435708984507 tail 417492 tput 647 modal 0 rpc [39.666565]
+rdtsc 2448436309008600 tail 407710 tput 647 modal 0 rpc [39.666565]
+rdtsc 2448436909015668 tail 416512 tput 647 modal 1 rpc [39.666565]
+TRACE:pushback_ours: rdtsc 2448437343863742 last_rdtsc 2448434965460475 recvd 7960000 last_recvd 7880000 rate 80.726425 last_rate 80.74732 ext_p [39.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448437343863742 d_rate -0.020896912 ext_p 40.666565 off 1 modal 1
+rdtsc 2448437509027239 tail 415458 tput 647 modal 1 rpc [40.666565]
+rdtsc 2448438109027644 tail 401821 tput 647 modal 1 rpc [40.666565]
+TRACE:pushback_ours: rdtsc 2448438532880376 last_rdtsc 2448437343863742 recvd 8000000 last_recvd 7960000 rate 80.73899 last_rate 80.726425 ext_p [40.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448438532880376 d_rate 0.012565613 ext_p 41.666565 off 1 modal 1
+rdtsc 2448438709039143 tail 418479 tput 647 modal 1 rpc [41.666565]
+rdtsc 2448439309053339 tail 408581 tput 647 modal 1 rpc [41.666565]
+rdtsc 2448439909082283 tail 406041 tput 647 modal 1 rpc [41.666565]
+rdtsc 2448440509103997 tail 411417 tput 647 modal 1 rpc [41.666565]
+rdtsc 2448441109121253 tail 416648 tput 647 modal 1 rpc [41.666565]
+rdtsc 2448441709130823 tail 411778 tput 647 modal 0 rpc [41.666565]
+rdtsc 2448442309131588 tail 415656 tput 647 modal 0 rpc [41.666565]
+rdtsc 2448442909158480 tail 418812 tput 647 modal 0 rpc [41.666565]
+TRACE:pushback_ours: rdtsc 2448443289651684 last_rdtsc 2448438532880376 recvd 8160000 last_recvd 8000000 rate 80.72703 last_rate 80.73899 ext_p [41.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448443289651684 d_rate -0.011962891 ext_p 40.666565 off -1 modal 0
+rdtsc 2448443509167297 tail 421343 tput 647 modal 0 rpc [40.666565]
+rdtsc 2448444109194399 tail 409864 tput 647 modal 0 rpc [40.666565]
+TRACE:pushback_ours: rdtsc 2448444478986846 last_rdtsc 2448443289651684 recvd 8200000 last_recvd 8160000 rate 80.71736 last_rate 80.72703 ext_p [40.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448444478986846 d_rate -0.009666443 ext_p 41.666565 off 1 modal 0
+rdtsc 2448444709196160 tail 409511 tput 647 modal 0 rpc [41.666565]
+rdtsc 2448445309208871 tail 407633 tput 647 modal 0 rpc [41.666565]
+TRACE:pushback_ours: rdtsc 2448445668145767 last_rdtsc 2448444478986846 recvd 8240000 last_recvd 8200000 rate 80.729324 last_rate 80.71736 ext_p [41.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448445668145767 d_rate 0.011962891 ext_p 42.666565 off 1 modal 0
+rdtsc 2448445909227243 tail 416414 tput 647 modal 0 rpc [42.666565]
+rdtsc 2448446509239483 tail 413622 tput 647 modal 1 rpc [42.666565]
+rdtsc 2448447109261755 tail 414455 tput 647 modal 1 rpc [42.666565]
+rdtsc 2448447709264737 tail 412650 tput 647 modal 1 rpc [42.666565]
+rdtsc 2448448309264773 tail 411814 tput 566 modal 1 rpc [42.666565]
+rdtsc 2448448909265790 tail 411620 tput 566 modal 1 rpc [42.666565]
+rdtsc 2448449509289616 tail 412128 tput 566 modal 1 rpc [42.666565]
+rdtsc 2448450109296576 tail 681609 tput 566 modal 1 rpc [42.666565]
+rdtsc 2448450709316043 tail 739393 tput 647 modal 1 rpc [42.666565]
+rdtsc 2448451309330791 tail 451213 tput 647 modal 0 rpc [42.666565]
+TRACE:pushback_ours: rdtsc 2448451613434920 last_rdtsc 2448445668145767 recvd 8440000 last_recvd 8240000 rate 80.73619 last_rate 80.729324 ext_p [42.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448451613434920 d_rate 0.006866455 ext_p 43.666565 off 1 modal 0
+rdtsc 2448451909349514 tail 416943 tput 647 modal 0 rpc [43.666565]
+rdtsc 2448452509349760 tail 413587 tput 647 modal 0 rpc [43.666565]
+rdtsc 2448453109387311 tail 411899 tput 647 modal 0 rpc [43.666565]
+rdtsc 2448453709414785 tail 413694 tput 647 modal 0 rpc [43.666565]
+rdtsc 2448454309430010 tail 415188 tput 647 modal 0 rpc [43.666565]
+rdtsc 2448454909440000 tail 415684 tput 647 modal 0 rpc [43.666565]
+rdtsc 2448455509451106 tail 411061 tput 647 modal 0 rpc [43.666565]
+rdtsc 2448456109451952 tail 413631 tput 647 modal 1 rpc [43.666565]
+rdtsc 2448456709453368 tail 409172 tput 647 modal 1 rpc [43.666565]
+rdtsc 2448457309459584 tail 413653 tput 647 modal 1 rpc [43.666565]
+TRACE:pushback_ours: rdtsc 2448457556161896 last_rdtsc 2448451613434920 recvd 8640000 last_recvd 8440000 rate 80.771 last_rate 80.73619 ext_p [43.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448457556161896 d_rate 0.034812927 ext_p 44.666565 off 1 modal 1
+rdtsc 2448457909476864 tail 415508 tput 647 modal 1 rpc [44.666565]
+rdtsc 2448458509503348 tail 419029 tput 647 modal 1 rpc [44.666565]
+rdtsc 2448459109506684 tail 408048 tput 566 modal 1 rpc [44.666565]
+rdtsc 2448459709508424 tail 415138 tput 566 modal 1 rpc [44.666565]
+rdtsc 2448460309516062 tail 407833 tput 566 modal 1 rpc [44.666565]
+rdtsc 2448460909527381 tail 412960 tput 566 modal 0 rpc [44.666565]
+rdtsc 2448461509538970 tail 409132 tput 566 modal 0 rpc [44.666565]
+rdtsc 2448462109541415 tail 416295 tput 566 modal 0 rpc [44.666565]
+rdtsc 2448462709556568 tail 414797 tput 566 modal 0 rpc [44.666565]
+rdtsc 2448463309556829 tail 411194 tput 566 modal 0 rpc [44.666565]
+TRACE:pushback_ours: rdtsc 2448463501482363 last_rdtsc 2448457556161896 recvd 8840000 last_recvd 8640000 rate 80.73577 last_rate 80.771 ext_p [44.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448463501482363 d_rate -0.035232544 ext_p 43.666565 off -1 modal 0
+rdtsc 2448463909560828 tail 423563 tput 647 modal 0 rpc [43.666565]
+rdtsc 2448464509573419 tail 408468 tput 647 modal 0 rpc [43.666565]
+TRACE:pushback_ours: rdtsc 2448464691687492 last_rdtsc 2448463501482363 recvd 8880000 last_recvd 8840000 rate 80.65836 last_rate 80.73577 ext_p [43.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448464691687492 d_rate -0.07740784 ext_p 44.666565 off 1 modal 0
+TRACE:pushback_ours: rdtsc 2448464691751263 last_rdtsc 2448464691687492 recvd 8880000 last_recvd 8880000 rate 0 last_rate 80.65836 ext_p [44.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448464691751263 d_rate -80.65836 ext_p 39.666565 off -5 modal 0
+TRACE:pushback_ours: rdtsc 2448464691826689 last_rdtsc 2448464691751263 recvd 8880000 last_recvd 8880000 rate 0 last_rate 0 ext_p [39.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448464691826689 d_rate 0 ext_p 38.666565 off -1 modal 0
+rdtsc 2448465109581819 tail 407041 tput 567 modal 0 rpc [38.666565]
+rdtsc 2448465709606395 tail 415538 tput 567 modal 1 rpc [38.666565]
+rdtsc 2448466309616061 tail 407842 tput 567 modal 1 rpc [38.666565]
+rdtsc 2448466909628766 tail 407475 tput 567 modal 1 rpc [38.666565]
+rdtsc 2448467509639797 tail 413338 tput 567 modal 1 rpc [38.666565]
+rdtsc 2448468109654305 tail 411118 tput 567 modal 1 rpc [38.666565]
+rdtsc 2448468709660836 tail 420447 tput 567 modal 1 rpc [38.666565]
+rdtsc 2448469309664379 tail 416664 tput 567 modal 1 rpc [38.666565]
+TRACE:pushback_ours: rdtsc 2448469446040305 last_rdtsc 2448464691826689 recvd 9040000 last_recvd 8880000 rate 80.77046 last_rate 0 ext_p [38.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448469446040305 d_rate 80.77046 ext_p 33.666565 off -5 modal 1
+TRACE:pushback_ours: rdtsc 2448469446148173 last_rdtsc 2448469446040305 recvd 9040000 last_recvd 9040000 rate 0 last_rate 80.77046 ext_p [33.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448469446148173 d_rate -80.77046 ext_p 38.666565 off 5 modal 1
+TRACE:pushback_ours: rdtsc 2448469446226191 last_rdtsc 2448469446148173 recvd 9040000 last_recvd 9040000 rate 0 last_rate 0 ext_p [38.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448469446226191 d_rate 0 ext_p 37.666565 off -1 modal 1
+rdtsc 2448469909675314 tail 408798 tput 567 modal 1 rpc [37.666565]
+rdtsc 2448470509681800 tail 409323 tput 567 modal 0 rpc [37.666565]
+rdtsc 2448471109690188 tail 412149 tput 567 modal 0 rpc [37.666565]
+rdtsc 2448471709690833 tail 415419 tput 567 modal 0 rpc [37.666565]
+TRACE:pushback_ours: rdtsc 2448471825603216 last_rdtsc 2448469446226191 recvd 9120000 last_recvd 9040000 rate 80.69339 last_rate 0 ext_p [37.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448471825603216 d_rate 80.69339 ext_p 32.666565 off -5 modal 0
+rdtsc 2448472309697940 tail 420215 tput 647 modal 0 rpc [32.666565]
+rdtsc 2448472909701960 tail 410136 tput 647 modal 0 rpc [32.666565]
+rdtsc 2448473509713810 tail 417796 tput 647 modal 0 rpc [32.666565]
+rdtsc 2448474109726539 tail 410959 tput 647 modal 0 rpc [32.666565]
+TRACE:pushback_ours: rdtsc 2448474204818490 last_rdtsc 2448471825603216 recvd 9200000 last_recvd 9120000 rate 80.698875 last_rate 80.69339 ext_p [32.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448474204818490 d_rate 0.0054855347 ext_p 31.666565 off -1 modal 0
+rdtsc 2448474709736289 tail 416872 tput 647 modal 0 rpc [31.666565]
+rdtsc 2448475309745607 tail 415414 tput 647 modal 1 rpc [31.666565]
+rdtsc 2448475909770741 tail 411096 tput 647 modal 1 rpc [31.666565]
+rdtsc 2448476509773828 tail 420112 tput 566 modal 1 rpc [31.666565]
+rdtsc 2448477109791132 tail 410968 tput 566 modal 1 rpc [31.666565]
+rdtsc 2448477709794699 tail 412561 tput 566 modal 1 rpc [31.666565]
+rdtsc 2448478309812177 tail 409612 tput 566 modal 1 rpc [31.666565]
+rdtsc 2448478909836354 tail 414471 tput 647 modal 1 rpc [31.666565]
+TRACE:pushback_ours: rdtsc 2448478964888862 last_rdtsc 2448474204818490 recvd 9360000 last_recvd 9200000 rate 80.67108 last_rate 80.698875 ext_p [31.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448478964888862 d_rate -0.027793884 ext_p 32.666565 off 1 modal 1
+rdtsc 2448479509856829 tail 412994 tput 647 modal 1 rpc [32.666565]
+rdtsc 2448480109871886 tail 420352 tput 647 modal 0 rpc [32.666565]
+TRACE:pushback_ours: rdtsc 2448480155842272 last_rdtsc 2448478964888862 recvd 9400000 last_recvd 9360000 rate 80.60768 last_rate 80.67108 ext_p [32.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448480155842272 d_rate -0.06340027 ext_p 31.666565 off -1 modal 0
+rdtsc 2448480709874172 tail 415866 tput 647 modal 0 rpc [31.666565]
+rdtsc 2448481309876824 tail 408875 tput 647 modal 0 rpc [31.666565]
+rdtsc 2448481909878804 tail 411014 tput 647 modal 0 rpc [31.666565]
+rdtsc 2448482509885074 tail 408089 tput 647 modal 0 rpc [31.666565]
+rdtsc 2448483109910640 tail 411367 tput 647 modal 0 rpc [31.666565]
+rdtsc 2448483709931850 tail 412101 tput 647 modal 0 rpc [31.666565]
+TRACE:pushback_ours: rdtsc 2448483727251201 last_rdtsc 2448480155842272 recvd 9520000 last_recvd 9400000 rate 80.64044 last_rate 80.60768 ext_p [31.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448483727251201 d_rate 0.03276062 ext_p 30.666565 off -1 modal 0
+rdtsc 2448484309951902 tail 406893 tput 566 modal 0 rpc [30.666565]
+rdtsc 2448484909953903 tail 418308 tput 566 modal 1 rpc [30.666565]
+rdtsc 2448485509965984 tail 421552 tput 566 modal 1 rpc [30.666565]
+rdtsc 2448486109971828 tail 423262 tput 566 modal 1 rpc [30.666565]
+rdtsc 2448486709990653 tail 410658 tput 566 modal 1 rpc [30.666565]
+TRACE:pushback_ours: rdtsc 2448487298120157 last_rdtsc 2448483727251201 recvd 9640000 last_recvd 9520000 rate 80.65263 last_rate 80.64044 ext_p [30.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448487298120157 d_rate 0.012191772 ext_p 29.666565 off -1 modal 1
+TRACE:pushback_ours: rdtsc 2448487298187468 last_rdtsc 2448487298120157 recvd 9640000 last_recvd 9640000 rate 0 last_rate 80.65263 ext_p [29.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448487298187468 d_rate -80.65263 ext_p 34.666565 off 5 modal 1
+TRACE:pushback_ours: rdtsc 2448487298281680 last_rdtsc 2448487298187468 recvd 9640000 last_recvd 9640000 rate 0 last_rate 0 ext_p [34.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448487298281680 d_rate 0 ext_p 33.666565 off -1 modal 1
+rdtsc 2448487310007120 tail 409115 tput 486 modal 1 rpc [33.666565]
+rdtsc 2448487910011341 tail 417433 tput 486 modal 1 rpc [33.666565]
+rdtsc 2448488510018619 tail 412757 tput 486 modal 1 rpc [33.666565]
+rdtsc 2448489110030370 tail 408393 tput 485 modal 1 rpc [33.666565]
+TRACE:pushback_ours: rdtsc 2448489678353223 last_rdtsc 2448487298281680 recvd 9720000 last_recvd 9640000 rate 80.669846 last_rate 0 ext_p [33.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448489678353223 d_rate 80.669846 ext_p 28.666565 off -5 modal 0
+rdtsc 2448489710037996 tail 413296 tput 566 modal 0 rpc [28.666565]
+rdtsc 2448490310038656 tail 410299 tput 566 modal 0 rpc [28.666565]
+TRACE:pushback_ours: rdtsc 2448490869021420 last_rdtsc 2448489678353223 recvd 9760000 last_recvd 9720000 rate 80.627 last_rate 80.669846 ext_p [28.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448490869021420 d_rate -0.04284668 ext_p 29.666565 off 1 modal 0
+rdtsc 2448490910066526 tail 415358 tput 566 modal 0 rpc [29.666565]
+rdtsc 2448491510071119 tail 408649 tput 647 modal 0 rpc [29.666565]
+TRACE:pushback_ours: rdtsc 2448492058470882 last_rdtsc 2448490869021420 recvd 9800000 last_recvd 9760000 rate 80.70961 last_rate 80.627 ext_p [29.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448492058470882 d_rate 0.082611084 ext_p 30.666565 off 1 modal 0
+rdtsc 2448492110072283 tail 421774 tput 647 modal 0 rpc [30.666565]
+rdtsc 2448492710083191 tail 417136 tput 647 modal 0 rpc [30.666565]
+rdtsc 2448493310104260 tail 406473 tput 647 modal 0 rpc [30.666565]
+rdtsc 2448493910136327 tail 414004 tput 647 modal 0 rpc [30.666565]
+rdtsc 2448494510139696 tail 410131 tput 647 modal 1 rpc [30.666565]
+rdtsc 2448495110143212 tail 404997 tput 647 modal 1 rpc [30.666565]
+rdtsc 2448495710167464 tail 413487 tput 647 modal 1 rpc [30.666565]
+rdtsc 2448496310169384 tail 412910 tput 647 modal 1 rpc [30.666565]
+rdtsc 2448496910190933 tail 407328 tput 647 modal 1 rpc [30.666565]
+rdtsc 2448497510213439 tail 411929 tput 647 modal 1 rpc [30.666565]
+TRACE:pushback_ours: rdtsc 2448498009502509 last_rdtsc 2448492058470882 recvd 10000000 last_recvd 9800000 rate 80.65829 last_rate 80.70961 ext_p [30.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448498009502509 d_rate -0.051322937 ext_p 29.666565 off -1 modal 1
+rdtsc 2448498110226219 tail 405236 tput 647 modal 1 rpc [29.666565]
+rdtsc 2448498710239227 tail 410684 tput 647 modal 1 rpc [29.666565]
+rdtsc 2448499310254716 tail 416047 tput 647 modal 0 rpc [29.666565]
+rdtsc 2448499910258298 tail 411548 tput 647 modal 0 rpc [29.666565]
+rdtsc 2448500510278479 tail 412684 tput 647 modal 0 rpc [29.666565]
+rdtsc 2448501110296701 tail 411399 tput 647 modal 0 rpc [29.666565]
+rdtsc 2448501710315163 tail 413982 tput 647 modal 0 rpc [29.666565]
+rdtsc 2448502310339772 tail 417217 tput 647 modal 0 rpc [29.666565]
+rdtsc 2448502910356656 tail 410843 tput 647 modal 0 rpc [29.666565]
+rdtsc 2448503510366856 tail 408888 tput 647 modal 0 rpc [29.666565]
+TRACE:pushback_ours: rdtsc 2448503961280224 last_rdtsc 2448498009502509 recvd 10200000 last_recvd 10000000 rate 80.64818 last_rate 80.65829 ext_p [29.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448503961280224 d_rate -0.010108948 ext_p 30.666565 off 1 modal 0
+rdtsc 2448504110379858 tail 412156 tput 647 modal 1 rpc [30.666565]
+rdtsc 2448504710414037 tail 407658 tput 566 modal 1 rpc [30.666565]
+TRACE:pushback_ours: rdtsc 2448505152166941 last_rdtsc 2448503961280224 recvd 10240000 last_recvd 10200000 rate 80.612206 last_rate 80.64818 ext_p [30.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448505152166941 d_rate -0.035972595 ext_p 29.666565 off -1 modal 1
+rdtsc 2448505310426586 tail 418984 tput 566 modal 1 rpc [29.666565]
+rdtsc 2448505910441607 tail 419151 tput 566 modal 1 rpc [29.666565]
+rdtsc 2448506510465496 tail 408762 tput 485 modal 1 rpc [29.666565]
+rdtsc 2448507110465826 tail 416218 tput 404 modal 1 rpc [29.666565]
+TRACE:pushback_ours: rdtsc 2448507532465377 last_rdtsc 2448505152166941 recvd 10320000 last_recvd 10240000 rate 80.662155 last_rate 80.612206 ext_p [29.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448507532465377 d_rate 0.049949646 ext_p 28.666565 off -1 modal 1
+rdtsc 2448507710470098 tail 410317 tput 404 modal 1 rpc [28.666565]
+rdtsc 2448508310488305 tail 408038 tput 485 modal 1 rpc [28.666565]
+rdtsc 2448508910512824 tail 413892 tput 566 modal 0 rpc [28.666565]
+rdtsc 2448509510513541 tail 409188 tput 566 modal 0 rpc [28.666565]
+rdtsc 2448510110521521 tail 410918 tput 566 modal 0 rpc [28.666565]
+rdtsc 2448510710523741 tail 411960 tput 566 modal 0 rpc [28.666565]
+TRACE:pushback_ours: rdtsc 2448511103075115 last_rdtsc 2448507532465377 recvd 10440000 last_recvd 10320000 rate 80.65849 last_rate 80.662155 ext_p [28.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448511103075115 d_rate -0.0036621094 ext_p 29.666565 off 1 modal 0
+rdtsc 2448511310545626 tail 405520 tput 566 modal 0 rpc [29.666565]
+rdtsc 2448511910568720 tail 418111 tput 566 modal 0 rpc [29.666565]
+TRACE:pushback_ours: rdtsc 2448512295275964 last_rdtsc 2448511103075115 recvd 10480000 last_recvd 10440000 rate 80.523346 last_rate 80.65849 ext_p [29.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448512295275964 d_rate -0.1351471 ext_p 28.666565 off -1 modal 0
+rdtsc 2448512510581476 tail 407047 tput 566 modal 0 rpc [28.666565]
+rdtsc 2448513110605428 tail 410779 tput 566 modal 0 rpc [28.666565]
+rdtsc 2448513710622891 tail 409813 tput 566 modal 1 rpc [28.666565]
+rdtsc 2448514310634945 tail 415036 tput 566 modal 1 rpc [28.666565]
+rdtsc 2448514910643828 tail 403965 tput 646 modal 1 rpc [28.666565]
+rdtsc 2448515510663085 tail 412865 tput 646 modal 1 rpc [28.666565]
+TRACE:pushback_ours: rdtsc 2448515868213252 last_rdtsc 2448512295275964 recvd 10600000 last_recvd 10480000 rate 80.60595 last_rate 80.523346 ext_p [28.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448515868213252 d_rate 0.082603455 ext_p 27.666565 off -1 modal 1
+rdtsc 2448516110673441 tail 413106 tput 646 modal 1 rpc [27.666565]
+rdtsc 2448516710677125 tail 414362 tput 646 modal 1 rpc [27.666565]
+TRACE:pushback_ours: rdtsc 2448517058822340 last_rdtsc 2448515868213252 recvd 10640000 last_recvd 10600000 rate 80.631 last_rate 80.60595 ext_p [27.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448517058822340 d_rate 0.025047302 ext_p 26.666565 off -1 modal 1
+rdtsc 2448517310677290 tail 414137 tput 565 modal 1 rpc [26.666565]
+rdtsc 2448517910691900 tail 422944 tput 565 modal 1 rpc [26.666565]
+rdtsc 2448518510697375 tail 419960 tput 565 modal 0 rpc [26.666565]
+rdtsc 2448519110701713 tail 404895 tput 565 modal 0 rpc [26.666565]
+rdtsc 2448519710723658 tail 408805 tput 565 modal 0 rpc [26.666565]
+rdtsc 2448520310735010 tail 412384 tput 565 modal 0 rpc [26.666565]
+rdtsc 2448520910739498 tail 415893 tput 565 modal 0 rpc [26.666565]
+rdtsc 2448521510748090 tail 422070 tput 565 modal 0 rpc [26.666565]
+TRACE:pushback_ours: rdtsc 2448521823033120 last_rdtsc 2448517058822340 recvd 10800000 last_recvd 10640000 rate 80.60097 last_rate 80.631 ext_p [26.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448521823033120 d_rate -0.030029297 ext_p 27.666565 off 1 modal 0
+rdtsc 2448522110766588 tail 409678 tput 565 modal 0 rpc [27.666565]
+rdtsc 2448522711044820 tail 404236 tput 565 modal 0 rpc [27.666565]
+rdtsc 2448523311055008 tail 691578 tput 485 modal 1 rpc [27.666565]
+rdtsc 2448523911058965 tail 711695 tput 485 modal 1 rpc [27.666565]
+rdtsc 2448524511060207 tail 484369 tput 566 modal 1 rpc [27.666565]
+rdtsc 2448525111062910 tail 423781 tput 647 modal 1 rpc [27.666565]
+rdtsc 2448525711088125 tail 419860 tput 647 modal 1 rpc [27.666565]
+rdtsc 2448526311098469 tail 407043 tput 647 modal 1 rpc [27.666565]
+rdtsc 2448526911115194 tail 413781 tput 646 modal 1 rpc [27.666565]
+rdtsc 2448527511131643 tail 407822 tput 646 modal 1 rpc [27.666565]
+TRACE:pushback_ours: rdtsc 2448527777423772 last_rdtsc 2448521823033120 recvd 11000000 last_recvd 10800000 rate 80.612785 last_rate 80.60097 ext_p [27.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448527777423772 d_rate 0.011817932 ext_p 28.666565 off 1 modal 1
+TRACE:pushback_ours: rdtsc 2448527777509200 last_rdtsc 2448527777423772 recvd 11000000 last_recvd 11000000 rate 0 last_rate 80.612785 ext_p [28.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448527777509200 d_rate -80.612785 ext_p 23.666565 off -5 modal 1
+rdtsc 2448528111131970 tail 416017 tput 566 modal 0 rpc [23.666565]
+rdtsc 2448528711166395 tail 409039 tput 566 modal 0 rpc [23.666565]
+rdtsc 2448529311172893 tail 404424 tput 566 modal 0 rpc [23.666565]
+rdtsc 2448529911193344 tail 411315 tput 485 modal 0 rpc [23.666565]
+TRACE:pushback_ours: rdtsc 2448530160772284 last_rdtsc 2448527777509200 recvd 11080000 last_recvd 11000000 rate 80.56182 last_rate 0 ext_p [23.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448530160772284 d_rate 80.56182 ext_p 18.666565 off -5 modal 0
+TRACE:pushback_ours: rdtsc 2448530160839616 last_rdtsc 2448530160772284 recvd 11080000 last_recvd 11080000 rate 0 last_rate 80.56182 ext_p [18.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448530160839616 d_rate -80.56182 ext_p 23.666565 off 5 modal 0
+TRACE:pushback_ours: rdtsc 2448530160915099 last_rdtsc 2448530160839616 recvd 11080000 last_recvd 11080000 rate 0 last_rate 0 ext_p [23.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448530160915099 d_rate 0 ext_p 22.666565 off -1 modal 0
+rdtsc 2448530511214752 tail 411915 tput 485 modal 0 rpc [22.666565]
+rdtsc 2448531111216645 tail 417184 tput 566 modal 0 rpc [22.666565]
+rdtsc 2448531711228684 tail 411523 tput 566 modal 0 rpc [22.666565]
+rdtsc 2448532311248382 tail 414972 tput 566 modal 0 rpc [22.666565]
+rdtsc 2448532911268701 tail 412301 tput 566 modal 1 rpc [22.666565]
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+rdtsc 2448533511287985 tail 417065 tput 566 modal 1 rpc [22.666565]
+TRACE:pushback_ours: rdtsc 2448533735011566 last_rdtsc 2448530160915099 recvd 11200000 last_recvd 11080000 rate 80.5798 last_rate 0 ext_p [22.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448533735011566 d_rate 80.5798 ext_p 17.666565 off -5 modal 1
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+rdtsc 2448534111294657 tail 412028 tput 646 modal 1 rpc [17.666565]
+INFO:splinter::dispatch: Sent many requests...
+rdtsc 2448534711311874 tail 409175 tput 646 modal 1 rpc [17.666565]
+rdtsc 2448535311315741 tail 419199 tput 646 modal 1 rpc [17.666565]
+rdtsc 2448535911327057 tail 412567 tput 565 modal 1 rpc [17.666565]
+TRACE:pushback_ours: rdtsc 2448536119107294 last_rdtsc 2448533735011566 recvd 11280000 last_recvd 11200000 rate 80.533676 last_rate 80.5798 ext_p [17.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448536119107294 d_rate -0.04612732 ext_p 18.666565 off 1 modal 1
+rdtsc 2448536511340119 tail 404670 tput 566 modal 1 rpc [18.666565]
+rdtsc 2448537111344133 tail 411590 tput 566 modal 1 rpc [18.666565]
+rdtsc 2448537711356670 tail 415119 tput 565 modal 0 rpc [18.666565]
+rdtsc 2448538311369207 tail 411434 tput 565 modal 0 rpc [18.666565]
+rdtsc 2448538911382047 tail 418389 tput 565 modal 0 rpc [18.666565]
+rdtsc 2448539511400827 tail 413238 tput 565 modal 0 rpc [18.666565]
+rdtsc 2448540111417594 tail 407452 tput 565 modal 0 rpc [18.666565]
+rdtsc 2448540711421680 tail 407146 tput 565 modal 0 rpc [18.666565]
+rdtsc 2448541311427872 tail 407323 tput 565 modal 0 rpc [18.666565]
+rdtsc 2448541911451614 tail 418654 tput 646 modal 0 rpc [18.666565]
+rdtsc 2448542511466938 tail 404916 tput 646 modal 1 rpc [18.666565]
+rdtsc 2448543111489303 tail 415187 tput 646 modal 1 rpc [18.666565]
+TRACE:pushback_ours: rdtsc 2448543271248561 last_rdtsc 2448536119107294 recvd 11520000 last_recvd 11280000 rate 80.53532 last_rate 80.533676 ext_p [18.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448543271248561 d_rate 0.0016403198 ext_p 19.666565 off 1 modal 1
+rdtsc 2448543711500580 tail 414288 tput 566 modal 1 rpc [19.666565]
+rdtsc 2448544311529485 tail 416604 tput 566 modal 1 rpc [19.666565]
+rdtsc 2448544911532506 tail 410902 tput 647 modal 1 rpc [19.666565]
+rdtsc 2448545511534948 tail 407794 tput 647 modal 1 rpc [19.666565]
+rdtsc 2448546111542811 tail 407061 tput 647 modal 1 rpc [19.666565]
+rdtsc 2448546711561579 tail 417339 tput 647 modal 1 rpc [19.666565]
+TRACE:pushback_ours: rdtsc 2448546845984145 last_rdtsc 2448543271248561 recvd 11640000 last_recvd 11520000 rate 80.56539 last_rate 80.53532 ext_p [19.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448546845984145 d_rate 0.030075073 ext_p 20.666565 off 1 modal 1
+TRACE:pushback_ours: rdtsc 2448546846051045 last_rdtsc 2448546845984145 recvd 11640000 last_recvd 11640000 rate 0 last_rate 80.56539 ext_p [20.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448546846051045 d_rate -80.56539 ext_p 15.666565 off -5 modal 1
+TRACE:pushback_ours: rdtsc 2448546846127104 last_rdtsc 2448546846051045 recvd 11640000 last_recvd 11640000 rate 0 last_rate 0 ext_p [15.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448546846127104 d_rate 0 ext_p 14.666565 off -1 modal 1
+TRACE:pushback_ours: rdtsc 2448546846200139 last_rdtsc 2448546846127104 recvd 11640000 last_recvd 11640000 rate 0 last_rate 0 ext_p [14.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448546846200139 d_rate 0 ext_p 13.666565 off -1 modal 1
+rdtsc 2448547311591312 tail 416281 tput 567 modal 0 rpc [13.666565]
+rdtsc 2448547911611844 tail 406186 tput 567 modal 0 rpc [13.666565]
+rdtsc 2448548511614280 tail 411502 tput 567 modal 0 rpc [13.666565]
+rdtsc 2448549111634686 tail 415467 tput 567 modal 0 rpc [13.666565]
+TRACE:pushback_ours: rdtsc 2448549231505824 last_rdtsc 2448546846200139 recvd 11720000 last_recvd 11640000 rate 80.49283 last_rate 0 ext_p [13.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448549231505824 d_rate 80.49283 ext_p 8.666565 off -5 modal 0
+rdtsc 2448549711639546 tail 409228 tput 647 modal 0 rpc [8.666565]
+rdtsc 2448550311640680 tail 412228 tput 647 modal 0 rpc [8.666565]
+TRACE:pushback_ours: rdtsc 2448550423648194 last_rdtsc 2448549231505824 recvd 11760000 last_recvd 11720000 rate 80.5273 last_rate 80.49283 ext_p [8.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448550423648194 d_rate 0.034469604 ext_p 7.666565 off -1 modal 0
+rdtsc 2448550911661071 tail 407106 tput 647 modal 0 rpc [7.666565]
+rdtsc 2448551511686253 tail 409000 tput 647 modal 0 rpc [7.666565]
+rdtsc 2448552111703746 tail 409439 tput 566 modal 1 rpc [7.666565]
+rdtsc 2448552711708759 tail 413145 tput 566 modal 1 rpc [7.666565]
+TRACE:pushback_ours: rdtsc 2448552809275344 last_rdtsc 2448550423648194 recvd 11840000 last_recvd 11760000 rate 80.48198 last_rate 80.5273 ext_p [7.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448552809275344 d_rate -0.045318604 ext_p 8.666565 off 1 modal 1
+TRACE:pushback_ours: rdtsc 2448552809342133 last_rdtsc 2448552809275344 recvd 11840000 last_recvd 11840000 rate 0 last_rate 80.48198 ext_p [8.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448552809342133 d_rate -80.48198 ext_p 3.666565 off -5 modal 1
+TRACE:pushback_ours: rdtsc 2448552809417217 last_rdtsc 2448552809342133 recvd 11840000 last_recvd 11840000 rate 0 last_rate 0 ext_p [3.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448552809417217 d_rate 0 ext_p 2.666565 off -1 modal 1
+TRACE:pushback_ours: rdtsc 2448552809490738 last_rdtsc 2448552809417217 recvd 11840000 last_recvd 11840000 rate 0 last_rate 0 ext_p [2.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448552809490738 d_rate 0 ext_p 1.666565 off -1 modal 1
+rdtsc 2448553311717354 tail 412430 tput 486 modal 1 rpc [1.666565]
+rdtsc 2448553911729957 tail 409084 tput 486 modal 1 rpc [1.666565]
+rdtsc 2448554511743565 tail 406543 tput 486 modal 1 rpc [1.666565]
+rdtsc 2448555111752727 tail 417298 tput 486 modal 1 rpc [1.666565]
+rdtsc 2448555711771672 tail 412721 tput 486 modal 1 rpc [1.666565]
+rdtsc 2448556311780576 tail 410075 tput 486 modal 1 rpc [1.666565]
+rdtsc 2448556911804753 tail 414842 tput 486 modal 0 rpc [1.666565]
+rdtsc 2448557511825744 tail 423856 tput 486 modal 0 rpc [1.666565]
+rdtsc 2448558111828504 tail 406543 tput 486 modal 0 rpc [1.666565]
+rdtsc 2448558711833919 tail 405497 tput 404 modal 0 rpc [1.666565]
+TRACE:pushback_ours: rdtsc 2448558776657655 last_rdtsc 2448552809490738 recvd 12040000 last_recvd 11840000 rate 80.440186 last_rate 0 ext_p [1.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448558776657655 d_rate 80.440186 ext_p 6.666565 off -5 modal 0
+TRACE:pushback_ours: rdtsc 2448558776725743 last_rdtsc 2448558776657655 recvd 12040000 last_recvd 12040000 rate 0 last_rate 80.440186 ext_p [6.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448558776725743 d_rate -80.440186 ext_p 1.666565 off -5 modal 0
+rdtsc 2448559311854736 tail 416060 tput 404 modal 0 rpc [1.666565]
+rdtsc 2448559911873375 tail 412843 tput 404 modal 0 rpc [1.666565]
+rdtsc 2448560511895623 tail 417391 tput 485 modal 0 rpc [1.666565]
+rdtsc 2448561111909813 tail 412513 tput 405 modal 0 rpc [1.666565]
+rdtsc 2448561711937329 tail 403331 tput 405 modal 1 rpc [1.666565]
+rdtsc 2448562311947394 tail 410901 tput 486 modal 1 rpc [1.666565]
+rdtsc 2448562911961626 tail 409752 tput 486 modal 1 rpc [1.666565]
+rdtsc 2448563511987342 tail 408808 tput 485 modal 1 rpc [1.666565]
+TRACE:pushback_ours: rdtsc 2448563552497419 last_rdtsc 2448558776725743 recvd 12200000 last_recvd 12040000 rate 80.40585 last_rate 0 ext_p [1.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448563552497419 d_rate 80.40585 ext_p 6.666565 off -5 modal 1
+rdtsc 2448564112011762 tail 409269 tput 565 modal 1 rpc [6.666565]
+rdtsc 2448564712024680 tail 415404 tput 645 modal 1 rpc [6.666565]
+TRACE:pushback_ours: rdtsc 2448564745894815 last_rdtsc 2448563552497419 recvd 12240000 last_recvd 12200000 rate 80.44261 last_rate 80.40585 ext_p [6.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448564745894815 d_rate 0.036758423 ext_p 7.666565 off 1 modal 1
+rdtsc 2448565312027770 tail 410763 tput 645 modal 1 rpc [7.666565]
+rdtsc 2448565912039797 tail 399878 tput 645 modal 1 rpc [7.666565]
+rdtsc 2448566512049838 tail 402211 tput 645 modal 0 rpc [7.666565]
+rdtsc 2448567112062687 tail 415255 tput 645 modal 0 rpc [7.666565]
+rdtsc 2448567712066791 tail 410640 tput 645 modal 0 rpc [7.666565]
+rdtsc 2448568312075410 tail 414655 tput 566 modal 0 rpc [7.666565]
+rdtsc 2448568912094241 tail 409297 tput 566 modal 0 rpc [7.666565]
+rdtsc 2448569512124223 tail 407182 tput 566 modal 0 rpc [7.666565]
+rdtsc 2448570112153677 tail 408182 tput 566 modal 0 rpc [7.666565]
+rdtsc 2448570712165224 tail 415051 tput 647 modal 0 rpc [7.666565]
+rdtsc 2448571312170960 tail 414198 tput 566 modal 1 rpc [7.666565]
+rdtsc 2448571912181688 tail 418120 tput 566 modal 1 rpc [7.666565]
+rdtsc 2448572512183317 tail 410035 tput 566 modal 1 rpc [7.666565]
+rdtsc 2448573112206813 tail 414491 tput 566 modal 1 rpc [7.666565]
+rdtsc 2448573712226253 tail 414625 tput 566 modal 1 rpc [7.666565]
+rdtsc 2448574312251024 tail 413041 tput 485 modal 1 rpc [7.666565]
+rdtsc 2448574912256997 tail 523906 tput 485 modal 1 rpc [7.666565]
+rdtsc 2448575512276704 tail 751557 tput 485 modal 1 rpc [7.666565]
+rdtsc 2448576112296672 tail 666886 tput 566 modal 0 rpc [7.666565]
+rdtsc 2448576712300971 tail 404026 tput 647 modal 0 rpc [7.666565]
+rdtsc 2448577312318245 tail 417981 tput 647 modal 0 rpc [7.666565]
+rdtsc 2448577912329591 tail 413405 tput 647 modal 0 rpc [7.666565]
+rdtsc 2448578512350162 tail 417769 tput 647 modal 0 rpc [7.666565]
+rdtsc 2448579112372794 tail 421111 tput 647 modal 0 rpc [7.666565]
+rdtsc 2448579712379739 tail 418030 tput 647 modal 0 rpc [7.666565]
+rdtsc 2448580312380117 tail 416034 tput 647 modal 0 rpc [7.666565]
+rdtsc 2448580912390506 tail 414610 tput 647 modal 1 rpc [7.666565]
+TRACE:pushback_ours: rdtsc 2448581443581093 last_rdtsc 2448564745894815 recvd 12800000 last_recvd 12240000 rate 80.4902 last_rate 80.44261 ext_p [7.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448581443581093 d_rate 0.047584534 ext_p 8.666565 off 1 modal 1
+rdtsc 2448581512405278 tail 415507 tput 647 modal 1 rpc [8.666565]
+rdtsc 2448582112415175 tail 421212 tput 647 modal 1 rpc [8.666565]
+TRACE:pushback_ours: rdtsc 2448582636279501 last_rdtsc 2448581443581093 recvd 12840000 last_recvd 12800000 rate 80.48975 last_rate 80.4902 ext_p [8.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448582636279501 d_rate -0.00044250488 ext_p 7.666565 off -1 modal 1
+rdtsc 2448582712426770 tail 412068 tput 647 modal 1 rpc [7.666565]
+rdtsc 2448583312440597 tail 418015 tput 647 modal 1 rpc [7.666565]
+rdtsc 2448583912450725 tail 421282 tput 647 modal 1 rpc [7.666565]
+rdtsc 2448584512465461 tail 417466 tput 566 modal 1 rpc [7.666565]
+TRACE:pushback_ours: rdtsc 2448585021615195 last_rdtsc 2448582636279501 recvd 12920000 last_recvd 12840000 rate 80.49181 last_rate 80.48975 ext_p [7.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448585021615195 d_rate 0.0020599365 ext_p 6.666565 off -1 modal 1
+rdtsc 2448585112478352 tail 416842 tput 566 modal 1 rpc [6.666565]
+rdtsc 2448585712500762 tail 409255 tput 566 modal 0 rpc [6.666565]
+TRACE:pushback_ours: rdtsc 2448586214851287 last_rdtsc 2448585021615195 recvd 12960000 last_recvd 12920000 rate 80.45348 last_rate 80.49181 ext_p [6.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448586214851287 d_rate -0.038330078 ext_p 7.666565 off 1 modal 0
+rdtsc 2448586312508460 tail 415134 tput 566 modal 0 rpc [7.666565]
+rdtsc 2448586912513503 tail 415072 tput 566 modal 0 rpc [7.666565]
+rdtsc 2448587512527723 tail 407187 tput 566 modal 0 rpc [7.666565]
+rdtsc 2448588112533714 tail 414093 tput 566 modal 0 rpc [7.666565]
+rdtsc 2448588712558362 tail 411397 tput 565 modal 0 rpc [7.666565]
+rdtsc 2448589312559052 tail 416294 tput 565 modal 0 rpc [7.666565]
+TRACE:pushback_ours: rdtsc 2448589793706714 last_rdtsc 2448586214851287 recvd 13080000 last_recvd 12960000 rate 80.47265 last_rate 80.45348 ext_p [7.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448589793706714 d_rate 0.019165039 ext_p 8.666565 off 1 modal 0
+TRACE:pushback_ours: rdtsc 2448589793776260 last_rdtsc 2448589793706714 recvd 13080000 last_recvd 13080000 rate 0 last_rate 80.47265 ext_p [8.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448589793776260 d_rate -80.47265 ext_p 3.666565 off -5 modal 0
+rdtsc 2448589912570863 tail 410878 tput 486 modal 0 rpc [3.666565]
+rdtsc 2448590512575645 tail 413935 tput 486 modal 1 rpc [3.666565]
+rdtsc 2448591112592604 tail 415038 tput 486 modal 1 rpc [3.666565]
+rdtsc 2448591712592772 tail 417297 tput 486 modal 1 rpc [3.666565]
+rdtsc 2448592312599966 tail 413952 tput 486 modal 1 rpc [3.666565]
+rdtsc 2448592912607742 tail 411657 tput 486 modal 1 rpc [3.666565]
+rdtsc 2448593512616364 tail 416466 tput 486 modal 1 rpc [3.666565]
+rdtsc 2448594112635165 tail 416270 tput 485 modal 1 rpc [3.666565]
+rdtsc 2448594712658178 tail 413902 tput 485 modal 1 rpc [3.666565]
+rdtsc 2448595312658424 tail 420184 tput 486 modal 0 rpc [3.666565]
+rdtsc 2448595912683816 tail 417484 tput 486 modal 0 rpc [3.666565]
+rdtsc 2448596512691034 tail 417436 tput 486 modal 0 rpc [3.666565]
+TRACE:pushback_ours: rdtsc 2448596953579125 last_rdtsc 2448589793776260 recvd 13320000 last_recvd 13080000 rate 80.449135 last_rate 0 ext_p [3.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448596953579125 d_rate 80.449135 ext_p 8.666565 off -5 modal 0
+rdtsc 2448597112708167 tail 417415 tput 566 modal 0 rpc [8.666565]
+rdtsc 2448597712720632 tail 415168 tput 566 modal 0 rpc [8.666565]
+TRACE:pushback_ours: rdtsc 2448598145800452 last_rdtsc 2448596953579125 recvd 13360000 last_recvd 13320000 rate 80.521965 last_rate 80.449135 ext_p [8.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448598145800452 d_rate 0.0728302 ext_p 9.666565 off 1 modal 0
+rdtsc 2448598312745166 tail 410278 tput 566 modal 0 rpc [9.666565]
+rdtsc 2448598912755486 tail 411859 tput 566 modal 0 rpc [9.666565]
+rdtsc 2448599512761969 tail 415659 tput 566 modal 0 rpc [9.666565]
+rdtsc 2448600112764027 tail 413201 tput 566 modal 1 rpc [9.666565]
+rdtsc 2448600712764753 tail 419476 tput 566 modal 1 rpc [9.666565]
+rdtsc 2448601312781307 tail 425086 tput 566 modal 1 rpc [9.666565]
+rdtsc 2448601912798884 tail 407634 tput 566 modal 1 rpc [9.666565]
+rdtsc 2448602512826700 tail 415470 tput 647 modal 1 rpc [9.666565]
+rdtsc 2448603112835778 tail 412596 tput 647 modal 1 rpc [9.666565]
+rdtsc 2448603712845504 tail 406946 tput 647 modal 1 rpc [9.666565]
+rdtsc 2448604312847856 tail 417484 tput 647 modal 1 rpc [9.666565]
+rdtsc 2448604912864539 tail 415663 tput 646 modal 0 rpc [9.666565]
+rdtsc 2448605512864881 tail 411342 tput 565 modal 0 rpc [9.666565]
+rdtsc 2448606112886331 tail 408761 tput 565 modal 0 rpc [9.666565]
+TRACE:pushback_ours: rdtsc 2448606493566753 last_rdtsc 2448598145800452 recvd 13640000 last_recvd 13360000 rate 80.50057 last_rate 80.521965 ext_p [9.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448606493566753 d_rate -0.021392822 ext_p 8.666565 off -1 modal 0
+rdtsc 2448606712897191 tail 409611 tput 565 modal 0 rpc [8.666565]
+rdtsc 2448607312918698 tail 408711 tput 565 modal 0 rpc [8.666565]
+rdtsc 2448607912932606 tail 413746 tput 646 modal 0 rpc [8.666565]
+rdtsc 2448608512944216 tail 412545 tput 646 modal 0 rpc [8.666565]
+rdtsc 2448609112947492 tail 412613 tput 646 modal 0 rpc [8.666565]
+rdtsc 2448609712965054 tail 409458 tput 646 modal 1 rpc [8.666565]
+rdtsc 2448610312985376 tail 414982 tput 646 modal 1 rpc [8.666565]
+rdtsc 2448610912999176 tail 413881 tput 646 modal 1 rpc [8.666565]
+rdtsc 2448611513018199 tail 414935 tput 565 modal 1 rpc [8.666565]
+rdtsc 2448612113021352 tail 416057 tput 565 modal 1 rpc [8.666565]
+TRACE:pushback_ours: rdtsc 2448612459448254 last_rdtsc 2448606493566753 recvd 13840000 last_recvd 13640000 rate 80.45752 last_rate 80.50057 ext_p [8.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448612459448254 d_rate -0.043052673 ext_p 9.666565 off 1 modal 1
+rdtsc 2448612713029179 tail 415471 tput 646 modal 1 rpc [9.666565]
+rdtsc 2448613313032920 tail 403356 tput 646 modal 1 rpc [9.666565]
+rdtsc 2448613913038683 tail 405324 tput 565 modal 1 rpc [9.666565]
+rdtsc 2448614513045229 tail 415915 tput 565 modal 0 rpc [9.666565]
+rdtsc 2448615113052951 tail 411187 tput 646 modal 0 rpc [9.666565]
+rdtsc 2448615713075424 tail 408032 tput 646 modal 0 rpc [9.666565]
+TRACE:pushback_ours: rdtsc 2448616038149103 last_rdtsc 2448612459448254 recvd 13960000 last_recvd 13840000 rate 80.47613 last_rate 80.45752 ext_p [9.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448616038149103 d_rate 0.018608093 ext_p 10.666565 off 1 modal 0
+TRACE:pushback_ours: rdtsc 2448616038222990 last_rdtsc 2448616038149103 recvd 13960000 last_recvd 13960000 rate 0 last_rate 80.47613 ext_p [10.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448616038222990 d_rate -80.47613 ext_p 5.666565 off -5 modal 0
+rdtsc 2448616313078010 tail 416995 tput 566 modal 0 rpc [5.666565]
+rdtsc 2448616913092494 tail 412651 tput 566 modal 0 rpc [5.666565]
+rdtsc 2448617513100651 tail 405228 tput 566 modal 0 rpc [5.666565]
+rdtsc 2448618113109390 tail 423523 tput 566 modal 0 rpc [5.666565]
+TRACE:pushback_ours: rdtsc 2448618424298424 last_rdtsc 2448616038222990 recvd 14040000 last_recvd 13960000 rate 80.466866 last_rate 0 ext_p [5.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448618424298424 d_rate 80.466866 ext_p 0.66656494 off -5 modal 0
+TRACE:pushback_ours: rdtsc 2448618424364676 last_rdtsc 2448618424298424 recvd 14040000 last_recvd 14040000 rate 0 last_rate 80.466866 ext_p [0.66656494] modal 0
+TRACE:pushback_ours: rdtsc 2448618424364676 d_rate -80.466866 ext_p 5.666565 off 5 modal 0
+rdtsc 2448618713117079 tail 412122 tput 566 modal 0 rpc [5.666565]
+rdtsc 2448619313120325 tail 404835 tput 566 modal 1 rpc [5.666565]
+TRACE:pushback_ours: rdtsc 2448619618281153 last_rdtsc 2448618424364676 recvd 14080000 last_recvd 14040000 rate 80.40764 last_rate 0 ext_p [5.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448619618281153 d_rate 80.40764 ext_p 10.666565 off 5 modal 1
+rdtsc 2448619913141628 tail 409684 tput 646 modal 1 rpc [10.666565]
+rdtsc 2448620513159775 tail 417753 tput 646 modal 1 rpc [10.666565]
+rdtsc 2448621113177547 tail 408970 tput 646 modal 1 rpc [10.666565]
+rdtsc 2448621713209551 tail 408826 tput 646 modal 1 rpc [10.666565]
+rdtsc 2448622313221140 tail 425087 tput 646 modal 1 rpc [10.666565]
+rdtsc 2448622913221314 tail 418353 tput 647 modal 1 rpc [10.666565]
+rdtsc 2448623513236209 tail 420474 tput 647 modal 1 rpc [10.666565]
+rdtsc 2448624113250312 tail 415641 tput 646 modal 0 rpc [10.666565]
+TRACE:pushback_ours: rdtsc 2448624388332333 last_rdtsc 2448619618281153 recvd 14240000 last_recvd 14080000 rate 80.50228 last_rate 80.40764 ext_p [10.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448624388332333 d_rate 0.09464264 ext_p 11.666565 off 1 modal 0
+rdtsc 2448624713260764 tail 412145 tput 646 modal 0 rpc [11.666565]
+rdtsc 2448625313263566 tail 417486 tput 647 modal 0 rpc [11.666565]
+TRACE:pushback_ours: rdtsc 2448625581050607 last_rdtsc 2448624388332333 recvd 14280000 last_recvd 14240000 rate 80.48841 last_rate 80.50228 ext_p [11.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448625581050607 d_rate -0.013870239 ext_p 10.666565 off -1 modal 0
+TRACE:pushback_ours: rdtsc 2448625581116298 last_rdtsc 2448625581050607 recvd 14280000 last_recvd 14280000 rate 0 last_rate 80.48841 ext_p [10.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448625581116298 d_rate -80.48841 ext_p 15.666565 off 5 modal 0
+rdtsc 2448625913288556 tail 412015 tput 567 modal 0 rpc [15.666565]
+rdtsc 2448626513311677 tail 414987 tput 566 modal 0 rpc [15.666565]
+TRACE:pushback_ours: rdtsc 2448626773239591 last_rdtsc 2448625581116298 recvd 14320000 last_recvd 14280000 rate 80.52859 last_rate 0 ext_p [15.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448626773239591 d_rate 80.52859 ext_p 20.666565 off 5 modal 0
+TRACE:pushback_ours: rdtsc 2448626773306059 last_rdtsc 2448626773239591 recvd 14320000 last_recvd 14320000 rate 0 last_rate 80.52859 ext_p [20.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448626773306059 d_rate -80.52859 ext_p 15.666565 off -5 modal 0
+rdtsc 2448627113312574 tail 409771 tput 566 modal 0 rpc [15.666565]
+rdtsc 2448627713328741 tail 413299 tput 566 modal 0 rpc [15.666565]
+rdtsc 2448628313330181 tail 410430 tput 566 modal 0 rpc [15.666565]
+rdtsc 2448628913330826 tail 419442 tput 567 modal 1 rpc [15.666565]
+TRACE:pushback_ours: rdtsc 2448629156742618 last_rdtsc 2448626773306059 recvd 14400000 last_recvd 14320000 rate 80.555954 last_rate 0 ext_p [15.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448629156742618 d_rate 80.555954 ext_p 10.666565 off -5 modal 1
+rdtsc 2448629513332344 tail 413506 tput 647 modal 1 rpc [10.666565]
+rdtsc 2448630113349714 tail 405425 tput 647 modal 1 rpc [10.666565]
+rdtsc 2448630713379012 tail 417936 tput 646 modal 1 rpc [10.666565]
+rdtsc 2448631313395281 tail 409651 tput 646 modal 1 rpc [10.666565]
+TRACE:pushback_ours: rdtsc 2448631542321960 last_rdtsc 2448629156742618 recvd 14480000 last_recvd 14400000 rate 80.4836 last_rate 80.555954 ext_p [10.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448631542321960 d_rate -0.07235718 ext_p 11.666565 off 1 modal 1
+rdtsc 2448631913397975 tail 416829 tput 646 modal 1 rpc [11.666565]
+rdtsc 2448632513399712 tail 409719 tput 646 modal 1 rpc [11.666565]
+rdtsc 2448633113419032 tail 410525 tput 646 modal 1 rpc [11.666565]
+rdtsc 2448633713445579 tail 408715 tput 646 modal 0 rpc [11.666565]
+rdtsc 2448634313460030 tail 413302 tput 647 modal 0 rpc [11.666565]
+rdtsc 2448634913482677 tail 413803 tput 646 modal 0 rpc [11.666565]
+rdtsc 2448635513485488 tail 411831 tput 646 modal 0 rpc [11.666565]
+rdtsc 2448636113514315 tail 407731 tput 646 modal 0 rpc [11.666565]
+rdtsc 2448636713548350 tail 416787 tput 646 modal 0 rpc [11.666565]
+rdtsc 2448637313552106 tail 412904 tput 646 modal 0 rpc [11.666565]
+TRACE:pushback_ours: rdtsc 2448637506686928 last_rdtsc 2448631542321960 recvd 14680000 last_recvd 14480000 rate 80.477974 last_rate 80.4836 ext_p [11.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448637506686928 d_rate -0.005622864 ext_p 10.666565 off -1 modal 0
+rdtsc 2448637913563824 tail 409184 tput 646 modal 0 rpc [10.666565]
+rdtsc 2448638513578770 tail 410513 tput 566 modal 1 rpc [10.666565]
+TRACE:pushback_ours: rdtsc 2448638700268146 last_rdtsc 2448637506686928 recvd 14720000 last_recvd 14680000 rate 80.43022 last_rate 80.477974 ext_p [10.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448638700268146 d_rate -0.04775238 ext_p 11.666565 off 1 modal 1
+rdtsc 2448639113590455 tail 415899 tput 566 modal 1 rpc [11.666565]
+rdtsc 2448639713612286 tail 407667 tput 566 modal 1 rpc [11.666565]
+rdtsc 2448640313622414 tail 404532 tput 485 modal 1 rpc [11.666565]
+rdtsc 2448640913632653 tail 411750 tput 485 modal 1 rpc [11.666565]
+rdtsc 2448641513634810 tail 409589 tput 566 modal 1 rpc [11.666565]
+rdtsc 2448642113649588 tail 413778 tput 566 modal 1 rpc [11.666565]
+TRACE:pushback_ours: rdtsc 2448642277855644 last_rdtsc 2448638700268146 recvd 14840000 last_recvd 14720000 rate 80.501175 last_rate 80.43022 ext_p [11.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448642277855644 d_rate 0.07095337 ext_p 12.666565 off 1 modal 1
+rdtsc 2448642713669820 tail 413446 tput 566 modal 1 rpc [12.666565]
+rdtsc 2448643313682324 tail 414232 tput 647 modal 0 rpc [12.666565]
+rdtsc 2448643913690718 tail 407399 tput 647 modal 0 rpc [12.666565]
+rdtsc 2448644513705220 tail 415712 tput 647 modal 0 rpc [12.666565]
+rdtsc 2448645113719425 tail 412837 tput 647 modal 0 rpc [12.666565]
+rdtsc 2448645713727186 tail 414331 tput 647 modal 0 rpc [12.666565]
+rdtsc 2448646313752053 tail 409241 tput 647 modal 0 rpc [12.666565]
+rdtsc 2448646913764347 tail 412791 tput 647 modal 0 rpc [12.666565]
+rdtsc 2448647513784120 tail 413503 tput 647 modal 0 rpc [12.666565]
+rdtsc 2448648113805000 tail 408828 tput 647 modal 1 rpc [12.666565]
+rdtsc 2448648713805720 tail 719741 tput 647 modal 1 rpc [12.666565]
+rdtsc 2448649313812071 tail 730051 tput 647 modal 1 rpc [12.666565]
+rdtsc 2448649913844135 tail 496857 tput 566 modal 1 rpc [12.666565]
+rdtsc 2448650513867202 tail 416791 tput 566 modal 1 rpc [12.666565]
+rdtsc 2448651113874804 tail 413779 tput 647 modal 1 rpc [12.666565]
+rdtsc 2448651713878839 tail 416328 tput 566 modal 1 rpc [12.666565]
+rdtsc 2448652313896737 tail 409086 tput 565 modal 1 rpc [12.666565]
+rdtsc 2448652913897298 tail 413346 tput 565 modal 0 rpc [12.666565]
+TRACE:pushback_ours: rdtsc 2448653009204616 last_rdtsc 2448642277855644 recvd 15200000 last_recvd 14840000 rate 80.51178 last_rate 80.501175 ext_p [12.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448653009204616 d_rate 0.010604858 ext_p 13.666565 off 1 modal 0
+TRACE:pushback_ours: rdtsc 2448653009277342 last_rdtsc 2448653009204616 recvd 15200000 last_recvd 15200000 rate 0 last_rate 80.51178 ext_p [13.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448653009277342 d_rate -80.51178 ext_p 8.666565 off -5 modal 0
+TRACE:pushback_ours: rdtsc 2448653009354478 last_rdtsc 2448653009277342 recvd 15200000 last_recvd 15200000 rate 0 last_rate 0 ext_p [8.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448653009354478 d_rate 0 ext_p 7.666565 off -1 modal 0
+rdtsc 2448653513904450 tail 410584 tput 485 modal 0 rpc [7.666565]
+rdtsc 2448654113911095 tail 408925 tput 485 modal 0 rpc [7.666565]
+rdtsc 2448654713912850 tail 411218 tput 485 modal 0 rpc [7.666565]
+rdtsc 2448655313933454 tail 411414 tput 566 modal 0 rpc [7.666565]
+rdtsc 2448655913946765 tail 409450 tput 566 modal 0 rpc [7.666565]
+rdtsc 2448656513971611 tail 415860 tput 566 modal 0 rpc [7.666565]
+rdtsc 2448657114005724 tail 423783 tput 566 modal 0 rpc [7.666565]
+rdtsc 2448657714012399 tail 413158 tput 566 modal 1 rpc [7.666565]
+rdtsc 2448658314024012 tail 420616 tput 566 modal 1 rpc [7.666565]
+rdtsc 2448658914045408 tail 414421 tput 566 modal 1 rpc [7.666565]
+rdtsc 2448659514048768 tail 413783 tput 566 modal 1 rpc [7.666565]
+rdtsc 2448660114049563 tail 415597 tput 566 modal 1 rpc [7.666565]
+TRACE:pushback_ours: rdtsc 2448660167489844 last_rdtsc 2448653009354478 recvd 15440000 last_recvd 15200000 rate 80.46788 last_rate 0 ext_p [7.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448660167489844 d_rate 80.46788 ext_p 2.666565 off -5 modal 1
+rdtsc 2448660714058668 tail 405613 tput 646 modal 1 rpc [2.666565]
+rdtsc 2448661314090405 tail 408035 tput 646 modal 1 rpc [2.666565]
+rdtsc 2448661914114498 tail 409583 tput 646 modal 1 rpc [2.666565]
+rdtsc 2448662514134304 tail 409516 tput 646 modal 0 rpc [2.666565]
+TRACE:pushback_ours: rdtsc 2448662556047745 last_rdtsc 2448660167489844 recvd 15520000 last_recvd 15440000 rate 80.38323 last_rate 80.46788 ext_p [2.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448662556047745 d_rate -0.08464813 ext_p 3.666565 off 1 modal 0
+rdtsc 2448663114134637 tail 408106 tput 646 modal 0 rpc [3.666565]
+rdtsc 2448663714135948 tail 414941 tput 646 modal 0 rpc [3.666565]
+rdtsc 2448664314156972 tail 415706 tput 646 modal 0 rpc [3.666565]
+rdtsc 2448664914161106 tail 416722 tput 646 modal 0 rpc [3.666565]
+rdtsc 2448665514175656 tail 411070 tput 646 modal 0 rpc [3.666565]
+rdtsc 2448666114207291 tail 419904 tput 647 modal 0 rpc [3.666565]
+rdtsc 2448666714218097 tail 413521 tput 647 modal 0 rpc [3.666565]
+rdtsc 2448667314222204 tail 416325 tput 647 modal 1 rpc [3.666565]
+rdtsc 2448667914230193 tail 419803 tput 647 modal 1 rpc [3.666565]
+rdtsc 2448668514230976 tail 407522 tput 646 modal 1 rpc [3.666565]
+TRACE:pushback_ours: rdtsc 2448668521866798 last_rdtsc 2448662556047745 recvd 15720000 last_recvd 15520000 rate 80.45836 last_rate 80.38323 ext_p [3.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448668521866798 d_rate 0.07512665 ext_p 4.666565 off 1 modal 1
+rdtsc 2448669114235902 tail 413221 tput 646 modal 1 rpc [4.666565]
+rdtsc 2448669714258474 tail 414503 tput 646 modal 1 rpc [4.666565]
+rdtsc 2448670314261528 tail 410564 tput 646 modal 1 rpc [4.666565]
+rdtsc 2448670914287028 tail 412054 tput 647 modal 1 rpc [4.666565]
+rdtsc 2448671514299313 tail 414968 tput 647 modal 1 rpc [4.666565]
+rdtsc 2448672114318981 tail 413238 tput 646 modal 0 rpc [4.666565]
+rdtsc 2448672714344517 tail 418205 tput 646 modal 0 rpc [4.666565]
+rdtsc 2448673314351807 tail 409897 tput 647 modal 0 rpc [4.666565]
+rdtsc 2448673914375981 tail 414117 tput 647 modal 0 rpc [4.666565]
+TRACE:pushback_ours: rdtsc 2448674489040285 last_rdtsc 2448668521866798 recvd 15920000 last_recvd 15720000 rate 80.440094 last_rate 80.45836 ext_p [4.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448674489040285 d_rate -0.01826477 ext_p 3.666565 off -1 modal 0
+rdtsc 2448674514395739 tail 413798 tput 647 modal 0 rpc [3.666565]
+rdtsc 2448675114417087 tail 415961 tput 647 modal 0 rpc [3.666565]
+rdtsc 2448675714436860 tail 410833 tput 647 modal 0 rpc [3.666565]
+rdtsc 2448676314451452 tail 405307 tput 647 modal 0 rpc [3.666565]
+rdtsc 2448676914453150 tail 411956 tput 647 modal 1 rpc [3.666565]
+rdtsc 2448677514455724 tail 407424 tput 647 modal 1 rpc [3.666565]
+rdtsc 2448678114469266 tail 405457 tput 646 modal 1 rpc [3.666565]
+rdtsc 2448678714479889 tail 416269 tput 565 modal 1 rpc [3.666565]
+TRACE:pushback_ours: rdtsc 2448679261877259 last_rdtsc 2448674489040285 recvd 16080000 last_recvd 15920000 rate 80.45529 last_rate 80.440094 ext_p [3.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448679261877259 d_rate 0.015197754 ext_p 2.666565 off -1 modal 1
+TRACE:pushback_ours: rdtsc 2448679261945656 last_rdtsc 2448679261877259 recvd 16080000 last_recvd 16080000 rate 0 last_rate 80.45529 ext_p [2.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448679261945656 d_rate -80.45529 ext_p 7.666565 off 5 modal 1
+TRACE:pushback_ours: rdtsc 2448679262024178 last_rdtsc 2448679261945656 recvd 16080000 last_recvd 16080000 rate 0 last_rate 0 ext_p [7.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448679262024178 d_rate 0 ext_p 6.666565 off -1 modal 1
+rdtsc 2448679314494244 tail 409430 tput 485 modal 1 rpc [6.666565]
+rdtsc 2448679914511647 tail 410797 tput 485 modal 1 rpc [6.666565]
+rdtsc 2448680514531021 tail 407646 tput 485 modal 1 rpc [6.666565]
+rdtsc 2448681114552453 tail 408876 tput 485 modal 1 rpc [6.666565]
+rdtsc 2448681714563694 tail 412077 tput 486 modal 0 rpc [6.666565]
+rdtsc 2448682314578088 tail 414296 tput 486 modal 0 rpc [6.666565]
+TRACE:pushback_ours: rdtsc 2448682840508076 last_rdtsc 2448679262024178 recvd 16200000 last_recvd 16080000 rate 80.481 last_rate 0 ext_p [6.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448682840508076 d_rate 80.481 ext_p 1.666565 off -5 modal 0
+TRACE:pushback_ours: rdtsc 2448682840576986 last_rdtsc 2448682840508076 recvd 16200000 last_recvd 16200000 rate 0 last_rate 80.481 ext_p [1.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448682840576986 d_rate -80.481 ext_p 6.666565 off 5 modal 0
+rdtsc 2448682914608238 tail 415626 tput 486 modal 0 rpc [6.666565]
+rdtsc 2448683514612990 tail 413013 tput 567 modal 0 rpc [6.666565]
+TRACE:pushback_ours: rdtsc 2448684034158942 last_rdtsc 2448682840576986 recvd 16240000 last_recvd 16200000 rate 80.43017 last_rate 0 ext_p [6.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448684034158942 d_rate 80.43017 ext_p 11.666565 off 5 modal 0
+rdtsc 2448684114638379 tail 414789 tput 647 modal 0 rpc [11.666565]
+rdtsc 2448684714652173 tail 407038 tput 647 modal 0 rpc [11.666565]
+rdtsc 2448685314667296 tail 408321 tput 647 modal 0 rpc [11.666565]
+rdtsc 2448685914676845 tail 421364 tput 647 modal 0 rpc [11.666565]
+rdtsc 2448686514687819 tail 410131 tput 646 modal 1 rpc [11.666565]
+rdtsc 2448687114701319 tail 415609 tput 646 modal 1 rpc [11.666565]
+rdtsc 2448687714706830 tail 420933 tput 565 modal 1 rpc [11.666565]
+rdtsc 2448688314733266 tail 410729 tput 565 modal 1 rpc [11.666565]
+rdtsc 2448688914754917 tail 416131 tput 646 modal 1 rpc [11.666565]
+rdtsc 2448689514773250 tail 420261 tput 646 modal 1 rpc [11.666565]
+TRACE:pushback_ours: rdtsc 2448689995067355 last_rdtsc 2448684034158942 recvd 16440000 last_recvd 16240000 rate 80.52464 last_rate 80.43017 ext_p [11.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448689995067355 d_rate 0.09447479 ext_p 12.666565 off 1 modal 1
+rdtsc 2448690114795597 tail 411963 tput 646 modal 1 rpc [12.666565]
+rdtsc 2448690714813921 tail 409095 tput 646 modal 1 rpc [12.666565]
+rdtsc 2448691314828993 tail 403959 tput 645 modal 0 rpc [12.666565]
+rdtsc 2448691914846948 tail 406110 tput 645 modal 0 rpc [12.666565]
+rdtsc 2448692514852882 tail 407310 tput 646 modal 0 rpc [12.666565]
+rdtsc 2448693114873087 tail 414705 tput 646 modal 0 rpc [12.666565]
+rdtsc 2448693714876885 tail 412411 tput 647 modal 0 rpc [12.666565]
+rdtsc 2448694314877047 tail 416189 tput 647 modal 0 rpc [12.666565]
+rdtsc 2448694914893949 tail 414053 tput 646 modal 0 rpc [12.666565]
+rdtsc 2448695514914250 tail 419115 tput 646 modal 0 rpc [12.666565]
+rdtsc 2448696114920298 tail 407114 tput 645 modal 1 rpc [12.666565]
+rdtsc 2448696714945141 tail 413497 tput 645 modal 1 rpc [12.666565]
+rdtsc 2448697314960267 tail 406231 tput 645 modal 1 rpc [12.666565]
+rdtsc 2448697914962100 tail 410255 tput 645 modal 1 rpc [12.666565]
+TRACE:pushback_ours: rdtsc 2448698337948957 last_rdtsc 2448689995067355 recvd 16720000 last_recvd 16440000 rate 80.54771 last_rate 80.52464 ext_p [12.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448698337948957 d_rate 0.02306366 ext_p 13.666565 off 1 modal 1
+rdtsc 2448698514975831 tail 417114 tput 645 modal 1 rpc [13.666565]
+rdtsc 2448699114976623 tail 407816 tput 645 modal 1 rpc [13.666565]
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+rdtsc 2448699714981003 tail 412614 tput 645 modal 1 rpc [13.666565]
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+rdtsc 2448700315003074 tail 596141 tput 645 modal 1 rpc [13.666565]
+INFO:splinter::dispatch: Sent many requests...
+TRACE:pushback_ours: rdtsc 2448700721622846 last_rdtsc 2448698337948957 recvd 16800000 last_recvd 16720000 rate 80.547935 last_rate 80.54771 ext_p [13.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448700721622846 d_rate 0.00022888184 ext_p 14.666565 off 1 modal 1
+rdtsc 2448700915012791 tail 761200 tput 645 modal 0 rpc [14.666565]
+INFO:splinter::dispatch: Sent many requests...
+rdtsc 2448701515018626 tail 741876 tput 645 modal 0 rpc [14.666565]
+rdtsc 2448702115035528 tail 412967 tput 645 modal 0 rpc [14.666565]
+rdtsc 2448702715046382 tail 417468 tput 564 modal 0 rpc [14.666565]
+rdtsc 2448703315046853 tail 416998 tput 564 modal 0 rpc [14.666565]
+rdtsc 2448703915047642 tail 410671 tput 564 modal 0 rpc [14.666565]
+TRACE:pushback_ours: rdtsc 2448704295795252 last_rdtsc 2448700721622846 recvd 16920000 last_recvd 16800000 rate 80.57809 last_rate 80.547935 ext_p [14.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448704295795252 d_rate 0.030151367 ext_p 15.666565 off 1 modal 0
+rdtsc 2448704515052226 tail 418867 tput 565 modal 0 rpc [15.666565]
+rdtsc 2448705115059084 tail 408454 tput 565 modal 0 rpc [15.666565]
+TRACE:pushback_ours: rdtsc 2448705487920462 last_rdtsc 2448704295795252 recvd 16960000 last_recvd 16920000 rate 80.52846 last_rate 80.57809 ext_p [15.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448705487920462 d_rate -0.04962921 ext_p 14.666565 off -1 modal 0
+TRACE:pushback_ours: rdtsc 2448705487997376 last_rdtsc 2448705487920462 recvd 16960000 last_recvd 16960000 rate 0 last_rate 80.52846 ext_p [14.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448705487997376 d_rate -80.52846 ext_p 19.666565 off 5 modal 0
+TRACE:pushback_ours: rdtsc 2448705488075982 last_rdtsc 2448705487997376 recvd 16960000 last_recvd 16960000 rate 0 last_rate 0 ext_p [19.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448705488075982 d_rate 0 ext_p 18.666565 off -1 modal 0
+rdtsc 2448705715069092 tail 419368 tput 485 modal 1 rpc [18.666565]
+rdtsc 2448706315074063 tail 413155 tput 485 modal 1 rpc [18.666565]
+TRACE:pushback_ours: rdtsc 2448706679322588 last_rdtsc 2448705488075982 recvd 17000000 last_recvd 16960000 rate 80.587845 last_rate 0 ext_p [18.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448706679322588 d_rate 80.587845 ext_p 13.666565 off -5 modal 1
+rdtsc 2448706915084485 tail 410227 tput 484 modal 1 rpc [13.666565]
+rdtsc 2448707515089780 tail 417400 tput 484 modal 1 rpc [13.666565]
+rdtsc 2448708115114359 tail 414204 tput 484 modal 1 rpc [13.666565]
+rdtsc 2448708715139070 tail 411196 tput 565 modal 1 rpc [13.666565]
+TRACE:pushback_ours: rdtsc 2448709063267143 last_rdtsc 2448706679322588 recvd 17080000 last_recvd 17000000 rate 80.53879 last_rate 80.587845 ext_p [13.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448709063267143 d_rate -0.049057007 ext_p 14.666565 off 1 modal 1
+rdtsc 2448709315154718 tail 414785 tput 645 modal 1 rpc [14.666565]
+rdtsc 2448709915179828 tail 413957 tput 646 modal 1 rpc [14.666565]
+TRACE:pushback_ours: rdtsc 2448710255381607 last_rdtsc 2448709063267143 recvd 17120000 last_recvd 17080000 rate 80.52918 last_rate 80.53879 ext_p [14.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448710255381607 d_rate -0.009605408 ext_p 13.666565 off -1 modal 1
+rdtsc 2448710515205247 tail 410625 tput 646 modal 0 rpc [13.666565]
+rdtsc 2448711115218411 tail 419313 tput 646 modal 0 rpc [13.666565]
+rdtsc 2448711715230786 tail 412329 tput 646 modal 0 rpc [13.666565]
+rdtsc 2448712315236300 tail 408728 tput 565 modal 0 rpc [13.666565]
+rdtsc 2448712915259397 tail 416562 tput 565 modal 0 rpc [13.666565]
+rdtsc 2448713515277637 tail 408713 tput 565 modal 0 rpc [13.666565]
+rdtsc 2448714115287519 tail 423837 tput 565 modal 0 rpc [13.666565]
+rdtsc 2448714715302135 tail 411113 tput 646 modal 0 rpc [13.666565]
+rdtsc 2448715315316562 tail 414800 tput 646 modal 1 rpc [13.666565]
+rdtsc 2448715915321857 tail 411072 tput 646 modal 1 rpc [13.666565]
+rdtsc 2448716515330782 tail 415991 tput 646 modal 1 rpc [13.666565]
+rdtsc 2448717115334364 tail 406861 tput 646 modal 1 rpc [13.666565]
+TRACE:pushback_ours: rdtsc 2448717407297655 last_rdtsc 2448710255381607 recvd 17360000 last_recvd 17120000 rate 80.53786 last_rate 80.52918 ext_p [13.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448717407297655 d_rate 0.008674622 ext_p 12.666565 off -1 modal 1
+rdtsc 2448717715349112 tail 412181 tput 646 modal 1 rpc [12.666565]
+rdtsc 2448718315358811 tail 411450 tput 646 modal 1 rpc [12.666565]
+rdtsc 2448718915377861 tail 417886 tput 646 modal 1 rpc [12.666565]
+rdtsc 2448719515401306 tail 410236 tput 646 modal 1 rpc [12.666565]
+rdtsc 2448720115414500 tail 415976 tput 646 modal 0 rpc [12.666565]
+rdtsc 2448720715422432 tail 409630 tput 645 modal 0 rpc [12.666565]
+rdtsc 2448721315442094 tail 410896 tput 645 modal 0 rpc [12.666565]
+rdtsc 2448721915460976 tail 416789 tput 645 modal 0 rpc [12.666565]
+rdtsc 2448722515475685 tail 412203 tput 645 modal 0 rpc [12.666565]
+rdtsc 2448723115475847 tail 416113 tput 645 modal 0 rpc [12.666565]
+rdtsc 2448723715493025 tail 419334 tput 645 modal 0 rpc [12.666565]
+rdtsc 2448724315518384 tail 415188 tput 645 modal 0 rpc [12.666565]
+rdtsc 2448724915536561 tail 415462 tput 645 modal 1 rpc [12.666565]
+rdtsc 2448725515557291 tail 415480 tput 645 modal 1 rpc [12.666565]
+TRACE:pushback_ours: rdtsc 2448725752341981 last_rdtsc 2448717407297655 recvd 17640000 last_recvd 17360000 rate 80.52683 last_rate 80.53786 ext_p [12.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448725752341981 d_rate -0.011024475 ext_p 13.666565 off 1 modal 1
+TRACE:pushback_ours: rdtsc 2448725752426650 last_rdtsc 2448725752341981 recvd 17640000 last_recvd 17640000 rate 0 last_rate 80.52683 ext_p [13.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448725752426650 d_rate -80.52683 ext_p 8.666565 off -5 modal 1
+rdtsc 2448726115581543 tail 409293 tput 565 modal 1 rpc [8.666565]
+rdtsc 2448726715607103 tail 412024 tput 484 modal 1 rpc [8.666565]
+rdtsc 2448727315622796 tail 410293 tput 484 modal 1 rpc [8.666565]
+rdtsc 2448727915640370 tail 416775 tput 484 modal 1 rpc [8.666565]
+rdtsc 2448728515645584 tail 410272 tput 484 modal 1 rpc [8.666565]
+rdtsc 2448729115657098 tail 411966 tput 565 modal 1 rpc [8.666565]
+rdtsc 2448729715669212 tail 418684 tput 565 modal 0 rpc [8.666565]
+rdtsc 2448730315669503 tail 414507 tput 566 modal 0 rpc [8.666565]
+TRACE:pushback_ours: rdtsc 2448730522234380 last_rdtsc 2448725752426650 recvd 17800000 last_recvd 17640000 rate 80.506386 last_rate 0 ext_p [8.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448730522234380 d_rate 80.506386 ext_p 3.666565 off -5 modal 0
+rdtsc 2448730915694799 tail 410976 tput 646 modal 0 rpc [3.666565]
+rdtsc 2448731515699725 tail 414602 tput 646 modal 0 rpc [3.666565]
+rdtsc 2448732115724997 tail 412436 tput 646 modal 0 rpc [3.666565]
+rdtsc 2448732715736613 tail 413629 tput 646 modal 0 rpc [3.666565]
+rdtsc 2448733315748613 tail 420856 tput 646 modal 0 rpc [3.666565]
+rdtsc 2448733915749789 tail 409548 tput 645 modal 0 rpc [3.666565]
+rdtsc 2448734515761888 tail 408816 tput 645 modal 1 rpc [3.666565]
+rdtsc 2448735115765374 tail 409098 tput 645 modal 1 rpc [3.666565]
+rdtsc 2448735715788930 tail 405322 tput 645 modal 1 rpc [3.666565]
+rdtsc 2448736315794528 tail 409451 tput 646 modal 1 rpc [3.666565]
+TRACE:pushback_ours: rdtsc 2448736485466842 last_rdtsc 2448730522234380 recvd 18000000 last_recvd 17800000 rate 80.49326 last_rate 80.506386 ext_p [3.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448736485466842 d_rate -0.013122559 ext_p 4.666565 off 1 modal 1
+TRACE:pushback_ours: rdtsc 2448736485535293 last_rdtsc 2448736485466842 recvd 18000000 last_recvd 18000000 rate 0 last_rate 80.49326 ext_p [4.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448736485535293 d_rate -80.49326 ext_p 9.666565 off -5 modal 1
+rdtsc 2448736915805976 tail 408991 tput 566 modal 1 rpc [9.666565]
+rdtsc 2448737515810239 tail 412241 tput 565 modal 1 rpc [9.666565]
+rdtsc 2448738115813824 tail 409112 tput 565 modal 1 rpc [9.666565]
+rdtsc 2448738715824177 tail 410295 tput 565 modal 1 rpc [9.666565]
+rdtsc 2448739315849521 tail 419825 tput 484 modal 0 rpc [9.666565]
+rdtsc 2448739915872876 tail 416562 tput 484 modal 0 rpc [9.666565]
+rdtsc 2448740515875924 tail 421598 tput 484 modal 0 rpc [9.666565]
+rdtsc 2448741115899786 tail 412566 tput 484 modal 0 rpc [9.666565]
+rdtsc 2448741715904040 tail 409316 tput 484 modal 0 rpc [9.666565]
+rdtsc 2448742315927707 tail 416836 tput 484 modal 0 rpc [9.666565]
+rdtsc 2448742915949934 tail 409717 tput 484 modal 0 rpc [9.666565]
+rdtsc 2448743515965405 tail 409830 tput 484 modal 0 rpc [9.666565]
+TRACE:pushback_ours: rdtsc 2448743637528270 last_rdtsc 2448736485535293 recvd 18240000 last_recvd 18000000 rate 80.53699 last_rate 0 ext_p [9.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448743637528270 d_rate 80.53699 ext_p 14.666565 off 5 modal 0
+rdtsc 2448744115978218 tail 412104 tput 564 modal 1 rpc [14.666565]
+rdtsc 2448744715986924 tail 408706 tput 565 modal 1 rpc [14.666565]
+rdtsc 2448745315991787 tail 413589 tput 565 modal 1 rpc [14.666565]
+rdtsc 2448745915995774 tail 414436 tput 565 modal 1 rpc [14.666565]
+TRACE:pushback_ours: rdtsc 2448746020661505 last_rdtsc 2448743637528270 recvd 18320000 last_recvd 18240000 rate 80.56621 last_rate 80.53699 ext_p [14.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448746020661505 d_rate 0.029220581 ext_p 15.666565 off 1 modal 1
+TRACE:pushback_ours: rdtsc 2448746020726077 last_rdtsc 2448746020661505 recvd 18320000 last_recvd 18320000 rate 0 last_rate 80.56621 ext_p [15.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448746020726077 d_rate -80.56621 ext_p 10.666565 off -5 modal 1
+TRACE:pushback_ours: rdtsc 2448746020814958 last_rdtsc 2448746020726077 recvd 18320000 last_recvd 18320000 rate 0 last_rate 0 ext_p [10.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448746020814958 d_rate 0 ext_p 9.666565 off -1 modal 1
+TRACE:pushback_ours: rdtsc 2448746020888149 last_rdtsc 2448746020814958 recvd 18320000 last_recvd 18320000 rate 0 last_rate 0 ext_p [9.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448746020888149 d_rate 0 ext_p 8.666565 off -1 modal 1
+rdtsc 2448746516019117 tail 416786 tput 485 modal 1 rpc [8.666565]
+rdtsc 2448747116030679 tail 409085 tput 566 modal 1 rpc [8.666565]
+TRACE:pushback_ours: rdtsc 2448747214029108 last_rdtsc 2448746020888149 recvd 18360000 last_recvd 18320000 rate 80.45989 last_rate 0 ext_p [8.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448747214029108 d_rate 80.45989 ext_p 3.666565 off -5 modal 1
+rdtsc 2448747716033547 tail 403932 tput 646 modal 1 rpc [3.666565]
+rdtsc 2448748316047710 tail 410581 tput 646 modal 1 rpc [3.666565]
+rdtsc 2448748916064207 tail 419349 tput 646 modal 0 rpc [3.666565]
+rdtsc 2448749516072388 tail 410732 tput 646 modal 0 rpc [3.666565]
+rdtsc 2448750116079834 tail 421086 tput 646 modal 0 rpc [3.666565]
+rdtsc 2448750716089773 tail 409902 tput 646 modal 0 rpc [3.666565]
+rdtsc 2448751316108472 tail 412161 tput 646 modal 0 rpc [3.666565]
+rdtsc 2448751916109930 tail 415458 tput 646 modal 0 rpc [3.666565]
+TRACE:pushback_ours: rdtsc 2448751983549105 last_rdtsc 2448747214029108 recvd 18520000 last_recvd 18360000 rate 80.511246 last_rate 80.45989 ext_p [3.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448751983549105 d_rate 0.051353455 ext_p 2.666565 off -1 modal 0
+TRACE:pushback_ours: rdtsc 2448751983616986 last_rdtsc 2448751983549105 recvd 18520000 last_recvd 18520000 rate 0 last_rate 80.511246 ext_p [2.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448751983616986 d_rate -80.511246 ext_p 7.666565 off 5 modal 0
+rdtsc 2448752516111340 tail 419001 tput 566 modal 0 rpc [7.666565]
+rdtsc 2448753116135391 tail 414644 tput 566 modal 0 rpc [7.666565]
+TRACE:pushback_ours: rdtsc 2448753177070548 last_rdtsc 2448751983616986 recvd 18560000 last_recvd 18520000 rate 80.43882 last_rate 0 ext_p [7.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448753177070548 d_rate 80.43882 ext_p 12.666565 off 5 modal 0
+rdtsc 2448753716139621 tail 408657 tput 565 modal 1 rpc [12.666565]
+rdtsc 2448754316147130 tail 409972 tput 564 modal 1 rpc [12.666565]
+rdtsc 2448754916149086 tail 416824 tput 564 modal 1 rpc [12.666565]
+rdtsc 2448755516157636 tail 406204 tput 564 modal 1 rpc [12.666565]
+rdtsc 2448756116172027 tail 410451 tput 564 modal 1 rpc [12.666565]
+rdtsc 2448756716172210 tail 409236 tput 564 modal 1 rpc [12.666565]
+TRACE:pushback_ours: rdtsc 2448756753582048 last_rdtsc 2448753177070548 recvd 18680000 last_recvd 18560000 rate 80.52539 last_rate 80.43882 ext_p [12.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448756753582048 d_rate 0.08657074 ext_p 13.666565 off 1 modal 1
+TRACE:pushback_ours: rdtsc 2448756753645642 last_rdtsc 2448756753582048 recvd 18680000 last_recvd 18680000 rate 0 last_rate 80.52539 ext_p [13.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448756753645642 d_rate -80.52539 ext_p 8.666565 off -5 modal 1
+rdtsc 2448757316184717 tail 413054 tput 565 modal 1 rpc [8.666565]
+rdtsc 2448757916185548 tail 416664 tput 566 modal 1 rpc [8.666565]
+rdtsc 2448758516198280 tail 420447 tput 566 modal 0 rpc [8.666565]
+rdtsc 2448759116210718 tail 414861 tput 565 modal 0 rpc [8.666565]
+rdtsc 2448759716226171 tail 419447 tput 565 modal 0 rpc [8.666565]
+rdtsc 2448760316233278 tail 415179 tput 565 modal 0 rpc [8.666565]
+TRACE:pushback_ours: rdtsc 2448760329176463 last_rdtsc 2448756753645642 recvd 18800000 last_recvd 18680000 rate 80.54748 last_rate 0 ext_p [8.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448760329176463 d_rate 80.54748 ext_p 3.666565 off -5 modal 0
+TRACE:pushback_ours: rdtsc 2448760329241968 last_rdtsc 2448760329176463 recvd 18800000 last_recvd 18800000 rate 0 last_rate 80.54748 ext_p [3.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448760329241968 d_rate -80.54748 ext_p 8.666565 off 5 modal 0
+TRACE:pushback_ours: rdtsc 2448760329331326 last_rdtsc 2448760329241968 recvd 18800000 last_recvd 18800000 rate 0 last_rate 0 ext_p [8.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448760329331326 d_rate 0 ext_p 7.666565 off -1 modal 0
+rdtsc 2448760916242944 tail 415555 tput 565 modal 0 rpc [7.666565]
+rdtsc 2448761516248545 tail 407360 tput 565 modal 0 rpc [7.666565]
+rdtsc 2448762116258424 tail 418052 tput 564 modal 0 rpc [7.666565]
+TRACE:pushback_ours: rdtsc 2448762714917115 last_rdtsc 2448760329331326 recvd 18880000 last_recvd 18800000 rate 80.48338 last_rate 0 ext_p [7.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448762714917115 d_rate 80.48338 ext_p 2.666565 off -5 modal 0
+TRACE:pushback_ours: rdtsc 2448762714984501 last_rdtsc 2448762714917115 recvd 18880000 last_recvd 18880000 rate 0 last_rate 80.48338 ext_p [2.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448762714984501 d_rate -80.48338 ext_p 7.666565 off 5 modal 0
+TRACE:pushback_ours: rdtsc 2448762715060224 last_rdtsc 2448762714984501 recvd 18880000 last_recvd 18880000 rate 0 last_rate 0 ext_p [7.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448762715060224 d_rate 0 ext_p 6.666565 off -1 modal 0
+TRACE:pushback_ours: rdtsc 2448762715134021 last_rdtsc 2448762715060224 recvd 18880000 last_recvd 18880000 rate 0 last_rate 0 ext_p [6.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448762715134021 d_rate 0 ext_p 5.666565 off -1 modal 0
+rdtsc 2448762716260032 tail 424690 tput 565 modal 0 rpc [5.666565]
+rdtsc 2448763316278581 tail 414273 tput 566 modal 1 rpc [5.666565]
+rdtsc 2448763916287581 tail 410387 tput 566 modal 1 rpc [5.666565]
+rdtsc 2448764516298813 tail 409507 tput 566 modal 1 rpc [5.666565]
+rdtsc 2448765116319819 tail 410339 tput 566 modal 1 rpc [5.666565]
+rdtsc 2448765716333856 tail 406675 tput 566 modal 1 rpc [5.666565]
+rdtsc 2448766316352891 tail 415708 tput 566 modal 1 rpc [5.666565]
+rdtsc 2448766916361540 tail 415280 tput 565 modal 1 rpc [5.666565]
+TRACE:pushback_ours: rdtsc 2448767487143169 last_rdtsc 2448762715134021 recvd 19040000 last_recvd 18880000 rate 80.46925 last_rate 0 ext_p [5.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448767487143169 d_rate 80.46925 ext_p 0.66656494 off -5 modal 1
+rdtsc 2448767516385543 tail 414466 tput 645 modal 1 rpc [0.66656494]
+rdtsc 2448768116393952 tail 411112 tput 645 modal 0 rpc [0.66656494]
+rdtsc 2448768716414400 tail 415305 tput 645 modal 0 rpc [0.66656494]
+rdtsc 2448769316437287 tail 412756 tput 645 modal 0 rpc [0.66656494]
+rdtsc 2448769916444085 tail 415573 tput 645 modal 0 rpc [0.66656494]
+rdtsc 2448770516463063 tail 417591 tput 646 modal 0 rpc [0.66656494]
+rdtsc 2448771116480871 tail 412188 tput 646 modal 0 rpc [0.66656494]
+rdtsc 2448771716484636 tail 411713 tput 646 modal 0 rpc [0.66656494]
+rdtsc 2448772316489733 tail 409420 tput 645 modal 0 rpc [0.66656494]
+rdtsc 2448772916495568 tail 411706 tput 645 modal 1 rpc [0.66656494]
+TRACE:pushback_ours: rdtsc 2448773455248591 last_rdtsc 2448767487143169 recvd 19240000 last_recvd 19040000 rate 80.427536 last_rate 80.46925 ext_p [0.66656494] modal 1
+TRACE:pushback_ours: rdtsc 2448773455248591 d_rate -0.04171753 ext_p 1.666565 off 1 modal 1
+rdtsc 2448773516510976 tail 406951 tput 645 modal 1 rpc [1.666565]
+rdtsc 2448774116534199 tail 631041 tput 645 modal 1 rpc [1.666565]
+rdtsc 2448774716540478 tail 758105 tput 645 modal 1 rpc [1.666565]
+rdtsc 2448775316567586 tail 637615 tput 645 modal 1 rpc [1.666565]
+rdtsc 2448775916592366 tail 408742 tput 646 modal 1 rpc [1.666565]
+rdtsc 2448776516608140 tail 411367 tput 646 modal 1 rpc [1.666565]
+rdtsc 2448777116638938 tail 413559 tput 646 modal 1 rpc [1.666565]
+rdtsc 2448777716646669 tail 417814 tput 645 modal 0 rpc [1.666565]
+rdtsc 2448778316657937 tail 415380 tput 645 modal 0 rpc [1.666565]
+rdtsc 2448778916658939 tail 406897 tput 645 modal 0 rpc [1.666565]
+rdtsc 2448779516659365 tail 409026 tput 645 modal 0 rpc [1.666565]
+rdtsc 2448780116690733 tail 410363 tput 566 modal 0 rpc [1.666565]
+rdtsc 2448780716704272 tail 405873 tput 566 modal 0 rpc [1.666565]
+rdtsc 2448781316719104 tail 417898 tput 566 modal 0 rpc [1.666565]
+rdtsc 2448781916737341 tail 417778 tput 566 modal 0 rpc [1.666565]
+rdtsc 2448782516738340 tail 422155 tput 645 modal 1 rpc [1.666565]
+rdtsc 2448783116750298 tail 411513 tput 645 modal 1 rpc [1.666565]
+rdtsc 2448783716754423 tail 413458 tput 645 modal 1 rpc [1.666565]
+TRACE:pushback_ours: rdtsc 2448784200369345 last_rdtsc 2448773455248591 recvd 19600000 last_recvd 19240000 rate 80.40859 last_rate 80.427536 ext_p [1.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448784200369345 d_rate -0.018943787 ext_p 0.66656494 off -1 modal 1
+rdtsc 2448784316756859 tail 411993 tput 645 modal 1 rpc [0.66656494]
+rdtsc 2448784916778516 tail 412555 tput 564 modal 1 rpc [0.66656494]
+rdtsc 2448785516787876 tail 410211 tput 564 modal 1 rpc [0.66656494]
+rdtsc 2448786116790999 tail 411672 tput 645 modal 1 rpc [0.66656494]
+TRACE:pushback_ours: rdtsc 2448786588833112 last_rdtsc 2448784200369345 recvd 19680000 last_recvd 19600000 rate 80.3864 last_rate 80.40859 ext_p [0.66656494] modal 1
+TRACE:pushback_ours: rdtsc 2448786588833112 d_rate -0.022193909 ext_p 1.666565 off 1 modal 1
+TRACE:pushback_ours: rdtsc 2448786588901374 last_rdtsc 2448786588833112 recvd 19680000 last_recvd 19680000 rate 0 last_rate 80.3864 ext_p [1.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448786588901374 d_rate -80.3864 ext_p 6.666565 off -5 modal 1
+TRACE:pushback_ours: rdtsc 2448786588980274 last_rdtsc 2448786588901374 recvd 19680000 last_recvd 19680000 rate 0 last_rate 0 ext_p [6.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448786588980274 d_rate 0 ext_p 5.666565 off -1 modal 1
+rdtsc 2448786716808750 tail 404890 tput 565 modal 1 rpc [5.666565]
+rdtsc 2448787316822538 tail 409361 tput 565 modal 0 rpc [5.666565]
+rdtsc 2448787916843553 tail 418751 tput 565 modal 0 rpc [5.666565]
+rdtsc 2448788516859102 tail 413855 tput 565 modal 0 rpc [5.666565]
+rdtsc 2448789116863506 tail 408759 tput 565 modal 0 rpc [5.666565]
+rdtsc 2448789716867418 tail 414843 tput 565 modal 0 rpc [5.666565]
+TRACE:pushback_ours: rdtsc 2448790168139589 last_rdtsc 2448786588980274 recvd 19800000 last_recvd 19680000 rate 80.46582 last_rate 0 ext_p [5.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448790168139589 d_rate 80.46582 ext_p 0.66656494 off -5 modal 0
+rdtsc 2448790316872923 tail 414819 tput 645 modal 0 rpc [0.66656494]
+rdtsc 2448790916897229 tail 417669 tput 644 modal 0 rpc [0.66656494]
+TRACE:pushback_ours: rdtsc 2448791362379229 last_rdtsc 2448790168139589 recvd 19840000 last_recvd 19800000 rate 80.38588 last_rate 80.46582 ext_p [0.66656494] modal 0
+TRACE:pushback_ours: rdtsc 2448791362379229 d_rate -0.079940796 ext_p 1.666565 off 1 modal 0
+TRACE:pushback_ours: rdtsc 2448791362445610 last_rdtsc 2448791362379229 recvd 19840000 last_recvd 19840000 rate 0 last_rate 80.38588 ext_p [1.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448791362445610 d_rate -80.38588 ext_p 6.666565 off -5 modal 0
+rdtsc 2448791516922210 tail 411480 tput 564 modal 0 rpc [6.666565]
+rdtsc 2448792116932398 tail 411320 tput 564 modal 1 rpc [6.666565]
+rdtsc 2448792716933538 tail 408719 tput 564 modal 1 rpc [6.666565]
+rdtsc 2448793316954577 tail 408512 tput 564 modal 1 rpc [6.666565]
+TRACE:pushback_ours: rdtsc 2448793748087598 last_rdtsc 2448791362445610 recvd 19920000 last_recvd 19840000 rate 80.48148 last_rate 0 ext_p [6.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448793748087598 d_rate 80.48148 ext_p 11.666565 off 5 modal 1
+TRACE:pushback_ours: rdtsc 2448793748154417 last_rdtsc 2448793748087598 recvd 19920000 last_recvd 19920000 rate 0 last_rate 80.48148 ext_p [11.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448793748154417 d_rate -80.48148 ext_p 6.666565 off -5 modal 1
+rdtsc 2448793916980698 tail 416576 tput 564 modal 1 rpc [6.666565]
+rdtsc 2448794516987163 tail 409803 tput 564 modal 1 rpc [6.666565]
+TRACE:pushback_ours: rdtsc 2448794942014743 last_rdtsc 2448793748154417 recvd 19960000 last_recvd 19920000 rate 80.411415 last_rate 0 ext_p [6.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448794942014743 d_rate 80.411415 ext_p 1.666565 off -5 modal 1
+TRACE:pushback_ours: rdtsc 2448794942102463 last_rdtsc 2448794942014743 recvd 19960000 last_recvd 19960000 rate 0 last_rate 80.411415 ext_p [1.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448794942102463 d_rate -80.411415 ext_p 6.666565 off 5 modal 1
+rdtsc 2448795116998677 tail 407104 tput 564 modal 1 rpc [6.666565]
+rdtsc 2448795717004383 tail 412813 tput 564 modal 1 rpc [6.666565]
+rdtsc 2448796317005172 tail 410118 tput 564 modal 1 rpc [6.666565]
+rdtsc 2448796917007413 tail 412499 tput 564 modal 0 rpc [6.666565]
+rdtsc 2448797517009207 tail 419326 tput 564 modal 0 rpc [6.666565]
+rdtsc 2448798117030528 tail 418878 tput 566 modal 0 rpc [6.666565]
+rdtsc 2448798717055194 tail 412693 tput 566 modal 0 rpc [6.666565]
+rdtsc 2448799317055884 tail 411141 tput 566 modal 0 rpc [6.666565]
+rdtsc 2448799917064536 tail 413127 tput 566 modal 0 rpc [6.666565]
+rdtsc 2448800517074037 tail 408575 tput 484 modal 0 rpc [6.666565]
+rdtsc 2448801117074871 tail 420543 tput 484 modal 0 rpc [6.666565]
+rdtsc 2448801717107934 tail 411937 tput 484 modal 1 rpc [6.666565]
+rdtsc 2448802317115200 tail 413632 tput 484 modal 1 rpc [6.666565]
+rdtsc 2448802917116487 tail 411782 tput 484 modal 1 rpc [6.666565]
+rdtsc 2448803517134829 tail 408637 tput 484 modal 1 rpc [6.666565]
+rdtsc 2448804117144807 tail 411795 tput 484 modal 1 rpc [6.666565]
+TRACE:pushback_ours: rdtsc 2448804483591249 last_rdtsc 2448794942102463 recvd 20280000 last_recvd 19960000 rate 80.490585 last_rate 0 ext_p [6.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448804483591249 d_rate 80.490585 ext_p 11.666565 off 5 modal 1
+rdtsc 2448804717172098 tail 413458 tput 564 modal 1 rpc [11.666565]
+rdtsc 2448805317183249 tail 412641 tput 564 modal 1 rpc [11.666565]
+TRACE:pushback_ours: rdtsc 2448805676884878 last_rdtsc 2448804483591249 recvd 20320000 last_recvd 20280000 rate 80.44961 last_rate 80.490585 ext_p [11.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448805676884878 d_rate -0.040977478 ext_p 10.666565 off -1 modal 1
+rdtsc 2448805917184242 tail 420060 tput 565 modal 1 rpc [10.666565]
+rdtsc 2448806517194685 tail 414027 tput 645 modal 0 rpc [10.666565]
+rdtsc 2448807117205008 tail 412923 tput 644 modal 0 rpc [10.666565]
+rdtsc 2448807717205239 tail 411541 tput 644 modal 0 rpc [10.666565]
+TRACE:pushback_ours: rdtsc 2448808060812225 last_rdtsc 2448805676884878 recvd 20400000 last_recvd 20320000 rate 80.53937 last_rate 80.44961 ext_p [10.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448808060812225 d_rate 0.08975983 ext_p 9.666565 off -1 modal 0
+rdtsc 2448808317215181 tail 415409 tput 644 modal 0 rpc [9.666565]
+rdtsc 2448808917228954 tail 405953 tput 644 modal 0 rpc [9.666565]
+rdtsc 2448809517236055 tail 415287 tput 645 modal 0 rpc [9.666565]
+rdtsc 2448810117242952 tail 414433 tput 645 modal 0 rpc [9.666565]
+rdtsc 2448810717261054 tail 412647 tput 645 modal 0 rpc [9.666565]
+rdtsc 2448811317266667 tail 404511 tput 645 modal 1 rpc [9.666565]
+rdtsc 2448811917290367 tail 417249 tput 645 modal 1 rpc [9.666565]
+rdtsc 2448812517316059 tail 412308 tput 645 modal 1 rpc [9.666565]
+rdtsc 2448813117342756 tail 406716 tput 645 modal 1 rpc [9.666565]
+rdtsc 2448813717364062 tail 422805 tput 645 modal 1 rpc [9.666565]
+rdtsc 2448814317395127 tail 407788 tput 645 modal 1 rpc [9.666565]
+rdtsc 2448814917410526 tail 413863 tput 645 modal 1 rpc [9.666565]
+rdtsc 2448815517429678 tail 408297 tput 645 modal 1 rpc [9.666565]
+rdtsc 2448816117446151 tail 414919 tput 645 modal 0 rpc [9.666565]
+rdtsc 2448816717449436 tail 423314 tput 645 modal 0 rpc [9.666565]
+rdtsc 2448817317455688 tail 407564 tput 645 modal 0 rpc [9.666565]
+TRACE:pushback_ours: rdtsc 2448817597130220 last_rdtsc 2448808060812225 recvd 20720000 last_recvd 20400000 rate 80.534225 last_rate 80.53937 ext_p [9.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448817597130220 d_rate -0.005142212 ext_p 10.666565 off 1 modal 0
+rdtsc 2448817917458223 tail 415911 tput 645 modal 0 rpc [10.666565]
+rdtsc 2448818517465444 tail 415839 tput 645 modal 0 rpc [10.666565]
+rdtsc 2448819117483687 tail 418209 tput 645 modal 0 rpc [10.666565]
+rdtsc 2448819717496926 tail 414353 tput 645 modal 0 rpc [10.666565]
+rdtsc 2448820317509901 tail 407168 tput 645 modal 0 rpc [10.666565]
+rdtsc 2448820917513696 tail 417926 tput 645 modal 1 rpc [10.666565]
+rdtsc 2448821517530520 tail 407746 tput 644 modal 1 rpc [10.666565]
+rdtsc 2448822117534126 tail 421240 tput 644 modal 1 rpc [10.666565]
+rdtsc 2448822717548382 tail 419787 tput 644 modal 1 rpc [10.666565]
+rdtsc 2448823317554823 tail 413149 tput 644 modal 1 rpc [10.666565]
+rdtsc 2448823917554859 tail 409854 tput 645 modal 1 rpc [10.666565]
+rdtsc 2448824517578085 tail 422083 tput 645 modal 1 rpc [10.666565]
+TRACE:pushback_ours: rdtsc 2448824751007455 last_rdtsc 2448817597130220 recvd 20960000 last_recvd 20720000 rate 80.51578 last_rate 80.534225 ext_p [10.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448824751007455 d_rate -0.018447876 ext_p 9.666565 off -1 modal 1
+rdtsc 2448825117596424 tail 416257 tput 645 modal 1 rpc [9.666565]
+rdtsc 2448825717599889 tail 586555 tput 645 modal 0 rpc [9.666565]
+rdtsc 2448826317622077 tail 761037 tput 644 modal 0 rpc [9.666565]
+rdtsc 2448826917627405 tail 637907 tput 644 modal 0 rpc [9.666565]
+rdtsc 2448827517643722 tail 414649 tput 644 modal 0 rpc [9.666565]
+rdtsc 2448828117650148 tail 411762 tput 644 modal 0 rpc [9.666565]
+rdtsc 2448828717674943 tail 414901 tput 644 modal 0 rpc [9.666565]
+rdtsc 2448829317676647 tail 407682 tput 645 modal 0 rpc [9.666565]
+rdtsc 2448829917696981 tail 416652 tput 645 modal 0 rpc [9.666565]
+rdtsc 2448830517720885 tail 411135 tput 645 modal 1 rpc [9.666565]
+TRACE:pushback_ours: rdtsc 2448830716261308 last_rdtsc 2448824751007455 recvd 21160000 last_recvd 20960000 rate 80.46599 last_rate 80.51578 ext_p [9.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448830716261308 d_rate -0.04978943 ext_p 10.666565 off 1 modal 1
+TRACE:pushback_ours: rdtsc 2448830716338663 last_rdtsc 2448830716261308 recvd 21160000 last_recvd 21160000 rate 0 last_rate 80.46599 ext_p [10.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448830716338663 d_rate -80.46599 ext_p 5.666565 off -5 modal 1
+TRACE:pushback_ours: rdtsc 2448830716416474 last_rdtsc 2448830716338663 recvd 21160000 last_recvd 21160000 rate 0 last_rate 0 ext_p [5.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448830716416474 d_rate 0 ext_p 4.666565 off -1 modal 1
+rdtsc 2448831117735045 tail 411708 tput 565 modal 1 rpc [4.666565]
+rdtsc 2448831717748479 tail 411291 tput 564 modal 1 rpc [4.666565]
+TRACE:pushback_ours: rdtsc 2448831909482172 last_rdtsc 2448830716416474 recvd 21200000 last_recvd 21160000 rate 80.46497 last_rate 0 ext_p [4.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448831909482172 d_rate 80.46497 ext_p 9.666565 off -5 modal 1
+rdtsc 2448832317772602 tail 411941 tput 645 modal 1 rpc [9.666565]
+rdtsc 2448832917790017 tail 419911 tput 645 modal 1 rpc [9.666565]
+rdtsc 2448833517803868 tail 411979 tput 645 modal 1 rpc [9.666565]
+rdtsc 2448834117814173 tail 406609 tput 645 modal 1 rpc [9.666565]
+TRACE:pushback_ours: rdtsc 2448834294724386 last_rdtsc 2448831909482172 recvd 21280000 last_recvd 21200000 rate 80.49497 last_rate 80.46497 ext_p [9.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448834294724386 d_rate 0.02999878 ext_p 10.666565 off 1 modal 1
+rdtsc 2448834717820008 tail 419705 tput 644 modal 1 rpc [10.666565]
+rdtsc 2448835317833262 tail 415878 tput 644 modal 0 rpc [10.666565]
+rdtsc 2448835917855378 tail 412528 tput 644 modal 0 rpc [10.666565]
+rdtsc 2448836517880938 tail 410524 tput 644 modal 0 rpc [10.666565]
+TRACE:pushback_ours: rdtsc 2448836678699562 last_rdtsc 2448834294724386 recvd 21360000 last_recvd 21280000 rate 80.53775 last_rate 80.49497 ext_p [10.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448836678699562 d_rate 0.042778015 ext_p 11.666565 off 1 modal 0
+rdtsc 2448837117896991 tail 414107 tput 644 modal 0 rpc [11.666565]
+rdtsc 2448837717924813 tail 409195 tput 644 modal 0 rpc [11.666565]
+TRACE:pushback_ours: rdtsc 2448837870504384 last_rdtsc 2448836678699562 recvd 21400000 last_recvd 21360000 rate 80.5501 last_rate 80.53775 ext_p [11.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448837870504384 d_rate 0.01235199 ext_p 12.666565 off 1 modal 0
+rdtsc 2448838317926676 tail 410288 tput 644 modal 0 rpc [12.666565]
+rdtsc 2448838917937851 tail 413475 tput 644 modal 0 rpc [12.666565]
+rdtsc 2448839517969855 tail 408134 tput 645 modal 0 rpc [12.666565]
+rdtsc 2448840117981045 tail 410177 tput 645 modal 1 rpc [12.666565]
+rdtsc 2448840718003584 tail 404701 tput 645 modal 1 rpc [12.666565]
+rdtsc 2448841318016130 tail 412250 tput 645 modal 1 rpc [12.666565]
+rdtsc 2448841918036863 tail 414369 tput 565 modal 1 rpc [12.666565]
+rdtsc 2448842518053255 tail 414657 tput 565 modal 1 rpc [12.666565]
+TRACE:pushback_ours: rdtsc 2448842640566427 last_rdtsc 2448837870504384 recvd 21560000 last_recvd 21400000 rate 80.5021 last_rate 80.5501 ext_p [12.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448842640566427 d_rate -0.04800415 ext_p 11.666565 off -1 modal 1
+rdtsc 2448843118076730 tail 409804 tput 645 modal 1 rpc [11.666565]
+rdtsc 2448843718094574 tail 413313 tput 645 modal 1 rpc [11.666565]
+TRACE:pushback_ours: rdtsc 2448843832704864 last_rdtsc 2448842640566427 recvd 21600000 last_recvd 21560000 rate 80.52756 last_rate 80.5021 ext_p [11.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448843832704864 d_rate 0.02545929 ext_p 10.666565 off -1 modal 1
+rdtsc 2448844318115778 tail 415819 tput 645 modal 1 rpc [10.666565]
+rdtsc 2448844918130001 tail 417429 tput 645 modal 0 rpc [10.666565]
+TRACE:pushback_ours: rdtsc 2448845025365709 last_rdtsc 2448843832704864 recvd 21640000 last_recvd 21600000 rate 80.49229 last_rate 80.52756 ext_p [10.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448845025365709 d_rate -0.03527069 ext_p 11.666565 off 1 modal 0
+rdtsc 2448845518137111 tail 408529 tput 645 modal 0 rpc [11.666565]
+rdtsc 2448846118171521 tail 419853 tput 645 modal 0 rpc [11.666565]
+TRACE:pushback_ours: rdtsc 2448846217607304 last_rdtsc 2448845025365709 recvd 21680000 last_recvd 21640000 rate 80.5206 last_rate 80.49229 ext_p [11.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448846217607304 d_rate 0.028312683 ext_p 12.666565 off 1 modal 0
+rdtsc 2448846718196652 tail 418400 tput 645 modal 0 rpc [12.666565]
+rdtsc 2448847318220517 tail 410516 tput 645 modal 0 rpc [12.666565]
+TRACE:pushback_ours: rdtsc 2448847409413821 last_rdtsc 2448846217607304 recvd 21720000 last_recvd 21680000 rate 80.54999 last_rate 80.5206 ext_p [12.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448847409413821 d_rate 0.029388428 ext_p 13.666565 off 1 modal 0
+rdtsc 2448847918246476 tail 405535 tput 645 modal 0 rpc [13.666565]
+rdtsc 2448848518258152 tail 405722 tput 645 modal 0 rpc [13.666565]
+rdtsc 2448849118266939 tail 402761 tput 645 modal 0 rpc [13.666565]
+rdtsc 2448849718287468 tail 412223 tput 645 modal 1 rpc [13.666565]
+rdtsc 2448850318293090 tail 404329 tput 645 modal 1 rpc [13.666565]
+rdtsc 2448850918326510 tail 415805 tput 645 modal 1 rpc [13.666565]
+TRACE:pushback_ours: rdtsc 2448850987185306 last_rdtsc 2448847409413821 recvd 21840000 last_recvd 21720000 rate 80.49703 last_rate 80.54999 ext_p [13.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448850987185306 d_rate -0.052955627 ext_p 12.666565 off -1 modal 1
+rdtsc 2448851518326768 tail 409022 tput 645 modal 1 rpc [12.666565]
+rdtsc 2448852118329738 tail 411493 tput 645 modal 1 rpc [12.666565]
+rdtsc 2448852718337076 tail 407569 tput 645 modal 1 rpc [12.666565]
+rdtsc 2448853318358412 tail 410606 tput 564 modal 1 rpc [12.666565]
+TRACE:pushback_ours: rdtsc 2448853372975044 last_rdtsc 2448850987185306 recvd 21920000 last_recvd 21840000 rate 80.4765 last_rate 80.49703 ext_p [12.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448853372975044 d_rate -0.0205307 ext_p 13.666565 off 1 modal 1
+rdtsc 2448853918377090 tail 418546 tput 564 modal 1 rpc [13.666565]
+rdtsc 2448854518392654 tail 412261 tput 564 modal 0 rpc [13.666565]
+TRACE:pushback_ours: rdtsc 2448854565445425 last_rdtsc 2448853372975044 recvd 21960000 last_recvd 21920000 rate 80.50514 last_rate 80.4765 ext_p [13.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448854565445425 d_rate 0.028640747 ext_p 14.666565 off 1 modal 0
+rdtsc 2448855118401291 tail 410803 tput 565 modal 0 rpc [14.666565]
+rdtsc 2448855718416666 tail 409289 tput 565 modal 0 rpc [14.666565]
+TRACE:pushback_ours: rdtsc 2448855757047216 last_rdtsc 2448854565445425 recvd 22000000 last_recvd 21960000 rate 80.56383 last_rate 80.50514 ext_p [14.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448855757047216 d_rate 0.058685303 ext_p 15.666565 off 1 modal 0
+TRACE:pushback_ours: rdtsc 2448855757119807 last_rdtsc 2448855757047216 recvd 22000000 last_recvd 22000000 rate 0 last_rate 80.56383 ext_p [15.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448855757119807 d_rate -80.56383 ext_p 10.666565 off -5 modal 0
+rdtsc 2448856318444032 tail 410711 tput 485 modal 0 rpc [10.666565]
+rdtsc 2448856918465695 tail 412909 tput 485 modal 0 rpc [10.666565]
+TRACE:pushback_ours: rdtsc 2448856951411644 last_rdtsc 2448855757119807 recvd 22040000 last_recvd 22000000 rate 80.38236 last_rate 0 ext_p [10.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448856951411644 d_rate 80.38236 ext_p 5.666565 off -5 modal 0
+rdtsc 2448857518474431 tail 411096 tput 565 modal 0 rpc [5.666565]
+rdtsc 2448858118477335 tail 418533 tput 645 modal 0 rpc [5.666565]
+TRACE:pushback_ours: rdtsc 2448858144680577 last_rdtsc 2448856951411644 recvd 22080000 last_recvd 22040000 rate 80.45126 last_rate 80.38236 ext_p [5.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448858144680577 d_rate 0.06890106 ext_p 4.666565 off -1 modal 0
+rdtsc 2448858718502346 tail 413470 tput 644 modal 0 rpc [4.666565]
+rdtsc 2448859318507224 tail 419262 tput 644 modal 1 rpc [4.666565]
+rdtsc 2448859918528875 tail 414139 tput 563 modal 1 rpc [4.666565]
+rdtsc 2448860518554954 tail 409992 tput 563 modal 1 rpc [4.666565]
+rdtsc 2448861118557579 tail 413788 tput 563 modal 1 rpc [4.666565]
+rdtsc 2448861718560591 tail 406167 tput 563 modal 1 rpc [4.666565]
+rdtsc 2448862318561419 tail 419005 tput 563 modal 1 rpc [4.666565]
+rdtsc 2448862918566225 tail 410961 tput 563 modal 1 rpc [4.666565]
+rdtsc 2448863518566975 tail 409498 tput 644 modal 1 rpc [4.666565]
+rdtsc 2448864118587951 tail 414447 tput 644 modal 0 rpc [4.666565]
+rdtsc 2448864718606557 tail 414821 tput 644 modal 0 rpc [4.666565]
+rdtsc 2448865318623477 tail 409903 tput 644 modal 0 rpc [4.666565]
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+rdtsc 2448865918654314 tail 413931 tput 644 modal 0 rpc [4.666565]
+INFO:splinter::dispatch: Sent many requests...
+rdtsc 2448866518658076 tail 415108 tput 644 modal 0 rpc [4.666565]
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+INFO:splinter::dispatch: Sent many requests...
+rdtsc 2448867118670604 tail 414539 tput 644 modal 0 rpc [4.666565]
+rdtsc 2448867718697361 tail 413442 tput 644 modal 0 rpc [4.666565]
+INFO:splinter::dispatch: Sent many requests...
+rdtsc 2448868318718133 tail 424208 tput 644 modal 0 rpc [4.666565]
+rdtsc 2448868918735335 tail 422941 tput 644 modal 1 rpc [4.666565]
+rdtsc 2448869518735626 tail 414720 tput 644 modal 1 rpc [4.666565]
+rdtsc 2448870118751601 tail 407577 tput 644 modal 1 rpc [4.666565]
+rdtsc 2448870718758012 tail 408859 tput 643 modal 1 rpc [4.666565]
+rdtsc 2448871318762875 tail 410005 tput 643 modal 1 rpc [4.666565]
+rdtsc 2448871918783410 tail 414504 tput 644 modal 1 rpc [4.666565]
+rdtsc 2448872518783668 tail 409614 tput 644 modal 1 rpc [4.666565]
+rdtsc 2448873118791192 tail 408969 tput 644 modal 1 rpc [4.666565]
+TRACE:pushback_ours: rdtsc 2448873658374858 last_rdtsc 2448858144680577 recvd 22600000 last_recvd 22080000 rate 80.44505 last_rate 80.45126 ext_p [4.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448873658374858 d_rate -0.006210327 ext_p 5.666565 off 1 modal 0
+rdtsc 2448873718797087 tail 413418 tput 644 modal 0 rpc [5.666565]
+rdtsc 2448874318804815 tail 414706 tput 644 modal 0 rpc [5.666565]
+rdtsc 2448874918824960 tail 415397 tput 644 modal 0 rpc [5.666565]
+rdtsc 2448875518831797 tail 407902 tput 644 modal 0 rpc [5.666565]
+rdtsc 2448876118833732 tail 419365 tput 644 modal 0 rpc [5.666565]
+rdtsc 2448876718843086 tail 412251 tput 644 modal 0 rpc [5.666565]
+TRACE:pushback_ours: rdtsc 2448877237292961 last_rdtsc 2448873658374858 recvd 22720000 last_recvd 22600000 rate 80.47124 last_rate 80.44505 ext_p [5.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448877237292961 d_rate 0.026184082 ext_p 6.666565 off 1 modal 0
+rdtsc 2448877318862613 tail 407473 tput 644 modal 0 rpc [6.666565]
+rdtsc 2448877918880511 tail 416145 tput 644 modal 0 rpc [6.666565]
+TRACE:pushback_ours: rdtsc 2448878431871370 last_rdtsc 2448877237292961 recvd 22760000 last_recvd 22720000 rate 80.363075 last_rate 80.47124 ext_p [6.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448878431871370 d_rate -0.108161926 ext_p 5.666565 off -1 modal 1
+rdtsc 2448878518895682 tail 414406 tput 644 modal 1 rpc [5.666565]
+rdtsc 2448879118912299 tail 409595 tput 644 modal 1 rpc [5.666565]
+rdtsc 2448879718923495 tail 422861 tput 644 modal 1 rpc [5.666565]
+rdtsc 2448880318927611 tail 414650 tput 643 modal 1 rpc [5.666565]
+rdtsc 2448880918949607 tail 412300 tput 643 modal 1 rpc [5.666565]
+rdtsc 2448881518956462 tail 410896 tput 643 modal 1 rpc [5.666565]
+TRACE:pushback_ours: rdtsc 2448882013686690 last_rdtsc 2448878431871370 recvd 22880000 last_recvd 22760000 rate 80.40615 last_rate 80.363075 ext_p [5.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448882013686690 d_rate 0.04307556 ext_p 4.666565 off -1 modal 1
+rdtsc 2448882118974360 tail 417145 tput 643 modal 1 rpc [4.666565]
+rdtsc 2448882718985658 tail 405857 tput 643 modal 1 rpc [4.666565]
+TRACE:pushback_ours: rdtsc 2448883207986798 last_rdtsc 2448882013686690 recvd 22920000 last_recvd 22880000 rate 80.381805 last_rate 80.40615 ext_p [4.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448883207986798 d_rate -0.024345398 ext_p 5.666565 off 1 modal 0
+rdtsc 2448883319000277 tail 410989 tput 643 modal 0 rpc [5.666565]
+rdtsc 2448883919011482 tail 416571 tput 643 modal 0 rpc [5.666565]
+rdtsc 2448884519033232 tail 413559 tput 643 modal 0 rpc [5.666565]
+rdtsc 2448885119036112 tail 409447 tput 643 modal 0 rpc [5.666565]
+rdtsc 2448885719060295 tail 412113 tput 643 modal 0 rpc [5.666565]
+rdtsc 2448886319068974 tail 410912 tput 643 modal 0 rpc [5.666565]
+TRACE:pushback_ours: rdtsc 2448886787971416 last_rdtsc 2448883207986798 recvd 23040000 last_recvd 22920000 rate 80.447266 last_rate 80.381805 ext_p [5.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448886787971416 d_rate 0.065460205 ext_p 6.666565 off 1 modal 0
+rdtsc 2448886919070417 tail 412082 tput 643 modal 0 rpc [6.666565]
+rdtsc 2448887519074923 tail 410468 tput 643 modal 0 rpc [6.666565]
+rdtsc 2448888119075943 tail 416594 tput 643 modal 1 rpc [6.666565]
+rdtsc 2448888719086272 tail 416355 tput 643 modal 1 rpc [6.666565]
+TRACE:pushback_ours: rdtsc 2448889173023100 last_rdtsc 2448886787971416 recvd 23120000 last_recvd 23040000 rate 80.5014 last_rate 80.447266 ext_p [6.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448889173023100 d_rate 0.054138184 ext_p 7.666565 off 1 modal 1
+rdtsc 2448889319089419 tail 404015 tput 643 modal 1 rpc [7.666565]
+rdtsc 2448889919109936 tail 411411 tput 644 modal 1 rpc [7.666565]
+rdtsc 2448890519125383 tail 419090 tput 644 modal 1 rpc [7.666565]
+rdtsc 2448891119125533 tail 411591 tput 643 modal 1 rpc [7.666565]
+rdtsc 2448891719148732 tail 415007 tput 563 modal 1 rpc [7.666565]
+rdtsc 2448892319160987 tail 421758 tput 563 modal 1 rpc [7.666565]
+TRACE:pushback_ours: rdtsc 2448892751646255 last_rdtsc 2448889173023100 recvd 23240000 last_recvd 23120000 rate 80.477875 last_rate 80.5014 ext_p [7.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448892751646255 d_rate -0.023529053 ext_p 6.666565 off -1 modal 1
+rdtsc 2448892919165682 tail 414651 tput 563 modal 0 rpc [6.666565]
+rdtsc 2448893519186481 tail 411804 tput 563 modal 0 rpc [6.666565]
+TRACE:pushback_ours: rdtsc 2448893944374219 last_rdtsc 2448892751646255 recvd 23280000 last_recvd 23240000 rate 80.48776 last_rate 80.477875 ext_p [6.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448893944374219 d_rate 0.009887695 ext_p 5.666565 off -1 modal 0
+rdtsc 2448894119188455 tail 418597 tput 563 modal 0 rpc [5.666565]
+rdtsc 2448894719188890 tail 413214 tput 563 modal 0 rpc [5.666565]
+rdtsc 2448895319205135 tail 412580 tput 563 modal 0 rpc [5.666565]
+rdtsc 2448895919217516 tail 413359 tput 563 modal 0 rpc [5.666565]
+TRACE:pushback_ours: rdtsc 2448896330648619 last_rdtsc 2448893944374219 recvd 23360000 last_recvd 23280000 rate 80.46015 last_rate 80.48776 ext_p [5.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448896330648619 d_rate -0.027610779 ext_p 6.666565 off 1 modal 0
+TRACE:pushback_ours: rdtsc 2448896330718357 last_rdtsc 2448896330648619 recvd 23360000 last_recvd 23360000 rate 0 last_rate 80.46015 ext_p [6.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448896330718357 d_rate -80.46015 ext_p 1.666565 off -5 modal 0
+rdtsc 2448896519226063 tail 420532 tput 564 modal 0 rpc [1.666565]
+rdtsc 2448897119233623 tail 407388 tput 565 modal 0 rpc [1.666565]
+rdtsc 2448897719240175 tail 413510 tput 565 modal 1 rpc [1.666565]
+rdtsc 2448898319250420 tail 413170 tput 565 modal 1 rpc [1.666565]
+rdtsc 2448898919264832 tail 404930 tput 565 modal 1 rpc [1.666565]
+rdtsc 2448899519265483 tail 514339 tput 565 modal 1 rpc [1.666565]
+rdtsc 2448900119287950 tail 712609 tput 483 modal 1 rpc [1.666565]
+rdtsc 2448900719296881 tail 734539 tput 483 modal 1 rpc [1.666565]
+TRACE:pushback_ours: rdtsc 2448901106012178 last_rdtsc 2448896330718357 recvd 23520000 last_recvd 23360000 rate 80.413895 last_rate 0 ext_p [1.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448901106012178 d_rate 80.413895 ext_p 6.666565 off -5 modal 1
+TRACE:pushback_ours: rdtsc 2448901106100672 last_rdtsc 2448901106012178 recvd 23520000 last_recvd 23520000 rate 0 last_rate 80.413895 ext_p [6.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448901106100672 d_rate -80.413895 ext_p 1.666565 off -5 modal 1
+TRACE:pushback_ours: rdtsc 2448901106179614 last_rdtsc 2448901106100672 recvd 23520000 last_recvd 23520000 rate 0 last_rate 0 ext_p [1.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448901106179614 d_rate 0 ext_p 0.66656494 off -1 modal 1
+rdtsc 2448901319313933 tail 408604 tput 483 modal 1 rpc [0.66656494]
+rdtsc 2448901919317692 tail 410519 tput 402 modal 1 rpc [0.66656494]
+rdtsc 2448902519334555 tail 413470 tput 402 modal 0 rpc [0.66656494]
+rdtsc 2448903119348007 tail 414823 tput 402 modal 0 rpc [0.66656494]
+rdtsc 2448903719355291 tail 412435 tput 403 modal 0 rpc [0.66656494]
+rdtsc 2448904319381199 tail 410492 tput 484 modal 0 rpc [0.66656494]
+rdtsc 2448904919399847 tail 409411 tput 484 modal 0 rpc [0.66656494]
+rdtsc 2448905519405082 tail 408593 tput 484 modal 0 rpc [0.66656494]
+rdtsc 2448906119424087 tail 413940 tput 484 modal 0 rpc [0.66656494]
+rdtsc 2448906719424639 tail 418331 tput 484 modal 0 rpc [0.66656494]
+rdtsc 2448907319439012 tail 410840 tput 565 modal 1 rpc [0.66656494]
+rdtsc 2448907919464461 tail 406634 tput 565 modal 1 rpc [0.66656494]
+TRACE:pushback_ours: rdtsc 2448908267816046 last_rdtsc 2448901106179614 recvd 23760000 last_recvd 23520000 rate 80.42854 last_rate 0 ext_p [0.66656494] modal 1
+TRACE:pushback_ours: rdtsc 2448908267816046 d_rate 80.42854 ext_p 5.666565 off -5 modal 1
+rdtsc 2448908519466741 tail 412652 tput 645 modal 1 rpc [5.666565]
+rdtsc 2448909119488509 tail 410604 tput 645 modal 1 rpc [5.666565]
+TRACE:pushback_ours: rdtsc 2448909459950085 last_rdtsc 2448908267816046 recvd 23800000 last_recvd 23760000 rate 80.52786 last_rate 80.42854 ext_p [5.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448909459950085 d_rate 0.09931946 ext_p 6.666565 off 1 modal 1
+rdtsc 2448909719511531 tail 411548 tput 645 modal 1 rpc [6.666565]
+rdtsc 2448910319532270 tail 409754 tput 645 modal 1 rpc [6.666565]
+rdtsc 2448910919556138 tail 407654 tput 646 modal 1 rpc [6.666565]
+rdtsc 2448911519559597 tail 419274 tput 646 modal 1 rpc [6.666565]
+rdtsc 2448912119575146 tail 416573 tput 646 modal 0 rpc [6.666565]
+rdtsc 2448912719586903 tail 415453 tput 646 modal 0 rpc [6.666565]
+TRACE:pushback_ours: rdtsc 2448913037521812 last_rdtsc 2448909459950085 recvd 23920000 last_recvd 23800000 rate 80.501526 last_rate 80.52786 ext_p [6.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448913037521812 d_rate -0.02633667 ext_p 5.666565 off -1 modal 0
+rdtsc 2448913319589444 tail 415406 tput 646 modal 0 rpc [5.666565]
+rdtsc 2448913919610564 tail 415987 tput 646 modal 0 rpc [5.666565]
+rdtsc 2448914519628768 tail 410725 tput 565 modal 0 rpc [5.666565]
+rdtsc 2448915119632263 tail 411586 tput 565 modal 0 rpc [5.666565]
+rdtsc 2448915719653149 tail 409190 tput 565 modal 0 rpc [5.666565]
+rdtsc 2448916319656608 tail 416572 tput 484 modal 0 rpc [5.666565]
+rdtsc 2448916919671896 tail 414576 tput 484 modal 1 rpc [5.666565]
+rdtsc 2448917519693424 tail 414382 tput 484 modal 1 rpc [5.666565]
+TRACE:pushback_ours: rdtsc 2448917808864888 last_rdtsc 2448913037521812 recvd 24080000 last_recvd 23920000 rate 80.48049 last_rate 80.501526 ext_p [5.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448917808864888 d_rate -0.02103424 ext_p 6.666565 off 1 modal 1
+TRACE:pushback_ours: rdtsc 2448917808935508 last_rdtsc 2448917808864888 recvd 24080000 last_recvd 24080000 rate 0 last_rate 80.48049 ext_p [6.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448917808935508 d_rate -80.48049 ext_p 1.666565 off -5 modal 1
+TRACE:pushback_ours: rdtsc 2448917809011639 last_rdtsc 2448917808935508 recvd 24080000 last_recvd 24080000 rate 0 last_rate 0 ext_p [1.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448917809011639 d_rate 0 ext_p 0.66656494 off -1 modal 1
+rdtsc 2448918119700555 tail 418086 tput 484 modal 1 rpc [0.66656494]
+rdtsc 2448918719712552 tail 410164 tput 484 modal 1 rpc [0.66656494]
+TRACE:pushback_ours: rdtsc 2448919002026607 last_rdtsc 2448917809011639 recvd 24120000 last_recvd 24080000 rate 80.4684 last_rate 0 ext_p [0.66656494] modal 1
+TRACE:pushback_ours: rdtsc 2448919002026607 d_rate 80.4684 ext_p 5.666565 off -5 modal 1
+TRACE:pushback_ours: rdtsc 2448919002094212 last_rdtsc 2448919002026607 recvd 24120000 last_recvd 24120000 rate 0 last_rate 80.4684 ext_p [5.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448919002094212 d_rate -80.4684 ext_p 0.66656494 off -5 modal 1
+rdtsc 2448919319740398 tail 405312 tput 484 modal 1 rpc [0.66656494]
+rdtsc 2448919919743437 tail 410648 tput 484 modal 1 rpc [0.66656494]
+TRACE:pushback_ours: rdtsc 2448920194814709 last_rdtsc 2448919002094212 recvd 24160000 last_recvd 24120000 rate 80.48826 last_rate 0 ext_p [0.66656494] modal 1
+TRACE:pushback_ours: rdtsc 2448920194814709 d_rate 80.48826 ext_p 5.666565 off -5 modal 1
+rdtsc 2448920519747067 tail 420021 tput 564 modal 1 rpc [5.666565]
+rdtsc 2448921119762922 tail 416195 tput 645 modal 1 rpc [5.666565]
+rdtsc 2448921719775120 tail 424714 tput 645 modal 0 rpc [5.666565]
+rdtsc 2448922319778060 tail 412552 tput 645 modal 0 rpc [5.666565]
+TRACE:pushback_ours: rdtsc 2448922580173413 last_rdtsc 2448920194814709 recvd 24240000 last_recvd 24160000 rate 80.49104 last_rate 80.48826 ext_p [5.666565] modal 0
+TRACE:pushback_ours: rdtsc 2448922580173413 d_rate 0.002784729 ext_p 6.666565 off 1 modal 0
+rdtsc 2448922919787114 tail 410006 tput 564 modal 0 rpc [6.666565]
+rdtsc 2448923519805135 tail 405927 tput 564 modal 0 rpc [6.666565]
+rdtsc 2448924119810721 tail 415108 tput 564 modal 0 rpc [6.666565]
+rdtsc 2448924719824287 tail 409516 tput 564 modal 0 rpc [6.666565]
+rdtsc 2448925319835276 tail 408590 tput 564 modal 0 rpc [6.666565]
+rdtsc 2448925919845419 tail 415301 tput 564 modal 0 rpc [6.666565]
+rdtsc 2448926519869653 tail 410998 tput 564 modal 1 rpc [6.666565]
+rdtsc 2448927119901867 tail 412491 tput 564 modal 1 rpc [6.666565]
+TRACE:pushback_ours: rdtsc 2448927351967506 last_rdtsc 2448922580173413 recvd 24400000 last_recvd 24240000 rate 80.47288 last_rate 80.49104 ext_p [6.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448927351967506 d_rate -0.018165588 ext_p 5.666565 off -1 modal 1
+TRACE:pushback_ours: rdtsc 2448927352035933 last_rdtsc 2448927351967506 recvd 24400000 last_recvd 24400000 rate 0 last_rate 80.47288 ext_p [5.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448927352035933 d_rate -80.47288 ext_p 10.666565 off 5 modal 1
+rdtsc 2448927719929944 tail 412844 tput 565 modal 1 rpc [10.666565]
+rdtsc 2448928319941713 tail 414883 tput 565 modal 1 rpc [10.666565]
+rdtsc 2448928919946033 tail 407091 tput 484 modal 1 rpc [10.666565]
+rdtsc 2448929519963418 tail 414384 tput 484 modal 1 rpc [10.666565]
+rdtsc 2448930119963421 tail 416367 tput 484 modal 1 rpc [10.666565]
+rdtsc 2448930719973135 tail 412272 tput 484 modal 1 rpc [10.666565]
+TRACE:pushback_ours: rdtsc 2448930928551822 last_rdtsc 2448927352035933 recvd 24520000 last_recvd 24400000 rate 80.52529 last_rate 0 ext_p [10.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448930928551822 d_rate 80.52529 ext_p 15.666565 off 5 modal 1
+TRACE:pushback_ours: rdtsc 2448930928621596 last_rdtsc 2448930928551822 recvd 24520000 last_recvd 24520000 rate 0 last_rate 80.52529 ext_p [15.666565] modal 1
+TRACE:pushback_ours: rdtsc 2448930928621596 d_rate -80.52529 ext_p 10.666565 off -5 modal 1
+INFO:splinter::dispatch: Received many responses...
+rdtsc 2448931319985834 tail 409081 tput 484 modal 0 rpc [10.666565]
+INFO:splinter::dispatch: Received many responses...
+rdtsc 2448931919988852 tail 421686 tput 484 modal 0 rpc [10.666565]
+INFO:splinter::dispatch: Received many responses...
+INFO:splinter::dispatch: Received many responses...
+INFO:splinter::dispatch: Received many responses...
+rdtsc 2448932520006018 tail 424044 tput 484 modal 0 rpc [10.666565]
+rdtsc 2448933120021378 tail 411533 tput 484 modal 0 rpc [10.666565]
+INFO:splinter::dispatch: Received many responses...
+rdtsc 2448933720043950 tail 418472 tput 565 modal 0 rpc [10.666565]
+INFO:splinter::dispatch: Received many responses...
+rdtsc 2448934320075243 tail 411730 tput 565 modal 0 rpc [10.666565]
+INFO:splinter::dispatch: Received many responses...
+rdtsc 2448934920075687 tail 410834 tput 565 modal 0 rpc [10.666565]
+rdtsc 2448935520078618 tail 418241 tput 565 modal 0 rpc [10.666565]
+rdtsc 2448936120092916 tail 420129 tput 565 modal 1 rpc [10.666565]
+rdtsc 2448936720093231 tail 408952 tput 565 modal 1 rpc [10.666565]
+rdtsc 2448937320100272 tail 417094 tput 565 modal 1 rpc [10.666565]
+rdtsc 2448937920134730 tail 417422 tput 565 modal 1 rpc [10.666565]
+rdtsc 2448938520144231 tail 409984 tput 565 modal 1 rpc [10.666565]

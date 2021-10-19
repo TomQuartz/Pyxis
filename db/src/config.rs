@@ -237,6 +237,16 @@ pub struct ClientConfig {
     /// equal ratio among all types
     /// if false, the ratio is inversely proportional to job duration
     pub equal_ratio: bool,
+    /// compute the rpc rate using kayak's xloop
+    pub learnable: bool,
+    /// interval for the second type in bimodal
+    pub bimodal_interval2: u64,
+    /// ratio of the first type in two intervals
+    pub bimodal_ratio: Vec<u32>,
+    /// two rpc rate for each modal
+    pub bimodal_rpc: Vec<u32>,
+    /// how many cycles between each stats output
+    pub output_factor: u64,
 }
 
 impl ClientConfig {

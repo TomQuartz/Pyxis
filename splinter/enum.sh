@@ -4,30 +4,25 @@ set -exu
 
 CLIENTTOML_PATH="./client.toml"
 
+date="20211019"
+
 # naive implementation
 # Set the related line index up manually 
 line_invoke_p=84
 line_max_out=87
+line_bimodal=90
+line_bi_interval=96
 line_multi_kv=98
 line_multi_ord=99
 line_partition=101
-line_equal_ratio=103
+line_learnable=104
+line_bi_interval2=105
+line_bi_rpc=107
 
 num_type=$1
 max_out=(1 2 4 8 16 32)
 
-# # enumerate type combination
-# i=0
-# while ((i<len))
-# do
-#     let "j=i+1"
-#     while ((j<len))
-#     do
-#         ...
-#         ((++j))
-#     done
-#     ((++i))
-# done
+sed -i -e "${line_bimodal}c bimodal = true" ${CLIENTTOML_PATH}
 
 # fixed type
 if ((num_type==1)); then
@@ -42,14 +37,14 @@ elif ((num_type==2)); then
     sed -i -e "${line_multi_ord}c multi_ord = [${ord[0]}, ${ord[1]}]" ${CLIENTTOML_PATH}
 elif ((num_type==4)); then
     kv=(8 4 2 1)
-    ord=(200 800 3200 12800)
+    ord=(50 400 3200 25600)
     sed -i -e "${line_multi_kv}c multi_kv = \
 [${kv[0]}, ${kv[1]}, ${kv[2]}, ${kv[3]}]" ${CLIENTTOML_PATH}
     sed -i -e "${line_multi_ord}c multi_ord = \
 [${ord[0]}, ${ord[1]}, ${ord[2]}, ${ord[3]}]" ${CLIENTTOML_PATH}
 else  # num_type == 8
-    kv=(128 64 32 16 8 4 2 1)
-    ord=(10 25 50 100 200 800 3200 12800)
+    kv=(8 8 4 4 2 2 1 1)
+    ord=(25 50 200 400 1600 3200 12800 25600)
     sed -i -e "${line_multi_kv}c multi_kv = \
 [${kv[0]}, ${kv[1]}, ${kv[2]}, ${kv[3]}, ${kv[4]}, ${kv[5]}, ${kv[6]}, ${kv[7]}]" ${CLIENTTOML_PATH}
     sed -i -e "${line_multi_ord}c multi_ord = \
@@ -58,10 +53,18 @@ fi
 
 
 # Run Kayak
-OUTPUT="./kayak_type${num_type}.log"
+LOG_PATH="../logs/${date}_enumerate/"
+if [ ! -d ${LOG_PATH} ]; then
+    mkdir -p ${LOG_PATH}
+fi
+cd ${LOG_PATH}
+OUTPUT="kayak_type${num_type}.log"
 if [ -e ${OUTPUT} ]; then
     rm ${OUTPUT}
 fi
+cd -
+OUTPUT=${LOG_PATH}${OUTPUT}
+
 
 sed -i -e "${line_partition}c partition = -1" ${CLIENTTOML_PATH}
 sed -i -e "${line_invoke_p}c invoke_p = 100" ${CLIENTTOML_PATH}
@@ -80,11 +83,6 @@ done
 
 # Run ours
 
-OUTPUT="./test_ours_type${num_type}.log"
-if [ -e ${OUTPUT} ]; then
-    rm ${OUTPUT}
-fi
-
 # Configuration could be modified here.
 if ((num_type==1)); then
     partition=(0)
@@ -100,11 +98,14 @@ invoke_p=(0 10 20 30 40 50 60 70 80 90 100)
 for t in ${max_out[@]}
 do
     sed -i -e "${line_max_out}c max_out = ${t}" ${CLIENTTOML_PATH}
-    
-    OUTPUT="./ours_type${num_type}_out${t}.log"
+
+    cd ${LOG_PATH}
+    OUTPUT="ours_type${num_type}_out${t}.log"
     if [ -e ${OUTPUT} ]; then
         rm ${OUTPUT}
     fi
+    cd -
+    OUTPUT=${LOG_PATH}${OUTPUT}
 
     echo "max_out = ${t}" >> ${OUTPUT}
     echo "" >> ${OUTPUT}

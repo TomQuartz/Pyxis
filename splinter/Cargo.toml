@@ -12,6 +12,11 @@ path = "src/lib.rs"
 name = "pushback-ours"
 path = "src/bin/client/pushback-ours.rs"
 
+[[bin]]
+name = "test"
+path = "src/bin/client/test.rs"
+
+
 [dependencies]
 order-stat   = "0.1.3"
 bincode      = "1.0"
@@ -36,6 +41,7 @@ db           = {path = "../db"}
 sandstorm    = {path = "../sandstorm"}
 e2d2         = {path = "../net/framework"}
 util         = {path = "../util"}
+atomic_float = "0.1.0"
 
 # Add feature name in default features to enable cyclecounter for the given stage,
 # where stage name can be ["execution"].
