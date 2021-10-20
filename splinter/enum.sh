@@ -33,8 +33,8 @@ if ((num_type==1)); then
     sed -i -e "${line_multi_kv}c multi_kv = [${kv[0]}]" ${CLIENTTOML_PATH}
     sed -i -e "${line_multi_ord}c multi_ord = [${ord[0]}]" ${CLIENTTOML_PATH}
 elif ((num_type==2)); then
-    kv=(16 1)
-    ord=(100 12800)
+    kv=(32 1)
+    ord=(800 12800)
     sed -i -e "${line_multi_kv}c multi_kv = [${kv[0]}, ${kv[1]}]" ${CLIENTTOML_PATH}
     sed -i -e "${line_multi_ord}c multi_ord = [${ord[0]}, ${ord[1]}]" ${CLIENTTOML_PATH}
 elif ((num_type==4)); then
@@ -60,30 +60,31 @@ fi
 
 # Run Kayak
 
-# cd ${LOG_PATH}
-# OUTPUT="kayak_type${num_type}.log"
-# if [ -e ${OUTPUT} ]; then
-#     rm ${OUTPUT}
-# fi
-# cd -
-# OUTPUT=${LOG_PATH}${OUTPUT}
+cd ${LOG_PATH}
+OUTPUT="kayak_type${num_type}.log"
+if [ -e ${OUTPUT} ]; then
+    rm ${OUTPUT}
+fi
+cd -
+OUTPUT=${LOG_PATH}${OUTPUT}
 
 
-# sed -i -e "${line_partition}c partition = -1" ${CLIENTTOML_PATH}
-# sed -i -e "${line_invoke_p}c invoke_p = 100" ${CLIENTTOML_PATH}
-# # Print configuration
-# echo "Kayak configuration:" >> ${OUTPUT}
-# echo "partition = -1" >> ${OUTPUT}
-# echo "invoke_p = 100" >> ${OUTPUT}
-# echo "multi_type = ${kv[@]}" >> ${OUTPUT}
-# echo "multi_ord = ${ord[@]}" >> ${OUTPUT} 
-# for t in ${max_out[@]}
-# do
-#     sed -i -e "${line_max_out}c max_out = ${t}" ${CLIENTTOML_PATH}
-#     echo "max_out = ${t}" >> ${OUTPUT}
-#     echo "" >> ${OUTPUT}
-#     sudo env RUST_LOG=debug LD_LIBRARY_PATH=../net/target/native ./target/release/pushback-ours >> ${OUTPUT}
-# done
+sed -i -e "${line_partition}c partition = -1" ${CLIENTTOML_PATH}
+sed -i -e "${line_invoke_p}c invoke_p = 100" ${CLIENTTOML_PATH}
+# Print configuration
+echo "Kayak configuration:" >> ${OUTPUT}
+echo "partition = -1" >> ${OUTPUT}
+echo "invoke_p = 100" >> ${OUTPUT}
+echo "multi_type = ${kv[@]}" >> ${OUTPUT}
+echo "multi_ord = ${ord[@]}" >> ${OUTPUT}
+
+for t in ${max_out[@]}
+do
+    sed -i -e "${line_max_out}c max_out = ${t}" ${CLIENTTOML_PATH}
+    echo "max_out = ${t}" >> ${OUTPUT}
+    echo "" >> ${OUTPUT}
+    sudo env RUST_LOG=debug LD_LIBRARY_PATH=../net/target/native ./target/release/pushback-ours >> ${OUTPUT}
+done
 
 
 # Run ours

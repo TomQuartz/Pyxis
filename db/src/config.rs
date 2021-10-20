@@ -227,6 +227,8 @@ pub struct ClientConfig {
     pub multi_kv: Vec<u32>,
     /// cpu computation for multi-type
     pub multi_ord: Vec<u32>,
+    /// ratio for each type
+    pub multi_ratio: Vec<f32>,
     /// compute rpc rate for each type or not
     pub multi_rpc: bool,
     /// split each type into several steps
@@ -238,7 +240,7 @@ pub struct ClientConfig {
     pub num_sender: usize,
     /// equal ratio among all types
     /// if false, the ratio is inversely proportional to job duration
-    pub equal_ratio: bool,
+    // pub equal_ratio: bool,
     /// compute the rpc rate using kayak's xloop
     pub learnable: bool,
     /// interval for the second type in bimodal
