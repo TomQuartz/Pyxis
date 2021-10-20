@@ -4,7 +4,7 @@ set -exu
 
 CLIENTTOML_PATH="./client.toml"
 
-date="20211019"
+date="20211020"
 
 # naive implementation
 # Set the related line index up manually 
@@ -22,7 +22,8 @@ line_bi_rpc=107
 num_type=$1
 max_out=(1 2 4 8 16 32)
 
-sed -i -e "${line_bimodal}c bimodal = true" ${CLIENTTOML_PATH}
+sed -i -e "${line_bimodal}c bimodal = false" ${CLIENTTOML_PATH}
+sed -i -e "${line_learnable}c learnable = true" ${CLIENTTOML_PATH}
 
 # fixed type
 if ((num_type==1)); then

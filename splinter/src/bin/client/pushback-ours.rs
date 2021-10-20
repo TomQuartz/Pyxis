@@ -195,6 +195,7 @@ where
     // Time stamp in cycles at which measurement started. Required to calculate observed
     // throughput of the Sandstorm server.
     start: u64,
+    init_rdtsc: u64,
 
     // The total number of responses received so far.
     recvd: Arc<AtomicUsize>,
@@ -346,8 +347,8 @@ where
         idx: usize,
         kth: Vec<Arc<AtomicUsize>>,
         ext_p: Vec<Arc<AtomicF32>>,
-        recvd: Arc<AtomicUsize>, // tput: Vec<Arc<AtomicUsize>>,
-                                 // which_modal: Arc<AtomicUsize>
+        recvd: Arc<AtomicUsize>,
+        init_rdtsc: u64,
     ) -> PushbackRecvSend<T> {
         // The payload on an invoke() based get request consists of the extensions name ("pushback"),
         // the table id to perform the lookup on, number of get(), number of CPU cycles and the key to lookup.
@@ -414,7 +415,8 @@ where
         PushbackRecvSend {
             receiver: dispatch::Receiver::new(rx_port),
             responses: resps,
-            start: cycles::rdtsc(),
+            start: 0,
+            init_rdtsc: init_rdtsc,
             recvd: recvd,
             local_recvd: 0,
             counter_pushback: 0,
@@ -489,7 +491,8 @@ where
     fn get_type_idx(&mut self) -> usize {
         let o = self.workload.borrow_mut().rng.gen::<u32>() % 10000;
         if self.is_bimodal {
-            self.modal_idx = if (cycles::rdtsc()-self.start) % (self.bimodal_interval + self.bimodal_interval2)
+            self.modal_idx = if (cycles::rdtsc() - self.init_rdtsc)
+                % (self.bimodal_interval + self.bimodal_interval2)
                 < self.bimodal_interval
             {
                 0
@@ -532,6 +535,9 @@ where
     }
 
     fn send(&mut self) {
+        if self.start == 0 {
+            self.start = cycles::rdtsc();
+        }
         // Return if there are no more requests to generate.
         if self.requests <= self.sent {
             return;
@@ -627,6 +633,7 @@ where
             let curr = cycles::rdtsc();
             while let Some(packet) = packets.pop() {
                 // Process the commit response and continue.
+                /*
                 match parse_rpc_opcode(&packet) {
                     OpCode::SandstormCommitRpc => {
                         let p = packet.parse_header::<CommitResponse>();
@@ -650,126 +657,132 @@ where
                         /// In rust remove won't complain if no key.
                         self.native_state.borrow_mut().remove(&timestamp);
 
-                        continue;
+                        // continue;
                     }
 
                     _ => {}
                 }
+                */
+                // Removed the condition is_native
+                match parse_rpc_opcode(&packet) {
+                    // The response corresponds to an invoke() RPC.
+                    OpCode::SandstormInvokeRpc => {
+                        let p = packet.parse_header::<InvokeResponse>();
+                        match p.get_header().common_header.status {
+                            // If the status is StatusOk then add the stamp to the latencies and
+                            // free the packet.
+                            RpcStatus::StatusOk => {
+                                // self.recvd += 1;
+                                self.local_recvd += 1;
+                                self.recvd.fetch_add(1, Ordering::Relaxed);
+                                packet_recvd_signal = true;
+                                self.latencies
+                                    .push(curr - p.get_header().common_header.stamp);
+                                self.outstanding -= 1;
+                                self.manager
+                                    .borrow_mut()
+                                    .delete_task(p.get_header().common_header.stamp);
+                            }
 
-                /// Removed the condition is_native
-                {
-                    match parse_rpc_opcode(&packet) {
-                        // The response corresponds to an invoke() RPC.
-                        OpCode::SandstormInvokeRpc => {
-                            let p = packet.parse_header::<InvokeResponse>();
+                            // If the status is StatusPushback then compelete the task, add the
+                            // stamp to the latencies, and free the packet.
+                            RpcStatus::StatusPushback => {
+                                let records = p.get_payload();
+                                let hdr = &p.get_header();
+                                let timestamp = hdr.common_header.stamp;
+
+                                self.counter_pushback += 1;
+
+                                // Unblock the task and put it in the ready queue.
+                                self.manager.borrow_mut().update_rwset(
+                                    timestamp,
+                                    records,
+                                    self.record_len,
+                                    self.key_len,
+                                );
+                                self.outstanding -= 1;
+                            }
+
+                            _ => {}
+                        }
+                        p.free_packet();
+                    }
+
+                    // _ => packet.free_packet(),
+                    OpCode::SandstormGetRpc => {
+                        let p = packet.parse_header::<GetResponse>();
+                        let timestamp = p.get_header().common_header.stamp;
+                        let tenant = p.get_header().common_header.tenant;
+                        let val_len = self.record_len - self.key_len - 9;
+                        let mut native_state = self.native_state.borrow_mut();
+                        if let Some(ref mut state) = native_state.get_mut(&timestamp) {
                             match p.get_header().common_header.status {
-                                // If the status is StatusOk then add the stamp to the latencies and
-                                // free the packet.
                                 RpcStatus::StatusOk => {
-                                    // self.recvd += 1;
-                                    self.local_recvd += 1;
-                                    self.recvd.fetch_add(1, Ordering::Relaxed);
-                                    packet_recvd_signal = true;
-                                    self.latencies
-                                        .push(curr - p.get_header().common_header.stamp);
-                                    self.outstanding -= 1;
-                                    self.manager
-                                        .borrow_mut()
-                                        .delete_task(p.get_header().common_header.stamp);
-                                }
+                                    let record = p.get_payload();
+                                    state.update_rwset(&record, self.key_len);
+                                    let MultiType {
+                                        num_kv: n,
+                                        order: o,
+                                    } = self.multi_types[state.type_idx];
+                                    if state.op_num == n as u8 {
+                                        /*let start = cycles::rdtsc();
+                                        while cycles::rdtsc() - start < self.ord as u64 {}*/
+                                        // Ord will change with bimodal
+                                        state.execute_task(n, o);
+                                        // self.sender.send_commit(
+                                        //     tenant,
+                                        //     1,
+                                        //     &state.commit_payload,
+                                        //     timestamp,
+                                        //     self.key_len as u16,
+                                        //     val_len as u16,
+                                        // );
+                                        self.outstanding -= 1;
 
-                                // If the status is StatusPushback then compelete the task, add the
-                                // stamp to the latencies, and free the packet.
-                                RpcStatus::StatusPushback => {
-                                    let records = p.get_payload();
-                                    let hdr = &p.get_header();
-                                    let timestamp = hdr.common_header.stamp;
-
-                                    self.counter_pushback += 1;
-
-                                    // Unblock the task and put it in the ready queue.
-                                    self.manager.borrow_mut().update_rwset(
-                                        timestamp,
-                                        records,
-                                        self.record_len,
-                                        self.key_len,
-                                    );
-                                    self.outstanding -= 1;
+                                        self.latencies.push(curr - timestamp);
+                                        self.local_recvd += 1;
+                                        self.recvd.fetch_add(1, Ordering::Relaxed);
+                                        packet_recvd_signal = true;
+                                        /// In rust remove won't complain if no key.
+                                        native_state.remove(&timestamp);
+                                    } else {
+                                        match parse_record_optype(record) {
+                                            OpType::SandstormRead => {
+                                                // Send the packet with same tenantid, curr etc.
+                                                let record = record.split_at(1).1;
+                                                let (version, entry) = record.split_at(8);
+                                                let (key, val) = entry.split_at(self.key_len);
+                                                // Deserializing is required in actual client;
+                                                // even we are doing the same for Pushback.
+                                                let kv = KV::new(
+                                                    Bytes::from(version),
+                                                    Bytes::from(key),
+                                                    Bytes::from(val),
+                                                );
+                                                self.sender.send_get(
+                                                    tenant,
+                                                    1,
+                                                    &kv.value[0..30],
+                                                    timestamp,
+                                                );
+                                                state.op_num += 1;
+                                            }
+                                            _ => {
+                                                info!("The record is expected to be SandstormRead type");
+                                            }
+                                        }
+                                    }
                                 }
 
                                 _ => {}
                             }
-                            p.free_packet();
                         }
-
-                        // _ => packet.free_packet(),
-                        OpCode::SandstormGetRpc => {
-                            let p = packet.parse_header::<GetResponse>();
-                            let timestamp = p.get_header().common_header.stamp;
-                            let tenant = p.get_header().common_header.tenant;
-                            let val_len = self.record_len - self.key_len - 9;
-                            if let Some(ref mut state) =
-                                self.native_state.borrow_mut().get_mut(&timestamp)
-                            {
-                                match p.get_header().common_header.status {
-                                    RpcStatus::StatusOk => {
-                                        let record = p.get_payload();
-                                        state.update_rwset(&record, self.key_len);
-                                        let MultiType {
-                                            num_kv: n,
-                                            order: o,
-                                        } = self.multi_types[state.type_idx];
-                                        if state.op_num == n as u8 {
-                                            /*let start = cycles::rdtsc();
-                                            while cycles::rdtsc() - start < self.ord as u64 {}*/
-                                            // Ord will change with bimodal
-                                            state.execute_task(n, o);
-                                            self.sender.send_commit(
-                                                tenant,
-                                                1,
-                                                &state.commit_payload,
-                                                timestamp,
-                                                self.key_len as u16,
-                                                val_len as u16,
-                                            );
-                                            self.outstanding -= 1;
-                                        } else {
-                                            match parse_record_optype(record) {
-                                                OpType::SandstormRead => {
-                                                    // Send the packet with same tenantid, curr etc.
-                                                    let record = record.split_at(1).1;
-                                                    let (version, entry) = record.split_at(8);
-                                                    let (key, val) = entry.split_at(self.key_len);
-                                                    // Deserializing is required in actual client;
-                                                    // even we are doing the same for Pushback.
-                                                    let kv = KV::new(
-                                                        Bytes::from(version),
-                                                        Bytes::from(key),
-                                                        Bytes::from(val),
-                                                    );
-                                                    self.sender.send_get(
-                                                        tenant,
-                                                        1,
-                                                        &kv.value[0..30],
-                                                        timestamp,
-                                                    );
-                                                    state.op_num += 1;
-                                                }
-                                                _ => {
-                                                    info!("The record is expected to be SandstormRead type");
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    _ => {}
-                                }
-                            }
-                            p.free_packet();
-                        }
-
-                        _ => packet.free_packet(),
+                        p.free_packet();
                     }
+
+                    OpCode::SandstormCommitRpc => {}
+
+                    _ => packet.free_packet(),
                 }
 
                 // kth measurement here
@@ -782,52 +795,52 @@ where
                         Ordering::Relaxed,
                     );
                 }
-
+                /*
                 // Loop logic here
                 // This is R-loop
-                // let rloop_rdtsc = cycles::rdtsc();
-                // if self.rloop_factor != 0
-                //     && packet_recvd_signal
-                //     && (rloop_rdtsc - self.rloop_last_rdtsc > 2400000000 / self.rloop_factor as u64)
-                //     && len > 100
-                //     && len % self.rloop_factor == 0
-                // {
-                //     let rloop_rate = 2.4e6 * (self.recvd - self.rloop_last_recvd) as f32
-                //         / (rloop_rdtsc - self.rloop_last_rdtsc) as f32;
-                //     self.rloop_last_rdtsc = rloop_rdtsc;
-                //     self.rloop_last_recvd = self.recvd;
+                let rloop_rdtsc = cycles::rdtsc();
+                if self.rloop_factor != 0
+                    && packet_recvd_signal
+                    && (rloop_rdtsc - self.rloop_last_rdtsc > 2400000000 / self.rloop_factor as u64)
+                    && len > 100
+                    && len % self.rloop_factor == 0
+                {
+                    let rloop_rate = 2.4e6 * (self.recvd - self.rloop_last_recvd) as f32
+                        / (rloop_rdtsc - self.rloop_last_rdtsc) as f32;
+                    self.rloop_last_rdtsc = rloop_rdtsc;
+                    self.rloop_last_recvd = self.recvd;
 
-                //     // // Newton's method version, not really working...
-                //     // let kth_delta = self.kth - self.rloop_last_kth;
-                //     // self.rloop_last_kth = self.kth;
-                //     //
-                //     // let last_out_delta = self.max_out - self.rloop_last_out;
-                //     // self.rloop_last_out = self.max_out;
+                    // // Newton's method version, not really working...
+                    // let kth_delta = self.kth - self.rloop_last_kth;
+                    // self.rloop_last_kth = self.kth;
+                    //
+                    // let last_out_delta = self.max_out - self.rloop_last_out;
+                    // self.rloop_last_out = self.max_out;
 
-                //     let lat_offset = self.slo as f32 - self.kth as f32;
+                    let lat_offset = self.slo as f32 - self.kth as f32;
 
-                //     // 3e-6 for heavy, 2e-5 normal
-                //     let out_delta = 3e-6 * lat_offset; // * last_out_delta / kth_delta as f32;
+                    // 3e-6 for heavy, 2e-5 normal
+                    let out_delta = 3e-6 * lat_offset; // * last_out_delta / kth_delta as f32;
 
-                //     if self.max_out + out_delta > 2.0 {
-                //         self.max_out += out_delta;
-                //     } else {
-                //         self.max_out = self.max_out * 0.5;
-                //         if self.max_out < 2.0 {
-                //             self.max_out = 2.0;
-                //         }
-                //     }
+                    if self.max_out + out_delta > 2.0 {
+                        self.max_out += out_delta;
+                    } else {
+                        self.max_out = self.max_out * 0.5;
+                        if self.max_out < 2.0 {
+                            self.max_out = 2.0;
+                        }
+                    }
 
-                //     // // AIMD version
-                //     // if self.slo < self.kth && self.max_out > 2 {
-                //     //     self.max_out = self.max_out * 4 / 5;
-                //     // } else {
-                //     //     self.max_out += 1;
-                //     // }
+                    // // AIMD version
+                    // if self.slo < self.kth && self.max_out > 2 {
+                    //     self.max_out = self.max_out * 4 / 5;
+                    // } else {
+                    //     self.max_out += 1;
+                    // }
 
-                //     // Debug output
-                //     // info!("rdtsc {} len {} tail {} out {} rloop_rate {} RL", cycles::rdtsc(), len, self.kth, self.max_out, rloop_rate);
-                // }
+                    // Debug output
+                    // info!("rdtsc {} len {} tail {} out {} rloop_rate {} RL", cycles::rdtsc(), len, self.kth, self.max_out, rloop_rate);
+                }*/
                 if self.master {
                     let xloop_rdtsc = cycles::rdtsc();
                     let recvd = self.recvd.load(Ordering::Relaxed) as u64;
@@ -1012,6 +1025,7 @@ fn setup_send_recv<S>(
     kth: Vec<Arc<AtomicUsize>>,
     ext_p: Vec<Arc<AtomicF32>>,
     recvd: Arc<AtomicUsize>,
+    init_rdtsc: u64,
     // tput: Vec<Arc<AtomicUsize>>,
     // which_modal: Arc<AtomicUsize>,
 ) where
@@ -1044,6 +1058,7 @@ fn setup_send_recv<S>(
         kth,
         ext_p,
         recvd,
+        init_rdtsc,
         // tput,
         // which_modal,
     )) {
@@ -1105,6 +1120,7 @@ fn main() {
     let recvd = Arc::new(AtomicUsize::new(0));
 
     // Setup 1 senders, and receivers.
+    let init_rdtsc = cycles::rdtsc();
     for i in 0..config.num_sender {
         // First, retrieve a tx-rx queue pair from Netbricks
         let port = net_context
@@ -1139,6 +1155,7 @@ fn main() {
                             kth_copy.clone(),
                             ext_p_copy.clone(),
                             recvd_copy.clone(),
+                            init_rdtsc,
                             // tput_copy.clone(),
                             // which_modal_copy.clone(),
                         )
