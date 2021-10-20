@@ -13,6 +13,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+extern crate atomic_float;
 extern crate bytes;
 extern crate db;
 extern crate order_stat;
@@ -22,7 +23,6 @@ extern crate spin;
 extern crate splinter;
 extern crate time;
 extern crate zipf;
-extern crate atomic_float;
 
 mod setup;
 
@@ -52,8 +52,8 @@ use splinter::sched::TaskManager;
 use splinter::*;
 use zipf::ZipfDistribution;
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use self::atomic_float::AtomicF32;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 // Flag to indicate that the client has finished sending and receiving the packets.
 static mut FINISHED: bool = false;
@@ -197,7 +197,8 @@ where
     start: u64,
 
     // The total number of responses received so far.
-    recvd: u64,
+    recvd: Arc<AtomicUsize>,
+    local_recvd: u64,
 
     // Count how many reqs has been pushed back.
     counter_pushback: u64,
@@ -208,7 +209,7 @@ where
 
     /// The percentage of operations that are extention. The rest are native.
     // ext_p: Vec<Arc<AtomicUsize>>,
-    ext_p: Vec<f32>,
+    ext_p: Vec<Arc<AtomicF32>>,
 
     // If true, this receiver will make latency measurements.
     master: bool,
@@ -297,7 +298,7 @@ where
     record_len: usize,
     // modified here
     idx: usize,
-    tput: Vec<Arc<AtomicUsize>>,
+    // tput: Vec<Arc<AtomicUsize>>,
     // multi-types,
     multi_types: Vec<MultiType>,
     cum_prob: Vec<u32>,
@@ -306,7 +307,7 @@ where
     bimodal_interval2: u64,
     bimodal_ratio: Vec<Vec<u32>>,
     bimodal_rpc: Vec<u32>,
-    which_modal: Arc<AtomicUsize>,
+    // which_modal: Arc<AtomicUsize>,
     modal_idx: usize,
     output_factor: u64,
     output_last_rdtsc: u64,
@@ -344,9 +345,9 @@ where
         ord2: u32,
         idx: usize,
         kth: Vec<Arc<AtomicUsize>>,
-        // ext_p: Vec<Arc<AtomicUsize>>,
-        tput: Vec<Arc<AtomicUsize>>,
-        which_modal: Arc<AtomicUsize>,
+        ext_p: Vec<Arc<AtomicF32>>,
+        recvd: Arc<AtomicUsize>, // tput: Vec<Arc<AtomicUsize>>,
+                                 // which_modal: Arc<AtomicUsize>
     ) -> PushbackRecvSend<T> {
         // The payload on an invoke() based get request consists of the extensions name ("pushback"),
         // the table id to perform the lookup on, number of get(), number of CPU cycles and the key to lookup.
@@ -414,7 +415,8 @@ where
             receiver: dispatch::Receiver::new(rx_port),
             responses: resps,
             start: cycles::rdtsc(),
-            recvd: 0,
+            recvd: recvd,
+            local_recvd: 0,
             counter_pushback: 0,
             latencies: Vec::with_capacity(resps as usize),
             /// The percentage of operations that are extention. The rest are native.
@@ -466,9 +468,9 @@ where
             record_len: 1 + 8 + config.key_len + config.value_len,
             // modified here
             xloop_last_X: vec![50.5;num_x],
-            tput: tput,
-            // ext_p: ext_p,
-            ext_p: vec![config.invoke_p as f32;num_x],
+            // tput: tput,
+            ext_p: ext_p,
+            // ext_p: vec![config.invoke_p as f32;num_x],
             multi_types: MultiType::new(&config.multi_kv,&config.multi_ord),
             cum_prob: cum_prob,
             partition: config.partition,
@@ -477,7 +479,7 @@ where
             bimodal_interval2: config.bimodal_interval2,
             bimodal_ratio: bimodal_ratio,
             bimodal_rpc: config.bimodal_rpc.clone(),
-            which_modal: which_modal,
+            // which_modal: which_modal,
             modal_idx: 0,
             output_factor: config.output_factor,
             output_last_rdtsc: 0,
@@ -487,34 +489,17 @@ where
     fn get_type_idx(&mut self) -> usize {
         let o = self.workload.borrow_mut().rng.gen::<u32>() % 10000;
         if self.is_bimodal {
-            let mut which_modal: usize;
-            // if self.master {
-            //     which_modal = if cycles::rdtsc() % (self.bimodal_interval + self.bimodal_interval2)
-            //         < self.bimodal_interval
-            //     // if (cycles::rdtsc() / self.bimodal_interval) % 2 == 1
-            //     {
-            //         0
-            //     } else {
-            //         1
-            //     };
-            //     self.which_modal.store(which_modal, Ordering::Release);
-            // } else {
-            //     which_modal = self.which_modal.load(Ordering::Acquire);
-            // }
-            which_modal = if cycles::rdtsc() % (self.bimodal_interval + self.bimodal_interval2)
+            self.modal_idx = if (cycles::rdtsc()-self.start) % (self.bimodal_interval + self.bimodal_interval2)
                 < self.bimodal_interval
             {
                 0
             } else {
                 1
             };
-            self.modal_idx = which_modal;
-            let idx = self.bimodal_ratio[which_modal]
+            self.bimodal_ratio[self.modal_idx]
                 .iter()
                 .position(|&x| x > o)
-                .unwrap() as usize;
-            // assert_eq!(self.modal_idx, idx);
-            idx
+                .unwrap() as usize
         } else {
             self.cum_prob.iter().position(|&x| x > o).unwrap() as usize
         }
@@ -530,21 +515,19 @@ where
                 true
             } else {
                 let ext_p = if self.is_bimodal {
-                    // let which_modal = self.which_modal.load(Ordering::Acquire);
-                    let which_modal = self.modal_idx;
-                    self.bimodal_rpc[which_modal]
+                    self.bimodal_rpc[self.modal_idx]
                 } else {
-                    // self.ext_p[0].load(Ordering::Relaxed) as u32
-                    self.ext_p[0] as u32
+                    (self.ext_p[0].load(Ordering::Relaxed) * 100.0) as u32
+                    // self.ext_p[0] as u32
                 };
                 o > ext_p
             }
         } else if self.ext_p.len() > 1 {
-            // o >= (self.ext_p[type_idx].load(Ordering::Relaxed)) as u32
-            o > self.ext_p[type_idx] as u32
+            o > (self.ext_p[type_idx].load(Ordering::Relaxed) * 100.0) as u32
+            // o > self.ext_p[type_idx] as u32
         } else {
-            // o >= (self.ext_p[0].load(Ordering::Relaxed)) as u32
-            o > self.ext_p[0] as u32
+            o > (self.ext_p[0].load(Ordering::Relaxed) * 100.0) as u32
+            // o > self.ext_p[0] as u32
         }
     }
 
@@ -554,17 +537,6 @@ where
             return;
         }
 
-        // Switch ord between ord1 and ord2, only when bimodal
-        // if self.is_bimodal {
-        //     if (cycles::rdtsc() / self.bimodal_interval) % 2 == 1 {
-        //         self.ord = self.ord1;
-        //     } else {
-        //         self.ord = self.ord2;
-        //     }
-        // }
-
-        // let o = self.workload.borrow_mut().rng.gen::<u32>() % 10000;
-        // let type_idx: usize = self.cum_prob.iter().position(|&x| x >= o).unwrap();
         let type_idx: usize = self.get_type_idx();
 
         while self.outstanding < self.max_out as u64
@@ -573,7 +545,6 @@ where
             // Get the current time stamp so that we can determine if it is time to issue the next RPC.
             let curr = cycles::rdtsc();
 
-            // let o = self.workload.borrow_mut().rng.gen::<u32>() % 10000 >= (self.ext_p * 100.0) as u32;
             let o = self.native_or_rpc(type_idx);
             if o == true {
                 // Configured to issue native RPCs, issue a regular get()/put() operation.
@@ -671,7 +642,9 @@ where
 
                             _ => {}
                         }
-                        self.recvd += 1;
+                        // self.recvd += 1;
+                        self.local_recvd += 1;
+                        self.recvd.fetch_add(1, Ordering::Relaxed);
                         packet_recvd_signal = true;
                         p.free_packet();
                         /// In rust remove won't complain if no key.
@@ -693,7 +666,9 @@ where
                                 // If the status is StatusOk then add the stamp to the latencies and
                                 // free the packet.
                                 RpcStatus::StatusOk => {
-                                    self.recvd += 1;
+                                    // self.recvd += 1;
+                                    self.local_recvd += 1;
+                                    self.recvd.fetch_add(1, Ordering::Relaxed);
                                     packet_recvd_signal = true;
                                     self.latencies
                                         .push(curr - p.get_header().common_header.stamp);
@@ -853,154 +828,102 @@ where
                 //     // Debug output
                 //     // info!("rdtsc {} len {} tail {} out {} rloop_rate {} RL", cycles::rdtsc(), len, self.kth, self.max_out, rloop_rate);
                 // }
-
-                let xloop_rdtsc = cycles::rdtsc();
-                if self.master
-                    && self.output_factor != 0
-                    && self.is_bimodal
-                    && (xloop_rdtsc - self.output_last_rdtsc > 2400000000 / self.output_factor)
-                {
-                    self.output_last_rdtsc = xloop_rdtsc;
-                    let mut aggr_tput = 0;
-                    for tput in &self.tput {
-                        aggr_tput += tput.load(Ordering::Relaxed);
-                    }
-                    let mut avg_lat = 0;
-                    for kth in &self.kth {
-                        avg_lat += kth.load(Ordering::Relaxed);
-                    }
-                    avg_lat /= self.kth.len();
-                    // let which_modal = self.which_modal.load(Ordering::Acquire);
-                    println!(
-                        "rdtsc {} tail {} tput {} modal {} rpc {:?}",
-                        xloop_rdtsc, avg_lat, aggr_tput, self.modal_idx, self.ext_p,
-                    );
-                }
-                // This is X-loop
-                if self.xloop_factor != 0
-                    && packet_recvd_signal
-                    && (xloop_rdtsc - self.xloop_last_rdtsc > 2400000000 / self.xloop_factor as u64)
-                    && len > 100
-                    && len % self.xloop_factor == 0
-                // && self.learnable
-                {
-                    // first calc the rate
-                    let xloop_rate = 2.4e6 * (self.recvd - self.xloop_last_recvd) as f32
+                if self.master {
+                    let xloop_rdtsc = cycles::rdtsc();
+                    let recvd = self.recvd.load(Ordering::Relaxed) as u64;
+                    let xloop_rate = 2.4e6 * (recvd - self.xloop_last_recvd) as f32
                         / (xloop_rdtsc - self.xloop_last_rdtsc) as f32;
-                    self.tput[self.idx].store(xloop_rate as usize, Ordering::Relaxed);
-                    if self.master {
-                        trace!(
-                            "rdtsc {} last_rdtsc {} recvd {} last_recvd {} rate {} last_rate {} ext_p {:?} modal {}",
-                            xloop_rdtsc,
-                            self.xloop_last_rdtsc,
-                            self.recvd,
-                            self.xloop_last_recvd,
-                            xloop_rate,
-                            self.xloop_last_rate,
-                            self.ext_p,
-                            self.modal_idx
+                    if self.output_factor != 0
+                        && self.is_bimodal
+                        && (xloop_rdtsc - self.output_last_rdtsc > 2400000000 / self.output_factor)
+                    {
+                        self.output_last_rdtsc = xloop_rdtsc;
+                        let mut avg_lat = 0;
+                        for kth in &self.kth {
+                            avg_lat += kth.load(Ordering::Relaxed);
+                        }
+                        avg_lat /= self.kth.len();
+                        println!(
+                            "rdtsc {} tail {} tput {} modal {} rpc {:?}",
+                            xloop_rdtsc, avg_lat, xloop_rate, self.modal_idx, self.ext_p,
                         );
                     }
-                    self.xloop_last_rdtsc = xloop_rdtsc;
-                    self.xloop_last_recvd = self.recvd;
-                    if self.learnable {
-                        let delta_rate = xloop_rate - self.xloop_last_rate;
-                        self.xloop_last_rate = xloop_rate;
-                        for i in 0..self.ext_p.len() {
-                            // let x = self.ext_p[i].load(Ordering::Relaxed) as f32;
-                            let mut x = self.ext_p[i];
-                            let delta_X = x - self.xloop_last_X[i];
-                            self.xloop_last_X[i] = x;
-                            let grad = 2.0 * delta_rate / delta_X;
-                            let mut bounded_offset_X: f32 = -1.0;
-                            if grad > 0.0 {
-                                if grad < 1.0 {
-                                    bounded_offset_X = 1.0;
-                                } else if grad > 20.0 {
-                                    bounded_offset_X = 5.0;
+                    // This is X-loop
+                    if self.xloop_factor != 0
+                        && packet_recvd_signal
+                        && (xloop_rdtsc - self.xloop_last_rdtsc
+                            > 2400000000 / self.xloop_factor as u64)
+                        && len > 100
+                        && len % self.xloop_factor == 0
+                    {
+                        if self.master {
+                            trace!(
+                                "rdtsc {} last_rdtsc {} recvd {} last_recvd {} rate {} last_rate {} ext_p {:?} modal {}",
+                                xloop_rdtsc,
+                                self.xloop_last_rdtsc,
+                                recvd,
+                                self.xloop_last_recvd,
+                                xloop_rate,
+                                self.xloop_last_rate,
+                                self.ext_p,
+                                self.modal_idx
+                            );
+                        }
+                        self.xloop_last_rdtsc = xloop_rdtsc;
+                        self.xloop_last_recvd = recvd;
+                        if self.learnable {
+                            let delta_rate = xloop_rate - self.xloop_last_rate;
+                            self.xloop_last_rate = xloop_rate;
+                            for i in 0..self.ext_p.len() {
+                                let x = self.ext_p[i].load(Ordering::Relaxed) as f32;
+                                // let x = self.ext_p[i];
+                                let delta_X = x - self.xloop_last_X[i];
+                                self.xloop_last_X[i] = x;
+                                let grad = 2.0 * delta_rate / delta_X;
+                                let mut bounded_offset_X: f32 = -1.0;
+                                if grad > 0.0 {
+                                    if grad < 1.0 {
+                                        bounded_offset_X = 1.0;
+                                    } else if grad > 20.0 {
+                                        bounded_offset_X = 5.0;
+                                    } else {
+                                        bounded_offset_X = grad;
+                                    }
                                 } else {
-                                    bounded_offset_X = grad;
+                                    if grad > -1.0 {
+                                        bounded_offset_X = -1.0;
+                                    } else if grad < -20.0 {
+                                        bounded_offset_X = -5.0;
+                                    } else {
+                                        bounded_offset_X = grad;
+                                    }
                                 }
-                            } else {
-                                if grad > -1.0 {
-                                    bounded_offset_X = -1.0;
-                                } else if grad < -20.0 {
-                                    bounded_offset_X = -5.0;
-                                } else {
-                                    bounded_offset_X = grad;
+                                let mut new_X = bounded_offset_X + x;
+                                if new_X > 100.0 || new_X < 0.0 {
+                                    new_X = x - bounded_offset_X; // bounce back
                                 }
-                            }
-                            let mut new_X = bounded_offset_X + x;
-                            if new_X > 100.0 || new_X < 0.0 {
-                                new_X = x - bounded_offset_X; // bounce back
-                            }
-                            // self.ext_p[i].store(new_X as usize, Ordering::Relaxed);
-                            self.ext_p[i] = new_X;
-                            if self.master {
-                                trace!(
-                                    "rdtsc {} d_rate {} ext_p {} off {} modal {}",
-                                    xloop_rdtsc,
-                                    delta_rate,
-                                    self.ext_p[i],
-                                    bounded_offset_X,
-                                    self.modal_idx
-                                );
+                                self.ext_p[i].store(new_X, Ordering::Relaxed);
+                                // self.ext_p[i] = new_X;
+                                if self.master {
+                                    trace!(
+                                        "rdtsc {} d_rate {} ext_p {:?} off {} modal {}",
+                                        xloop_rdtsc,
+                                        delta_rate,
+                                        self.ext_p[i],
+                                        bounded_offset_X,
+                                        self.modal_idx
+                                    );
+                                }
                             }
                         }
                     }
-                    // No GD version X-loop. Static step size.
-                    // self.d_rate = self.rate - self.last_rate;
-                    // self.last_rate = self.rate;
-                    //
-                    // if self.d_rate > 3 {
-                    //     // continue last operation
-                    //     if self.last_op == 1 {
-                    //         if self.ext_p < 99.0 { self.ext_p += 5.0; }
-                    //     } else {
-                    //         if self.ext_p > 0.0 {  self.ext_p -= 5.0; }
-                    //     }
-                    //
-                    // } else if self.d_rate < -3 {
-                    //     // revert last operation
-                    //     if self.last_op == 1 {
-                    //         if self.ext_p > 0.0 {  self.ext_p -= 5.0; }
-                    //         self.last_op = 0;
-                    //
-                    //     } else if self.last_op == 0 {
-                    //         if self.ext_p < 99.0 {  self.ext_p += 5.0; }
-                    //         self.last_op = 1;
-                    //     }
-                    // }
-
-                    // let delta_kth = self.kth as i32 - self.xloop_last_kth as i32;
-                    // let delta_X = self.ext_p - self.xloop_last_X;
-                    // self.xloop_last_X = self.ext_p;
-                    //
-                    // let grad: f32 = delta_kth as f32 / delta_X as f32;
-                    // let mut diff_X = grad / 10000.0;
-                    //
-                    // if diff_X > 20.0 {
-                    //     diff_X = 20.0;
-                    // } else if diff_X < -20.0 {
-                    //     diff_X = 20.0;
-                    // }
-                    //
-                    // let new_X = self.ext_p + diff_X;
-                    // if new_X >= 0.0 && new_X <= 100.0 {
-                    //     self.ext_p = new_X;
-                    // }
-
-                    // Debug output
-                    //                        info!("rate {} d_rate {} ext_p {} op {}", rate, d_rate, self.ext_p, self.last_op);
-                    // trace!("rdtsc {} len {} tail {} out {} recvd {} rate {} d_rate {} ext_p {} off {} XL",
-                    //       xloop_rdtsc, len, self.kth, self.max_out, self.recvd, xloop_rate, delta_rate, self.ext_p, bounded_offset_X);
                 }
             }
         }
 
         // The moment all response packets have been received, set the value of the
         // stop timestamp so that throughput can be estimated later.
-        if self.responses <= self.recvd {
+        if self.responses <= self.local_recvd {
             self.stop = cycles::rdtsc();
             self.finished = true;
         }
@@ -1015,20 +938,22 @@ where
     fn drop(&mut self) {
         if self.stop == 0 {
             self.stop = cycles::rdtsc();
-            info!("The client thread received only {} packets", self.recvd);
+            info!("The client thread received only {:?} packets", self.recvd);
         }
 
         info!(
-            "pushedback {} of total {}",
+            "pushedback {} of total {:?}",
             self.counter_pushback, self.recvd
         );
 
         // Calculate & print the throughput for all client threads.
-        println!(
-            "PUSHBACK Throughput {}",
-            self.recvd as f64 / cycles::to_seconds(self.stop - self.start)
-        );
-
+        if self.master {
+            println!(
+                "PUSHBACK Throughput {}",
+                self.recvd.load(Ordering::Relaxed) as f64
+                    / cycles::to_seconds(self.stop - self.start)
+            );
+        }
         // Calculate & print median & tail latency only on the master thread.
         if self.master {
             self.latencies.sort();
@@ -1085,9 +1010,10 @@ fn setup_send_recv<S>(
     masterservice: Arc<Master>,
     idx: usize,
     kth: Vec<Arc<AtomicUsize>>,
-    // ext_p: Vec<Arc<AtomicUsize>>,
-    tput: Vec<Arc<AtomicUsize>>,
-    which_modal: Arc<AtomicUsize>,
+    ext_p: Vec<Arc<AtomicF32>>,
+    recvd: Arc<AtomicUsize>,
+    // tput: Vec<Arc<AtomicUsize>>,
+    // which_modal: Arc<AtomicUsize>,
 ) where
     S: Scheduler + Sized,
 {
@@ -1116,9 +1042,10 @@ fn setup_send_recv<S>(
         ord2,
         idx,
         kth,
-        // ext_p,
-        tput,
-        which_modal,
+        ext_p,
+        recvd,
+        // tput,
+        // which_modal,
     )) {
         Ok(_) => {
             info!(
@@ -1163,21 +1090,19 @@ fn main() {
     // modified here
     // setup shared data
     let mut kth = vec![];
-    // let mut ext_p = vec![];
-    let mut tput = vec![];
     for _ in 0..config.num_sender {
         kth.push(Arc::new(AtomicUsize::new(0)));
-        tput.push(Arc::new(AtomicUsize::new(0)));
     }
-    // let num_x = if config.partition < 0 && config.multi_rpc {
-    //     config.multi_kv.len()
-    // } else {
-    //     1
-    // };
-    // for _ in 0..num_x {
-    //     ext_p.push(Arc::new(AtomicUsize::new(config.invoke_p * 100)));
-    // }
-    let which_modal = Arc::new(AtomicUsize::new(0));
+    let mut ext_p = vec![];
+    let num_x = if config.partition < 0 && config.multi_rpc {
+        config.multi_kv.len()
+    } else {
+        1
+    };
+    for _ in 0..num_x {
+        ext_p.push(Arc::new(AtomicF32::new(config.invoke_p as f32)));
+    }
+    let recvd = Arc::new(AtomicUsize::new(0));
 
     // Setup 1 senders, and receivers.
     for i in 0..config.num_sender {
@@ -1195,9 +1120,8 @@ fn main() {
 
         let master_service = Arc::clone(&masterservice);
         let kth_copy = kth.clone();
-        // let ext_p_copy = ext_p.clone();
-        let tput_copy = tput.clone();
-        let which_modal_copy = which_modal.clone();
+        let ext_p_copy = ext_p.clone();
+        let recvd_copy = recvd.clone();
         // Setup the receive and transmit side.
         net_context
             .add_pipeline_to_core(
@@ -1213,9 +1137,10 @@ fn main() {
                             Arc::clone(&master_service),
                             i,
                             kth_copy.clone(),
-                            // ext_p_copy.clone(),
-                            tput_copy.clone(),
-                            which_modal_copy.clone(),
+                            ext_p_copy.clone(),
+                            recvd_copy.clone(),
+                            // tput_copy.clone(),
+                            // which_modal_copy.clone(),
                         )
                     },
                 ),

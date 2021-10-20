@@ -1,7 +1,7 @@
 #!/bin/bash
 set -exu
 
-date="20211019"
+date="20211021"
 
 CLIENTTOML_PATH="./client.toml"
 
@@ -21,8 +21,8 @@ line_bi_rpc=107
 
 num_type=2
 max_out=8
-i1=3840000000
-i2=15360000000
+i1=960000000
+i2=3840000000
 
 
 LOG_PATH="../logs/${date}_bimodal/"
@@ -55,8 +55,8 @@ sed -i -e "${line_partition}c partition = 1" ${CLIENTTOML_PATH}
 sed -i -e "${line_learnable}c learnable = false" ${CLIENTTOML_PATH}
 echo "Ours: " >> ${OUTPUT}
 # loop bimodal_rpc rate
-rpc_rate=20
-while ((rpc_rate<=20))
+rpc_rate=40
+while ((rpc_rate<=40))
 do
     # sed -i -e "${line_bi_rpc}c bimodal_rpc = [0, ${rpc_rate}]" ${CLIENTTOML_PATH}
     sed -i -e "${line_bi_rpc}c bimodal_rpc = [0, ${rpc_rate}]" ${CLIENTTOML_PATH}
