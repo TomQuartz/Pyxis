@@ -14,12 +14,13 @@ line_bimodal=90
 line_bi_interval=96
 line_multi_kv=98
 line_multi_ord=99
-line_partition=101
-line_learnable=104
-line_bi_interval2=105
-line_bi_rpc=107
+line_partition=102
+line_learnable=105
+line_bi_interval2=106
+line_bi_rpc=108
 
 num_type=$1
+no=$2 # No. trial
 max_out=(1 2 4 8 16 32)
 
 sed -i -e "${line_bimodal}c bimodal = false" ${CLIENTTOML_PATH}
@@ -32,8 +33,8 @@ if ((num_type==1)); then
     sed -i -e "${line_multi_kv}c multi_kv = [${kv[0]}]" ${CLIENTTOML_PATH}
     sed -i -e "${line_multi_ord}c multi_ord = [${ord[0]}]" ${CLIENTTOML_PATH}
 elif ((num_type==2)); then
-    kv=(8 1)
-    ord=(200 12800)
+    kv=(16 1)
+    ord=(100 12800)
     sed -i -e "${line_multi_kv}c multi_kv = [${kv[0]}, ${kv[1]}]" ${CLIENTTOML_PATH}
     sed -i -e "${line_multi_ord}c multi_ord = [${ord[0]}, ${ord[1]}]" ${CLIENTTOML_PATH}
 elif ((num_type==4)); then
@@ -52,34 +53,37 @@ else  # num_type == 8
 [${ord[0]}, ${ord[1]}, ${ord[2]}, ${ord[3]}, ${ord[4]}, ${ord[5]}, ${ord[6]}, ${ord[7]}]" ${CLIENTTOML_PATH}
 fi
 
-
-# Run Kayak
-LOG_PATH="../logs/${date}_enumerate/"
+LOG_PATH="../logs/${date}_enumerate/${no}/"
 if [ ! -d ${LOG_PATH} ]; then
     mkdir -p ${LOG_PATH}
 fi
-cd ${LOG_PATH}
-OUTPUT="kayak_type${num_type}.log"
-if [ -e ${OUTPUT} ]; then
-    rm ${OUTPUT}
-fi
-cd -
-OUTPUT=${LOG_PATH}${OUTPUT}
+
+# Run Kayak
+
+# cd ${LOG_PATH}
+# OUTPUT="kayak_type${num_type}.log"
+# if [ -e ${OUTPUT} ]; then
+#     rm ${OUTPUT}
+# fi
+# cd -
+# OUTPUT=${LOG_PATH}${OUTPUT}
 
 
-sed -i -e "${line_partition}c partition = -1" ${CLIENTTOML_PATH}
-sed -i -e "${line_invoke_p}c invoke_p = 100" ${CLIENTTOML_PATH}
-# Print configuration
-echo "Kayak configuration:" >> ${OUTPUT}
-echo "partition = -1" >> ${OUTPUT}
-echo "invoke_p = 100" >> ${OUTPUT}
-for t in ${max_out[@]}
-do
-    sed -i -e "${line_max_out}c max_out = ${t}" ${CLIENTTOML_PATH}
-    echo "max_out = ${t}" >> ${OUTPUT}
-    echo "" >> ${OUTPUT}
-    sudo env RUST_LOG=debug LD_LIBRARY_PATH=../net/target/native ./target/release/pushback-ours >> ${OUTPUT}
-done
+# sed -i -e "${line_partition}c partition = -1" ${CLIENTTOML_PATH}
+# sed -i -e "${line_invoke_p}c invoke_p = 100" ${CLIENTTOML_PATH}
+# # Print configuration
+# echo "Kayak configuration:" >> ${OUTPUT}
+# echo "partition = -1" >> ${OUTPUT}
+# echo "invoke_p = 100" >> ${OUTPUT}
+# echo "multi_type = ${kv[@]}" >> ${OUTPUT}
+# echo "multi_ord = ${ord[@]}" >> ${OUTPUT} 
+# for t in ${max_out[@]}
+# do
+#     sed -i -e "${line_max_out}c max_out = ${t}" ${CLIENTTOML_PATH}
+#     echo "max_out = ${t}" >> ${OUTPUT}
+#     echo "" >> ${OUTPUT}
+#     sudo env RUST_LOG=debug LD_LIBRARY_PATH=../net/target/native ./target/release/pushback-ours >> ${OUTPUT}
+# done
 
 
 # Run ours

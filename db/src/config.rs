@@ -229,6 +229,8 @@ pub struct ClientConfig {
     pub multi_ord: Vec<u32>,
     /// compute rpc rate for each type or not
     pub multi_rpc: bool,
+    /// split each type into several steps
+    pub multi_steps: Vec<u32>,
     /// our partition
     /// TODO: make this automatic
     pub partition: i32,

@@ -164,19 +164,27 @@ impl Pushback {
     }
 }
 
+#[derive(Debug)]
 struct MultiType {
     num_kv: u32,
     order: u32,
+    steps: u32,
 }
 impl MultiType {
-    fn new(multi_kv: &Vec<u32>, multi_ord: &Vec<u32>) -> Vec<MultiType> {
+    fn new(multi_kv: &Vec<u32>, multi_ord: &Vec<u32>, multi_steps: &Vec<u32>) -> Vec<MultiType> {
         let mut multi_types = Vec::<MultiType>::new();
-        for (kv, ord) in multi_kv.iter().zip(multi_ord.iter()) {
+        for ((kv, ord), steps) in multi_kv
+            .iter()
+            .zip(multi_ord.iter())
+            .zip(multi_steps.iter())
+        {
             multi_types.push(MultiType {
                 num_kv: *kv,
                 order: *ord,
+                steps: *steps,
             });
         }
+        trace!("multi-types {:?}", multi_types);
         multi_types
     }
 }
@@ -473,7 +481,7 @@ where
             // tput: tput,
             ext_p: ext_p,
             // ext_p: vec![config.invoke_p as f32;num_x],
-            multi_types: MultiType::new(&config.multi_kv,&config.multi_ord),
+            multi_types: MultiType::new(&config.multi_kv,&config.multi_ord,&config.multi_steps),
             cum_prob: cum_prob,
             partition: config.partition,
             idx: idx,
@@ -723,12 +731,13 @@ where
                                     let MultiType {
                                         num_kv: n,
                                         order: o,
+                                        steps: s,
                                     } = self.multi_types[state.type_idx];
                                     if state.op_num == n as u8 {
                                         /*let start = cycles::rdtsc();
                                         while cycles::rdtsc() - start < self.ord as u64 {}*/
                                         // Ord will change with bimodal
-                                        state.execute_task(n, o);
+                                        state.execute_task(n, o / s);
                                         // self.sender.send_commit(
                                         //     tenant,
                                         //     1,
@@ -748,6 +757,13 @@ where
                                     } else {
                                         match parse_record_optype(record) {
                                             OpType::SandstormRead => {
+                                                state.op_num += 1;
+                                                if (state.op_num as u32) % (n / s) == 0 {
+                                                    let start = cycles::rdtsc();
+                                                    while cycles::rdtsc() - start < (o / s) as u64 {
+                                                    }
+                                                }
+
                                                 // Send the packet with same tenantid, curr etc.
                                                 let record = record.split_at(1).1;
                                                 let (version, entry) = record.split_at(8);
@@ -765,7 +781,11 @@ where
                                                     &kv.value[0..30],
                                                     timestamp,
                                                 );
-                                                state.op_num += 1;
+                                                // if (state.op_num as u32) % (n / s) == 0 {
+                                                //     let start = cycles::rdtsc();
+                                                //     while cycles::rdtsc() - start < (o / s) as u64 {
+                                                //     }
+                                                // }
                                             }
                                             _ => {
                                                 info!("The record is expected to be SandstormRead type");
