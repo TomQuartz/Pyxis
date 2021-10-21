@@ -275,7 +275,7 @@ where
                         // No packets were available for receive.
                         return None;
                     }
-
+                    trace!("{} recv {} pkts",self.network_port,num_received);
                     // Allocate a vector for the received packets.
                     let mut recvd_packets = Vec::<Packet<NullHeader, EmptyMetadata>>::with_capacity(
                         self.max_rx_packets as usize,

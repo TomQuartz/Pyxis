@@ -13,17 +13,17 @@ path = "src/lib.rs"
 name = "server"
 path = "src/bin/server.rs"
 
-[[bin]]
-name = "ext_bench"
-path = "src/bin/ext_bench.rs"
+#[[bin]]
+#name = "ext_bench"
+#path = "src/bin/ext_bench.rs"
 
-[[bin]]
-name = "table_bench"
-path = "src/bin/table_bench.rs"
+#[[bin]]
+#name = "table_bench"
+#path = "src/bin/table_bench.rs"
 
-[[bin]]
-name = "net_bench"
-path = "src/bin/net_bench.rs"
+#[[bin]]
+#name = "net_bench"
+#path = "src/bin/net_bench.rs"
 
 [dependencies]
 hashbrown    = "0.1.8"

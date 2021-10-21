@@ -318,43 +318,98 @@ fn main() {
     info!("Starting up Sandstorm server with config {:?}", config);
 
     // let master = Arc::new(Master::new());
-    let master = Master::new();
+    let mut master = Master::new();
 
     // Create tenants with data and extensions.
     match config.workload.as_str() {
-        "YCSB" => {
-            info!(
-                "Populating YCSB data, {} tenants, {} records/tenant",
-                config.num_tenants, config.num_records
-            );
-            for tenant in 1..(config.num_tenants + 1) {
-                master.fill_test(tenant, 1, config.num_records);
-                master.load_test(tenant);
-            }
-        }
+        // "YCSB" => {
+        //     info!(
+        //         "Populating YCSB data, {} tenants, {} records/tenant",
+        //         config.num_tenants, config.num_records
+        //     );
+        //     for tenant in 1..(config.num_tenants + 1) {
+        //         master.fill_test(tenant, 1, config.num_records);
+        //         master.load_test(tenant);
+        //     }
+        // }
 
-        "TAO" => {
-            info!(
-                "Populating TAO data, {} tenants, {} records/tenant",
-                config.num_tenants, config.num_records
-            );
-            for tenant in 1..(config.num_tenants + 1) {
-                master.fill_tao(tenant, config.num_records);
-                master.load_test(tenant);
-            }
-        }
+        // "TAO" => {
+        //     info!(
+        //         "Populating TAO data, {} tenants, {} records/tenant",
+        //         config.num_tenants, config.num_records
+        //     );
+        //     for tenant in 1..(config.num_tenants + 1) {
+        //         master.fill_tao(tenant, config.num_records);
+        //         master.load_test(tenant);
+        //     }
+        // }
 
-        "AGGREGATE" => {
-            info!(
-                "Populating AGGREGATE data, {} tenants, {} records/tenant",
-                config.num_tenants, config.num_records
-            );
-            for tenant in 1..(config.num_tenants + 1) {
-                master.fill_aggregate(tenant, 1, config.num_records);
-                master.load_test(tenant);
-            }
-        }
+        // "AGGREGATE" => {
+        //     info!(
+        //         "Populating AGGREGATE data, {} tenants, {} records/tenant",
+        //         config.num_tenants, config.num_records
+        //     );
+        //     for tenant in 1..(config.num_tenants + 1) {
+        //         master.fill_aggregate(tenant, 1, config.num_records);
+        //         master.load_test(tenant);
+        //     }
+        // }
 
+        // "ANALYSIS" => {
+        //     info!(
+        //         "Populating ANALYSIS data, {} tenants, training dataset/tenant",
+        //         config.num_tenants
+        //     );
+        //     master.fill_analysis(config.num_tenants);
+        //     for tenant in 1..(config.num_tenants + 1) {
+        //         master.load_test(tenant);
+        //     }
+        //     assert_eq!(cfg!(feature = "ml-model"), true);
+        // }
+
+        // "AUTH" => {
+        //     info!(
+        //         "Populating AUTH data, {} tenants, {} records/tenant",
+        //         config.num_tenants, config.num_records
+        //     );
+        //     for tenant in 1..(config.num_tenants + 1) {
+        //         master.fill_auth(tenant, 1, config.num_records);
+        //         master.load_test(tenant);
+        //     }
+        // }
+
+        // "MIX" => {
+        //     info!("Populating MIX data, {} tenants", config.num_tenants);
+        //     info!("TAO: {} records/tenants", config.num_records);
+        //     info!("ANALYSIS: 68000 records/tenant");
+        //     master.fill_mix(config.num_tenants, config.num_records);
+        //     for tenant in 1..(config.num_tenants + 1) {
+        //         master.load_test(tenant);
+        //     }
+        //     assert_eq!(cfg!(feature = "ml-model"), true);
+        // }
+
+        // "YCSBT" => {
+        //     info!(
+        //         "Populating YCSB-T data, {} tenants, {} records/tenant",
+        //         config.num_tenants, config.num_records
+        //     );
+        //     for tenant in 1..(config.num_tenants + 1) {
+        //         master.fill_ycsb(tenant, 1, config.num_records);
+        //         master.load_test(tenant);
+        //     }
+        // }
+
+        // "CHECKSUM" => {
+        //     info!(
+        //         "Populating CHECKSUM data, {} tenants, {} records/tenant",
+        //         config.num_tenants, config.num_records
+        //     );
+        //     for tenant in 1..(config.num_tenants + 1) {
+        //         master.fill_aggregate(tenant, 1, config.num_records);
+        //         master.load_test(tenant);
+        //     }
+        // }
         "PUSHBACK" => {
             info!(
                 "Populating PUSHBACK data, {} tenants, {} records/tenant",
@@ -366,68 +421,14 @@ fn main() {
             }
         }
 
-        "ANALYSIS" => {
-            info!(
-                "Populating ANALYSIS data, {} tenants, training dataset/tenant",
-                config.num_tenants
-            );
-            master.fill_analysis(config.num_tenants);
-            for tenant in 1..(config.num_tenants + 1) {
-                master.load_test(tenant);
-            }
-            assert_eq!(cfg!(feature = "ml-model"), true);
-        }
-
-        "AUTH" => {
-            info!(
-                "Populating AUTH data, {} tenants, {} records/tenant",
-                config.num_tenants, config.num_records
-            );
-            for tenant in 1..(config.num_tenants + 1) {
-                master.fill_auth(tenant, 1, config.num_records);
-                master.load_test(tenant);
-            }
-        }
-
-        "MIX" => {
-            info!("Populating MIX data, {} tenants", config.num_tenants);
-            info!("TAO: {} records/tenants", config.num_records);
-            info!("ANALYSIS: 68000 records/tenant");
-            master.fill_mix(config.num_tenants, config.num_records);
-            for tenant in 1..(config.num_tenants + 1) {
-                master.load_test(tenant);
-            }
-            assert_eq!(cfg!(feature = "ml-model"), true);
-        }
-
-        "YCSBT" => {
-            info!(
-                "Populating YCSB-T data, {} tenants, {} records/tenant",
-                config.num_tenants, config.num_records
-            );
-            for tenant in 1..(config.num_tenants + 1) {
-                master.fill_ycsb(tenant, 1, config.num_records);
-                master.load_test(tenant);
-            }
-        }
-
-        "CHECKSUM" => {
-            info!(
-                "Populating CHECKSUM data, {} tenants, {} records/tenant",
-                config.num_tenants, config.num_records
-            );
-            for tenant in 1..(config.num_tenants + 1) {
-                master.fill_aggregate(tenant, 1, config.num_records);
-                master.load_test(tenant);
-            }
-        }
-
         _ => {
             info!("Populating SANITY data for tenant 100");
             master.fill_test(100, 100, 0);
             master.load_test(100);
         }
     }
+    // finished adding tenant and ext, wrap into immut arc
+    let master = Arc::new(master);
 
     // Setup Netbricks.
     let mut net_context: NetbricksContext = config_and_init_netbricks(&config);

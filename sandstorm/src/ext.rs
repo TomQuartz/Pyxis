@@ -221,7 +221,7 @@ impl ExtensionManager {
             .get(&(tenant, name))
             .and_then(|ext| Some(Arc::clone(&ext)))
     }
-
+    /*
     /// Shares a previously loaded extension with another tenant.
     ///
     /// # Arguments
@@ -233,7 +233,6 @@ impl ExtensionManager {
     /// # Return
     ///
     /// True, if the extension was successfully shared. False, if it was not found.
-    /*
     pub fn share(&self, owner: TenantId, share: TenantId, name: &str) -> bool {
         // First, try to retrieve a copy (Arc) of the extension from the owner.
         // If successfull, then share it with the tenant identified by `share`.

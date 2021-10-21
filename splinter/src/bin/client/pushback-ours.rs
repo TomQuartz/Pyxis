@@ -1110,13 +1110,15 @@ fn main() {
     let config = config::ClientConfig::load();
     info!("Starting up Sandstorm client with config {:?}", config);
 
-    let masterservice = Arc::new(Master::new());
+    let mut masterservice = Master::new();
 
     // Create tenants with extensions.
     info!("Populating extension for {} tenants", config.num_tenants);
     for tenant in 1..(config.num_tenants + 1) {
         masterservice.load_test(tenant);
     }
+    // finished populating, now mark as immut
+    let masterservice = Arc::new(masterservice);
 
     // Setup Netbricks.
     let mut net_context = setup::config_and_init_netbricks(&config);

@@ -140,7 +140,7 @@ impl Master {
     /// * `num`:       The number of objects to be added to the data table.
     pub fn fill_test(&mut self, tenant_id: TenantId, table_id: TableId, num: u32) {
         // Create a tenant containing the table.
-        let tenant = Tenant::new(tenant_id);
+        let mut tenant = Tenant::new(tenant_id);
         tenant.create_table(table_id);
 
         let table = tenant
@@ -1774,7 +1774,7 @@ impl Master {
         // Return a native task.
         return Ok(Box::new(Native::new(TaskPriority::REQUEST, gen)));
     }
-
+    
     /// Handles the install() RPC request.
     ///
     /// If issued by a valid tenant, installs (loads) an extension into the database.
@@ -1835,9 +1835,9 @@ impl Master {
                 let _ = file.write_all(extn).unwrap();
                 let _ = file.sync_all().unwrap();
 
-                if self.extensions.load(&path, tenant, name) {
-                    res.common_header.status = RpcStatus::StatusOk;
-                }
+                // if self.extensions.load(&path, tenant, name) {
+                //     res.common_header.status = RpcStatus::StatusOk;
+                // }
             }
         }
 
