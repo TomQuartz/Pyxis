@@ -15,7 +15,6 @@ use self::atomic_float::AtomicF32;
 //         pool.push(thread::spawn(move || {
 //             vc[i].fetch_add(i, Ordering::SeqCst);
 //             println!("{:?}", vc);
-            
 //         }));
 //     }
 //     for t in pool {
@@ -23,15 +22,34 @@ use self::atomic_float::AtomicF32;
 //     }
 // }
 
-fn copy_vec(v: &Vec<i32>){
-    let vc = v.clone();
-    println!("copied vec {:?}",vc);
+fn main() {
+    let mut v = vec![];
+    for i in 0..5 {
+        v.push(vec![]);
+    }
+    let arcv = Arc::new(v);
+    let mut pool = vec![];
+    for i in 0..5 {
+        let vc = arcv.clone();
+        pool.push(thread::spawn(move || {
+            vc[i].push(i);
+            println!("{:?}", vc);
+        }));
+    }
+    for t in pool {
+        t.join();
+    }
 }
 
-fn main(){
-    let v = vec![1,2,3];
-    copy_vec(&v);
-    let f = AtomicF32::new(1.0);
-    f.store(2.0,Ordering::Release);
-    println!("{:?}",f);
-}
+// fn copy_vec(v: &Vec<i32>){
+//     let vc = v.clone();
+//     println!("copied vec {:?}",vc);
+// }
+
+// fn main(){
+//     let v = vec![1,2,3];
+//     copy_vec(&v);
+//     let f = AtomicF32::new(1.0);
+//     f.store(2.0,Ordering::Release);
+//     println!("{:?}",f);
+// }

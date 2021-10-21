@@ -59,7 +59,7 @@ pub fn accessor<'a>(alloc: *const Allocator) -> &'a Allocator {
 }
 
 // The number of buckets in the `tenants` hashtable inside of Master.
-const TENANT_BUCKETS: usize = 32;
+const TENANT_BUCKETS: usize = 1;
 
 /// The primary service in Sandstorm. Master is responsible managing tenants, extensions, and
 /// the database. It implements the Service trait, allowing it to generate schedulable tasks
@@ -67,7 +67,8 @@ const TENANT_BUCKETS: usize = 32;
 pub struct Master {
     /// A Map of all tenants in the system. Since Sandstorm is a multi-tenant system, most RPCs
     /// will require a lookup on this map.
-    tenants: [RwLock<HashMap<TenantId, Arc<Tenant>>>; TENANT_BUCKETS],
+    // tenants: [RwLock<HashMap<TenantId, Arc<Tenant>>>; TENANT_BUCKETS],
+    tenants: [HashMap<TenantId, Arc<Tenant>>; TENANT_BUCKETS],
 
     /// An extension manager maintaining state concerning extensions loaded into the system.
     /// Required to retrieve and determine if an extension belongs to a particular tenant while
@@ -89,38 +90,39 @@ impl Master {
         Master {
             // Cannot use copy constructor because of the Arc<Tenant>.
             tenants: [
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
+                HashMap::new()
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
             ],
             extensions: ExtensionManager::new(),
             heap: Allocator::new(),
@@ -136,7 +138,7 @@ impl Master {
     /// * `table_id`:  Identifier of the table to be added to the tenant. This table will contain
     ///                all the objects.
     /// * `num`:       The number of objects to be added to the data table.
-    pub fn fill_test(&self, tenant_id: TenantId, table_id: TableId, num: u32) {
+    pub fn fill_test(&mut self, tenant_id: TenantId, table_id: TableId, num: u32) {
         // Create a tenant containing the table.
         let tenant = Tenant::new(tenant_id);
         tenant.create_table(table_id);
@@ -166,7 +168,7 @@ impl Master {
         // Add the tenant.
         self.insert_tenant(tenant);
     }
-
+    /*
     /// Populates the TAO dataset.
     ///
     /// # Arguments
@@ -585,13 +587,13 @@ impl Master {
         // Add the tenant.
         self.insert_tenant(tenant);
     }
-
+    */
     /// Loads the get(), put(), tao(), and bad() extensions.
     ///
     /// # Arguments
     ///
     /// * `tenant`: Identifier of the tenant to load the extension for.
-    pub fn load_test(&self, tenant: TenantId) {
+    pub fn load_test(&mut self, tenant: TenantId) {
         // Load the get() extension.
         let name = "../ext/get/target/release/libget.so";
         if self.extensions.load(name, tenant, "get") == false {
@@ -670,6 +672,7 @@ impl Master {
     /// # Arguments
     ///
     /// * `tenants`: The number of tenants that should share the above three extensions.
+    /*
     pub fn load_test_shared(&self, tenants: u32) {
         // First, load up the get, put, and tao extensions for tenant 1.
         self.load_test(0);
@@ -692,6 +695,7 @@ impl Master {
             }
         }
     }
+    */
 
     /// This method returns a handle to a tenant if it exists.
     ///
@@ -706,7 +710,8 @@ impl Master {
         // Acquire a read lock. The bucket is determined by the least significant byte of the
         // tenant id.
         let bucket = (tenant_id & 0xff) as usize & (TENANT_BUCKETS - 1);
-        let map = self.tenants[bucket].read();
+        // let map = self.tenants[bucket].read();
+        let map = &self.tenants[bucket];
 
         // Lookup, and return the tenant if it exists.
         map.get(&tenant_id)
@@ -718,11 +723,12 @@ impl Master {
     /// # Arguments
     ///
     /// * `tenant`: The tenant to be added.
-    fn insert_tenant(&self, tenant: Tenant) {
+    fn insert_tenant(&mut self, tenant: Tenant) {
         // Acquire a write lock. The bucket is determined by the least significant byte of the
         // tenant id.
         let bucket = (tenant.id() & 0xff) as usize & (TENANT_BUCKETS - 1);
-        let mut map = self.tenants[bucket].write();
+        // let mut map = self.tenants[bucket].write();
+        let ref mut map = self.tenants[bucket];
 
         // Insert the tenant and return.
         map.insert(tenant.id(), Arc::new(tenant));

@@ -27,7 +27,7 @@ use libloading::Library;
 use spin::RwLock;
 
 // Number of buckets in the `extensions` hashmap in Extension Manager.
-const EXT_BUCKETS: usize = 32;
+const EXT_BUCKETS: usize = 1;
 
 // The type signature of the function that will be searched for inside an so.
 type Proc = unsafe extern "C" fn(Rc<DB>) -> Pin<Box<Generator<Yield = u64, Return = u64>>>;
@@ -117,7 +117,8 @@ impl Extension {
 /// in the database, and the tenants that own them.
 pub struct ExtensionManager {
     // A simple map from tenants and extension names to extensions.
-    extensions: [RwLock<HashMap<(TenantId, String), Arc<Extension>>>; EXT_BUCKETS],
+    // extensions: [RwLock<HashMap<(TenantId, String), Arc<Extension>>>; EXT_BUCKETS],
+    extensions: [HashMap<(TenantId, String), Arc<Extension>>; EXT_BUCKETS],
 }
 
 // Implementation of methods on ExtensionManager.
@@ -132,38 +133,39 @@ impl ExtensionManager {
         ExtensionManager {
             // Can't use the copy constructor because of the Arc<Extension>.
             extensions: [
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
+                HashMap::new()
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
             ],
         }
     }
@@ -182,7 +184,7 @@ impl ExtensionManager {
     /// # Return
     ///
     /// True if the extension was successfully loaded. False otherwise.
-    pub fn load(&self, path: &str, tenant: TenantId, name: &str) -> bool {
+    pub fn load(&mut self, path: &str, tenant: TenantId, name: &str) -> bool {
         // Try to load the extension from the supplied path.
         Extension::load(path)
             // If the extension was loaded successfully, write it into
@@ -191,7 +193,7 @@ impl ExtensionManager {
             .and_then(|ext| {
                 let bucket = (tenant & 0xff) as usize & (EXT_BUCKETS - 1);
                 self.extensions[bucket]
-                    .write()
+                    // .write()
                     .insert((tenant, String::from(name)), Arc::new(ext));
                 Some(())
             })
@@ -215,7 +217,7 @@ impl ExtensionManager {
         // of the tenant id.
         let bucket = (tenant & 0xff) as usize & (EXT_BUCKETS - 1);
         self.extensions[bucket]
-            .read()
+            // .read()
             .get(&(tenant, name))
             .and_then(|ext| Some(Arc::clone(&ext)))
     }
@@ -231,6 +233,7 @@ impl ExtensionManager {
     /// # Return
     ///
     /// True, if the extension was successfully shared. False, if it was not found.
+    /*
     pub fn share(&self, owner: TenantId, share: TenantId, name: &str) -> bool {
         // First, try to retrieve a copy (Arc) of the extension from the owner.
         // If successfull, then share it with the tenant identified by `share`.
@@ -244,6 +247,7 @@ impl ExtensionManager {
             })
             .is_some()
     }
+    */
 }
 
 // This module contains simple tests for Extension and ExtensionManager.

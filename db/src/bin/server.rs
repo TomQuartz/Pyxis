@@ -317,7 +317,8 @@ fn main() {
     let config = config::ServerConfig::load();
     info!("Starting up Sandstorm server with config {:?}", config);
 
-    let master = Arc::new(Master::new());
+    // let master = Arc::new(Master::new());
+    let master = Master::new();
 
     // Create tenants with data and extensions.
     match config.workload.as_str() {
