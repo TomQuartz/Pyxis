@@ -14,6 +14,7 @@ Cargo.lock
 *.data.gz
 *.pdf
 *.log
+*.png
 
 # Ignore config files
 db/server.toml
