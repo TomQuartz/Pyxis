@@ -126,14 +126,15 @@ pub fn init(db: Rc<DB>) -> Pin<Box<Generator<Yield = u64, Return = u64>>> {
             }
         }
 
-        if ord >= 600 {
-            let start = cycles::rdtsc();
-            while cycles::rdtsc() - start < 600 as u64 {}
-            ord -= 600;
-            yield 0;
-        }
+        // if ord >= 600 {
+        //     let start = cycles::rdtsc();
+        //     while cycles::rdtsc() - start < 600 as u64 {}
+        //     ord -= 600;
+        //     yield 0;
+        // }
 
         // Compute part for this extension
+        #[cfg(feature = "yield")]
         loop {
             if ord <= 2000 {
                 let start = cycles::rdtsc();
@@ -147,7 +148,12 @@ pub fn init(db: Rc<DB>) -> Pin<Box<Generator<Yield = u64, Return = u64>>> {
             }
         }
 
+        let start = cycles::rdtsc();
+        while cycles::rdtsc() - start < ord as u64 {}
+
         db.resp(pack(&mul));
         return 0;
+
+        yield 0;
     })
 }
