@@ -42,7 +42,7 @@ impl PushbackState {
     /// A new object for PushbackState struct.
     pub fn new(number: u32, record_len: usize, type_idx: usize) -> PushbackState {
         PushbackState {
-            op_num: 1,
+            op_num: 0,
             commit_payload: Vec::with_capacity(number as usize * record_len),
             readset: Vec::with_capacity(number as usize),
             type_idx: type_idx,

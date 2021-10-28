@@ -217,13 +217,150 @@ def draw_enum(s):
         plt.savefig(file_path)
 
 
-DATE = 'enum1'
-EXPERIMENT = 'enumerate'
+def read_iso_data(s, r):
+    filepath = DATE + '_' + EXPERIMENT + '/' + str(s) + '/' + \
+               'ours_iso_ratio{}.log'.format(r)
+    with open(filepath, 'r', encoding='utf-8') as f:
+        content = f.readlines()
+    tput = []
+    lat_type0, lat_type1 = [], []
+    for line in content:
+        if line.find('type 0 >>>') != -1:
+            lat = line.strip().split()
+            lat = float(lat[-1][6:])
+            lat_type0.append(lat)
+        elif line.find('type 1 >>>') != -1:
+            lat = line.strip().split()
+            lat = float(lat[-1][6:])
+            lat_type1.append(lat)
+        elif line.find('Throughput') != -1:
+            tp = line.strip().split()
+            tp = float(tp[-1])
+            tput.append(tp)
+    # print(tput)
+    # print(lat_type0)
+    # print(lat_type1)
+    mid = len(tput) // 2
+    iso_tput = tput[:mid]
+    iso_lat_type0 = lat_type0[:mid]
+    iso_lat_type1 = lat_type1[:mid]
+    mix_tput = tput[mid:]
+    mix_lat_type0 = lat_type0[mid:]
+    mix_lat_type1 = lat_type1[mid:]
+    return iso_tput, iso_lat_type0, iso_lat_type1, mix_tput, mix_lat_type0, mix_lat_type1
+
+
+def read_yield_data(s, r):
+    filepath = DATE + '_' + EXPERIMENT + '/' + str(s) + '/' + \
+               'ours_iso_ratio{}.log'.format(r)
+    with open(filepath, 'r', encoding='utf-8') as f:
+        content = f.readlines()
+    tput = []
+    lat_type0, lat_type1 = [], []
+    for line in content:
+        if line.find('type 0 >>>') != -1:
+            lat = line.strip().split()
+            lat = float(lat[-1][6:])
+            lat_type0.append(lat)
+        elif line.find('type 1 >>>') != -1:
+            lat = line.strip().split()
+            lat = float(lat[-1][6:])
+            lat_type1.append(lat)
+        elif line.find('Throughput') != -1:
+            tp = line.strip().split()
+            tp = float(tp[-1])
+            tput.append(tp)
+    mid = len(tput) // 2
+    tput = tput[mid:]
+    lat_type0 = lat_type0[mid:]
+    lat_type1 = lat_type1[mid:]
+    return tput, lat_type0, lat_type1
+
+
+def draw_yield_mix(s):
+    l = 4000
+    for r in ratio_list:
+        
+        iso_tput, iso_lat_type0, iso_lat_type1, mix_tput, mix_lat_type0, mix_lat_type1 = read_iso_data(s, r)
+        y_mix_tput, y_mix_lat_type0, y_mix_lat_type1 = read_yield_data(6, r)
+
+        iso_lat_type0 = np.array(iso_lat_type0) / 1e3
+        iso_lat_type1 = np.array(iso_lat_type1) / 1e3
+        mix_lat_type0 = np.array(mix_lat_type0) / 1e3
+        mix_lat_type1 = np.array(mix_lat_type1) / 1e3
+        iso_tput = np.array(iso_tput) / 1e6
+        mix_tput = np.array(mix_tput) / 1e6
+
+        y_mix_lat_type0 = np.array(y_mix_lat_type0) / 1e3
+        y_mix_lat_type1 = np.array(y_mix_lat_type1) / 1e3
+        y_mix_tput = np.array(y_mix_tput) / 1e6
+        print(y_mix_tput)
+        print(y_mix_lat_type0)
+        print(y_mix_lat_type1)
+
+        plt.cla()
+        plt.title('multi_ratio {} {}'.format(r, 100-r))
+        plt.ylabel("99% latency/\u03bcs")
+        plt.xlabel("tput/Mops")
+        plt.plot(mix_tput, mix_lat_type0, label='mix-ord200', marker='o')
+        plt.plot(mix_tput, mix_lat_type1, label='mix-ord{}'.format(l), marker='^')
+        plt.plot(y_mix_tput, y_mix_lat_type0, label='y-mix-ord200', marker='o')
+        plt.plot(y_mix_tput, y_mix_lat_type1, label='y-mix-ord{}'.format(l), marker='^')
+        plt.legend(loc='upper left')
+        # plt.show()
+        file_path = os.path.dirname(os.path.realpath(__file__))
+        file_path = os.path.join(file_path, DATE + '_' + EXPERIMENT, str(s),
+                                 'y_ratio{}.png'.format(r))
+        print(file_path)
+        plt.savefig(file_path)
+
+
+def draw_iso(s):
+    l = 8000
+    for r in ratio_list:
+        
+        iso_tput, iso_lat_type0, iso_lat_type1, mix_tput, mix_lat_type0, mix_lat_type1 = read_iso_data(s, r)
+
+        iso_lat_type0 = np.array(iso_lat_type0) / 1e3
+        iso_lat_type1 = np.array(iso_lat_type1) / 1e3
+        mix_lat_type0 = np.array(mix_lat_type0) / 1e3
+        mix_lat_type1 = np.array(mix_lat_type1) / 1e3
+        iso_tput = np.array(iso_tput) / 1e6
+        mix_tput = np.array(mix_tput) / 1e6
+
+        # print(iso_tput)
+        # print(iso_lat_type0)
+        # print(iso_lat_type1)
+        # print(mix_tput)
+        # print(mix_lat_type0)
+        # print(mix_lat_type1)
+
+        plt.cla()
+        plt.title('multi_ratio {} {}'.format(r, 100-r))
+        plt.ylabel("99% latency/\u03bcs")
+        plt.xlabel("tput/Mops")
+        plt.plot(iso_tput, iso_lat_type0, label='iso-ord200', marker='o')
+        plt.plot(iso_tput, iso_lat_type1, label='iso-ord{}'.format(l), marker='^')
+        plt.plot(mix_tput, mix_lat_type0, label='mix', marker='o')
+        # plt.plot(mix_tput, mix_lat_type1, label='mix-ord{}'.format(l), marker='^')
+        plt.legend(loc='upper left')
+        # plt.show()
+        file_path = os.path.dirname(os.path.realpath(__file__))
+        file_path = os.path.join(file_path, DATE + '_' + EXPERIMENT, str(s),
+                                 'ratio{}.png'.format(r))
+        print(file_path)
+        plt.savefig(file_path)
+
+
+DATE = '20211027'
+EXPERIMENT = 'isolation'
+ratio_list = [34]
 
 
 def main():
-    for i in range(12,15):
-        draw_enum(i)
+    n = 4
+    for i in range(n, n+1):
+        draw_yield_mix(i)
 
 
 if __name__ == '__main__':

@@ -18,7 +18,7 @@ use std::fmt::Display;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 
-use self::rand::random;
+use self::rand::{Rng, SeedableRng, XorShiftRng};
 use db::config;
 use db::e2d2::allocators::*;
 use db::e2d2::common::EmptyMetadata;
@@ -27,6 +27,8 @@ use db::e2d2::interface::*;
 use db::log::*;
 use db::rpc;
 use db::wireformat::*;
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 /// A simple RPC request generator for Sandstorm.
 pub struct Sender {
@@ -48,6 +50,12 @@ pub struct Sender {
 
     // The number of destination UDP ports a packet can be sent to.
     dst_ports: u16,
+
+    // Mapping from type to dst_ports(cores)
+    type2core: HashMap<usize, Vec<u16>>,
+
+    // Rng generator
+    rng: RefCell<XorShiftRng>,
 }
 
 impl Sender {
@@ -103,6 +111,15 @@ impl Sender {
         mac_header.set_etype(0x0800);
 
         let seed: [u32; 4] = rand::random::<[u32; 4]>();
+        let mut mapping = HashMap::new();
+        for (i, v) in config.type2core.iter().enumerate() {
+            let target_cores = if v.len() > 0 {
+                v.clone()
+            } else {
+                (0..dst_ports).collect()
+            };
+            mapping.insert(i, target_cores);
+        }
 
         Sender {
             net_port: port.clone(),
@@ -111,6 +128,8 @@ impl Sender {
             req_mac_header: mac_header,
             requests_sent: Cell::new(0),
             dst_ports: dst_ports,
+            type2core: mapping,
+            rng: RefCell::new(XorShiftRng::from_seed(seed)),
         }
     }
 
@@ -241,7 +260,14 @@ impl Sender {
     /// * `payload`:  The RPC payload to be written into the packet. Must contain the name of the
     ///               extension followed by it's arguments.
     /// * `id`:       RPC identifier.
-    pub fn send_invoke(&self, tenant: u32, name_len: u32, payload: &[u8], id: u64) {
+    pub fn send_invoke(
+        &self,
+        tenant: u32,
+        name_len: u32,
+        payload: &[u8],
+        id: u64,
+        type_idx: usize,
+    ) {
         let request = rpc::create_invoke_rpc(
             &self.req_mac_header,
             &self.req_ip_header,
@@ -250,7 +276,7 @@ impl Sender {
             name_len,
             payload,
             id,
-            self.get_dst_port(tenant),
+            self.get_dst_port_by_type(type_idx),
             // (id & 0xffff) as u16 & (self.dst_ports - 1),
         );
 
@@ -263,7 +289,14 @@ impl Sender {
         // The two least significant bytes of the tenant id % the total number of destination
         // ports.
         // (tenant & 0xffff) as u16 & (self.dst_ports - 1)
-        random::<u16>() % self.dst_ports
+        rand::random::<u16>() % self.dst_ports
+    }
+
+    #[inline]
+    fn get_dst_port_by_type(&self, type_idx: usize) -> u16 {
+        let target_cores = &self.type2core[&type_idx];
+        let target_idx = self.rng.borrow_mut().gen::<u32>() % target_cores.len() as u32;
+        target_cores[target_idx as usize]
     }
 
     /// Sends a request/packet parsed upto IP out the network interface.
@@ -285,9 +318,9 @@ impl Sender {
 
         // Update the number of requests sent out by this generator.
         let r = self.requests_sent.get();
-        if r & 0xffffff == 0 {
-            info!("Sent many requests...");
-        }
+        // if r & 0xffffff == 0 {
+        //     info!("Sent many requests...");
+        // }
         self.requests_sent.set(r + 1);
     }
 
@@ -390,9 +423,9 @@ where
 
             // Update the number of responses received.
             let r = self.responses_recv.get();
-            if r & 0xffffff == 0 {
-                info!("Received many responses...");
-            }
+            // if r & 0xffffff == 0 {
+            //     info!("Received many responses...");
+            // }
             self.responses_recv.set(r + 1);
 
             // Clear out any dangling pointers in mbuf_vector.

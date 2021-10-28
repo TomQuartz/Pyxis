@@ -232,15 +232,13 @@ pub struct ClientConfig {
     /// compute rpc rate for each type or not
     pub multi_rpc: bool,
     /// split each type into several steps
-    pub multi_steps: Vec<u32>,
+    // pub multi_steps: Vec<u32>,
     /// our partition
-    /// TODO: make this automatic
     pub partition: i32,
+    /// mapping from type to remote core
+    pub type2core: Vec<Vec<u16>>,
     /// sender threads
     pub num_sender: usize,
-    /// equal ratio among all types
-    /// if false, the ratio is inversely proportional to job duration
-    // pub equal_ratio: bool,
     /// compute the rpc rate using kayak's xloop
     pub learnable: bool,
     /// interval for the second type in bimodal

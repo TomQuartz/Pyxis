@@ -571,92 +571,85 @@ where
         }
     }
 
-    fn send(&mut self) {
-        if self.start == 0 {
-            self.start = cycles::rdtsc();
-        }
-        // Return if there are no more requests to generate.
-        if self.requests <= self.sent {
-            return;
-        }
+    fn send_once(&mut self) {
+        let curr = cycles::rdtsc();
+        let type_idx: usize = self.get_type_idx();
+        let o = self.native_or_rpc(type_idx);
+        if o == true {
+            // Configured to issue native RPCs, issue a regular get()/put() operation.
+            self.workload.borrow_mut().abc(
+                |tenant, key, _ord| self.sender.send_get(tenant, 1, key, curr),
+                |tenant, key, val, _ord| self.sender.send_put(tenant, 1, key, val, curr),
+            );
+            self.native_state.borrow_mut().insert(
+                curr,
+                PushbackState::new(self.num, self.record_len as usize, type_idx),
+            );
+            // self.outstanding += 1;
+        } else {
+            // Configured to issue invoke() RPCs.
+            let mut p_get = self.payload_pushback.borrow_mut();
+            let mut p_put = self.payload_put.borrow_mut();
 
+            // XXX Heavily dependent on how `Pushback` creates a key. Only the first four
+            // bytes of the key matter, the rest are zero. The value is always zero.
+            self.workload.borrow_mut().abc(
+                |tenant, key, ord| {
+                    unsafe {
+                        p_get[16..20].copy_from_slice(&{
+                            transmute::<u32, [u8; 4]>(self.multi_types[type_idx].num_kv.to_le())
+                        });
+                        p_get[20..24].copy_from_slice(&{
+                            transmute::<u32, [u8; 4]>(self.multi_types[type_idx].order.to_le())
+                        });
+                    }
+                    // First 24 bytes on the payload were already pre-populated with the
+                    // extension name (8 bytes), the table id (8 bytes), number of get()
+                    // (4 bytes), and number of CPU cycles compute(4 bytes). Just write
+                    // in the first 4 bytes of the key.
+                    p_get[24..28].copy_from_slice(&key[0..4]);
+                    // self.manager.borrow_mut().create_task(
+                    //     curr,
+                    //     &p_get,
+                    //     tenant,
+                    //     8,
+                    //     Arc::clone(&self.sender),
+                    // );
+                    self.native_state
+                        .borrow_mut()
+                        .insert(curr, PushbackState::new(0, 0, type_idx));
+                    self.sender.send_invoke(tenant, 8, &p_get, curr, type_idx)
+                },
+                |tenant, key, _val, _ord| {
+                    // First 18 bytes on the payload were already pre-populated with the
+                    // extension name (8 bytes), the table id (8 bytes), and the key length (2
+                    // bytes). Just write in the first 4 bytes of the key. The value is anyway
+                    // always zero.
+                    p_put[18..22].copy_from_slice(&key[0..4]);
+                    // self.manager.borrow_mut().create_task(
+                    //     curr,
+                    //     &p_put,
+                    //     tenant,
+                    //     8,
+                    //     Arc::clone(&self.sender),
+                    // );
+                    self.native_state
+                        .borrow_mut()
+                        .insert(curr, PushbackState::new(0, 0, type_idx));
+                    self.sender.send_invoke(tenant, 8, &p_put, curr, type_idx)
+                },
+            );
+            // self.outstanding += 1;
+        }
+    }
+
+    fn send_all(&mut self) {
+        self.start = cycles::rdtsc();
         while self.outstanding < self.max_out as u64
-            && self.manager.borrow().get_queue_len() < self.max_out as usize
+        // && self.manager.borrow().get_queue_len() < self.max_out as usize
         {
-            // Get the current time stamp so that we can determine if it is time to issue the next RPC.
-            let curr = cycles::rdtsc();
-            let type_idx: usize = self.get_type_idx();
-            let o = self.native_or_rpc(type_idx);
-            if o == true {
-                // Configured to issue native RPCs, issue a regular get()/put() operation.
-                self.workload.borrow_mut().abc(
-                    |tenant, key, _ord| self.sender.send_get(tenant, 1, key, curr),
-                    |tenant, key, val, _ord| self.sender.send_put(tenant, 1, key, val, curr),
-                );
-                self.native_state.borrow_mut().insert(
-                    curr,
-                    PushbackState::new(self.num, self.record_len as usize, type_idx),
-                );
-                self.outstanding += 1;
-            } else {
-                // Configured to issue invoke() RPCs.
-                let mut p_get = self.payload_pushback.borrow_mut();
-                let mut p_put = self.payload_put.borrow_mut();
-
-                // XXX Heavily dependent on how `Pushback` creates a key. Only the first four
-                // bytes of the key matter, the rest are zero. The value is always zero.
-                self.workload.borrow_mut().abc(
-                    |tenant, key, ord| {
-                        unsafe {
-                            p_get[16..20].copy_from_slice(&{
-                                transmute::<u32, [u8; 4]>(self.multi_types[type_idx].num_kv.to_le())
-                            });
-                            p_get[20..24].copy_from_slice(&{
-                                transmute::<u32, [u8; 4]>(self.multi_types[type_idx].order.to_le())
-                            });
-                        }
-                        // First 24 bytes on the payload were already pre-populated with the
-                        // extension name (8 bytes), the table id (8 bytes), number of get()
-                        // (4 bytes), and number of CPU cycles compute(4 bytes). Just write
-                        // in the first 4 bytes of the key.
-                        p_get[24..28].copy_from_slice(&key[0..4]);
-                        // self.manager.borrow_mut().create_task(
-                        //     curr,
-                        //     &p_get,
-                        //     tenant,
-                        //     8,
-                        //     Arc::clone(&self.sender),
-                        // );
-                        self.native_state
-                            .borrow_mut()
-                            .insert(curr, PushbackState::new(0, 0, type_idx));
-                        self.sender.send_invoke(tenant, 8, &p_get, curr, type_idx)
-                    },
-                    |tenant, key, _val, _ord| {
-                        // First 18 bytes on the payload were already pre-populated with the
-                        // extension name (8 bytes), the table id (8 bytes), and the key length (2
-                        // bytes). Just write in the first 4 bytes of the key. The value is anyway
-                        // always zero.
-                        p_put[18..22].copy_from_slice(&key[0..4]);
-                        // self.manager.borrow_mut().create_task(
-                        //     curr,
-                        //     &p_put,
-                        //     tenant,
-                        //     8,
-                        //     Arc::clone(&self.sender),
-                        // );
-                        self.native_state
-                            .borrow_mut()
-                            .insert(curr, PushbackState::new(0, 0, type_idx));
-                        self.sender.send_invoke(tenant, 8, &p_put, curr, type_idx)
-                    },
-                );
-                self.outstanding += 1;
-            }
-
-            // Update the time stamp at which the next request should be generated, assuming that
-            // the first request was sent out at self.start.
-            self.sent += 1;
+            self.send_once();
+            self.outstanding += 1;
         }
     }
 
@@ -787,7 +780,6 @@ where
                                         //     val_len as u16,
                                         // );
                                         self.outstanding -= 1;
-
                                         self.latencies[state.type_idx].push(curr - timestamp);
                                         self.local_recvd += 1;
                                         self.recvd.fetch_add(1, Ordering::Relaxed);
@@ -842,6 +834,11 @@ where
                     OpCode::SandstormCommitRpc => {}
 
                     _ => packet.free_packet(),
+                }
+
+                if self.outstanding < self.max_out as u64 {
+                    self.send_once();
+                    self.outstanding += 1;
                 }
 
                 // kth measurement here
@@ -1065,7 +1062,9 @@ where
 {
     // Called internally by Netbricks.
     fn execute(&mut self) {
-        self.send();
+        if self.start == 0 {
+            self.send_all();
+        }
         self.recv();
         // for _i in 0..self.max_out as usize {
         //     self.manager.borrow_mut().execute_task();

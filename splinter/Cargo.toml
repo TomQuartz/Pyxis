@@ -13,6 +13,10 @@ name = "pushback-ours"
 path = "src/bin/client/pushback-ours.rs"
 
 [[bin]]
+name = "ours"
+path = "src/bin/client/ours.rs"
+
+[[bin]]
 name = "test"
 path = "src/bin/client/test.rs"
 
