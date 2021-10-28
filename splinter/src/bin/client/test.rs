@@ -6,7 +6,7 @@ use self::atomic_float::AtomicF32;
 
 // fn main() {
 //     let mut v = vec![];
-//     for _ in 0..5{
+//     for _ in 0..5 {
 //         v.push(Arc::new(AtomicUsize::new(0)));
 //     }
 //     let mut pool = vec![];
@@ -15,7 +15,6 @@ use self::atomic_float::AtomicF32;
 //         pool.push(thread::spawn(move || {
 //             vc[i].fetch_add(i, Ordering::SeqCst);
 //             println!("{:?}", vc);
-            
 //         }));
 //     }
 //     for t in pool {
@@ -49,3 +48,4 @@ fn main(){
     // }
     // println!("{:?}",v);
 }
+    

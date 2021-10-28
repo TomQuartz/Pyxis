@@ -39,9 +39,11 @@ use super::e2d2::interface::*;
 
 use sandstorm::common;
 
+use std::rc::Rc;
+
 /// This flag enables or disables fast path for native requests.
 /// Later, it will be set from the server.toml file probably.
-pub const FAST_PATH: bool = false;
+pub const FAST_PATH: bool = true;
 
 // This is a thread local variable to count the number of occurrences
 // of cycle counting to average for 1 M events.
@@ -275,7 +277,7 @@ where
                         // No packets were available for receive.
                         return None;
                     }
-
+                    trace!("{} recv {} pkts", self.network_port, num_received);
                     // Allocate a vector for the received packets.
                     let mut recvd_packets = Vec::<Packet<NullHeader, EmptyMetadata>>::with_capacity(
                         self.max_rx_packets as usize,
@@ -388,7 +390,7 @@ where
                         warn!("Was able to send only {} of {} packets.", sent, num_packets);
                     }
 
-                    self.responses_sent += mbufs.len() as u64;
+                    // self.responses_sent += mbufs.len() as u64;
                 }
 
                 Err(ref err) => {
@@ -399,21 +401,21 @@ where
 
         // For every million packets sent out by the dispatcher, print out the
         // amount of time in nano seconds it took to do so.
-        let every = 1000000;
-        if self.responses_sent >= every {
-            self.measurement_stop = cycles::rdtsc();
+        // let every = 1000000;
+        // if self.responses_sent >= every {
+        //     self.measurement_stop = cycles::rdtsc();
 
-            debug!(
-                "Dispatcher {}: {:.0} K/packets/s",
-                self.id,
-                (self.responses_sent as f64 / 1e3)
-                    / ((self.measurement_stop - self.measurement_start) as f64
-                        / (cycles::cycles_per_second() as f64))
-            );
+        //     debug!(
+        //         "Dispatcher {}: {:.0} K/packets/s",
+        //         self.id,
+        //         (self.responses_sent as f64 / 1e3)
+        //             / ((self.measurement_stop - self.measurement_start) as f64
+        //                 / (cycles::cycles_per_second() as f64))
+        //     );
 
-            self.measurement_start = self.measurement_stop;
-            self.responses_sent = 0;
-        }
+        //     self.measurement_start = self.measurement_stop;
+        //     self.responses_sent = 0;
+        // }
     }
 
     /// This function frees a set of packets that were received from DPDK.
@@ -760,6 +762,7 @@ where
         self.cycle_counter.rx_tx.start();
         let responses = self.scheduler.responses();
         if responses.len() > 0 {
+            // self.scheduler.last_tx.set(cycles::rdtsc());
             self.try_send_packets(responses);
         }
 
@@ -902,3 +905,18 @@ where
         }
     }
 }
+
+// pub trait Resp {
+//     fn send_resps(&self);
+// }
+
+// impl<T> Resp for Dispatch<T>
+// where
+//     T: PacketRx + PacketTx + Display + Clone + 'static,
+// {
+//     fn send_resps(&self) {
+//         if let Some(responses) = self.scheduler.pending_resps() {
+//             self.send_resps(responses);
+//         }
+//     }
+// }

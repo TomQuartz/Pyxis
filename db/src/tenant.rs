@@ -31,7 +31,8 @@ pub struct Tenant {
 
     /// A map of all the data tables belonging to a tenant. Each data table
     /// has a unique identifier.
-    tables: RwLock<HashMap<TableId, Arc<Table>>>,
+    // tables: RwLock<HashMap<TableId, Arc<Table>>>,
+    tables: HashMap<TableId, Arc<Table>>,
 }
 
 // Implementation of methods on tenant.
@@ -50,7 +51,8 @@ impl Tenant {
     pub fn new(id: TenantId) -> Tenant {
         Tenant {
             id: id,
-            tables: RwLock::new(HashMap::new()),
+            // tables: RwLock::new(HashMap::new()),
+            tables: HashMap::new(),
         }
     }
 
@@ -70,9 +72,10 @@ impl Tenant {
     /// # Arguments
     ///
     /// * `id`: A unique identifier for the new table.
-    pub fn create_table(&self, table_id: u64) {
+    pub fn create_table(&mut self, table_id: u64) {
         // Acquire a write lock.
-        let mut map = self.tables.write();
+        // let mut map = self.tables.write();
+        let ref mut map = self.tables;
 
         // Insert a new table and return.
         map.insert(table_id, Arc::new(Table::default()));
@@ -89,7 +92,8 @@ impl Tenant {
     /// An atomic reference counted handle to the table if it exists.
     pub fn get_table(&self, table_id: TableId) -> Option<Arc<Table>> {
         // Acquire a read lock.
-        let map = self.tables.read();
+        // let map = self.tables.read();
+        let ref map = self.tables;
 
         // Lookup on table_id and return.
         map.get(&table_id)
@@ -101,8 +105,12 @@ impl Tenant {
     /// # Return
     ///
     /// A write lock on the tenant table.
-    pub fn lock_table(&self) -> RwLockWriteGuard<HashMap<TableId, Arc<Table>>> {
+    // pub fn lock_table(&self) -> RwLockWriteGuard<HashMap<TableId, Arc<Table>>> {
+    //     // Acquire a write lock.
+    //     self.tables.write()
+    // }
+    pub fn lock_table(&self) -> &HashMap<TableId, Arc<Table>> {
         // Acquire a write lock.
-        self.tables.write()
+        &self.tables
     }
 }

@@ -23,6 +23,9 @@ extern crate db;
 #[macro_use]
 extern crate sandstorm;
 
+#[macro_use]
+extern crate cfg_if;
+
 use std::ops::Generator;
 use std::pin::Pin;
 use std::rc::Rc;
@@ -126,28 +129,37 @@ pub fn init(db: Rc<DB>) -> Pin<Box<Generator<Yield = u64, Return = u64>>> {
             }
         }
 
-        if ord >= 600 {
-            let start = cycles::rdtsc();
-            while cycles::rdtsc() - start < 600 as u64 {}
-            ord -= 600;
-            yield 0;
-        }
+        // if ord >= 600 {
+        //     let start = cycles::rdtsc();
+        //     while cycles::rdtsc() - start < 600 as u64 {}
+        //     ord -= 600;
+        //     yield 0;
+        // }
 
         // Compute part for this extension
-        loop {
-            if ord <= 2000 {
+        cfg_if! {
+            if #[cfg(feature = "yield")]{
+                loop {
+                    if ord <= 2000 {
+                        let start = cycles::rdtsc();
+                        while cycles::rdtsc() - start < ord as u64 {}
+                        break;
+                    } else {
+                        let start = cycles::rdtsc();
+                        while cycles::rdtsc() - start < 2000 as u64 {}
+                        ord -= 2000;
+                        yield 0;
+                    }
+                }
+            }else{
                 let start = cycles::rdtsc();
                 while cycles::rdtsc() - start < ord as u64 {}
-                break;
-            } else {
-                let start = cycles::rdtsc();
-                while cycles::rdtsc() - start < 2000 as u64 {}
-                ord -= 2000;
-                yield 0;
             }
         }
 
         db.resp(pack(&mul));
         return 0;
+
+        yield 0;
     })
 }

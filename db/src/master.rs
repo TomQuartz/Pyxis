@@ -59,7 +59,7 @@ pub fn accessor<'a>(alloc: *const Allocator) -> &'a Allocator {
 }
 
 // The number of buckets in the `tenants` hashtable inside of Master.
-const TENANT_BUCKETS: usize = 32;
+const TENANT_BUCKETS: usize = 1;
 
 /// The primary service in Sandstorm. Master is responsible managing tenants, extensions, and
 /// the database. It implements the Service trait, allowing it to generate schedulable tasks
@@ -67,7 +67,8 @@ const TENANT_BUCKETS: usize = 32;
 pub struct Master {
     /// A Map of all tenants in the system. Since Sandstorm is a multi-tenant system, most RPCs
     /// will require a lookup on this map.
-    tenants: [RwLock<HashMap<TenantId, Arc<Tenant>>>; TENANT_BUCKETS],
+    // tenants: [RwLock<HashMap<TenantId, Arc<Tenant>>>; TENANT_BUCKETS],
+    tenants: [HashMap<TenantId, Arc<Tenant>>; TENANT_BUCKETS],
 
     /// An extension manager maintaining state concerning extensions loaded into the system.
     /// Required to retrieve and determine if an extension belongs to a particular tenant while
@@ -89,38 +90,39 @@ impl Master {
         Master {
             // Cannot use copy constructor because of the Arc<Tenant>.
             tenants: [
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
-                RwLock::new(HashMap::new()),
+                HashMap::new()
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
+                // RwLock::new(HashMap::new()),
             ],
             extensions: ExtensionManager::new(),
             heap: Allocator::new(),
@@ -136,9 +138,9 @@ impl Master {
     /// * `table_id`:  Identifier of the table to be added to the tenant. This table will contain
     ///                all the objects.
     /// * `num`:       The number of objects to be added to the data table.
-    pub fn fill_test(&self, tenant_id: TenantId, table_id: TableId, num: u32) {
+    pub fn fill_test(&mut self, tenant_id: TenantId, table_id: TableId, num: u32) {
         // Create a tenant containing the table.
-        let tenant = Tenant::new(tenant_id);
+        let mut tenant = Tenant::new(tenant_id);
         tenant.create_table(table_id);
 
         let table = tenant
@@ -166,7 +168,7 @@ impl Master {
         // Add the tenant.
         self.insert_tenant(tenant);
     }
-
+    /*
     /// Populates the TAO dataset.
     ///
     /// # Arguments
@@ -585,13 +587,19 @@ impl Master {
         // Add the tenant.
         self.insert_tenant(tenant);
     }
-
+    */
     /// Loads the get(), put(), tao(), and bad() extensions.
     ///
     /// # Arguments
     ///
     /// * `tenant`: Identifier of the tenant to load the extension for.
-    pub fn load_test(&self, tenant: TenantId) {
+    pub fn load_test(&mut self, tenant: TenantId) {
+        // Load the pushback() extension.
+        let name = "../ext/pushback/target/release/libpushback.so";
+        if self.extensions.load(name, tenant, "pushback") == false {
+            panic!("Failed to load pushback() extension.");
+        }
+        /*
         // Load the get() extension.
         let name = "../ext/get/target/release/libget.so";
         if self.extensions.load(name, tenant, "get") == false {
@@ -628,12 +636,6 @@ impl Master {
             panic!("Failed to load aggregate() extension.");
         }
 
-        // Load the pushback() extension.
-        let name = "../ext/pushback/target/release/libpushback.so";
-        if self.extensions.load(name, tenant, "pushback") == false {
-            panic!("Failed to load pushback() extension.");
-        }
-
         // Load the scan() extension.
         let name = "../ext/scan/target/release/libscan.so";
         if self.extensions.load(name, tenant, "scan") == false {
@@ -663,6 +665,7 @@ impl Master {
         if self.extensions.load(name, tenant, "checksum") == false {
             panic!("Failed to load checksum() extension.");
         }
+        */
     }
 
     /// Loads the get(), put(), and tao() extensions once, and shares them across multiple tenants.
@@ -670,6 +673,7 @@ impl Master {
     /// # Arguments
     ///
     /// * `tenants`: The number of tenants that should share the above three extensions.
+    /*
     pub fn load_test_shared(&self, tenants: u32) {
         // First, load up the get, put, and tao extensions for tenant 1.
         self.load_test(0);
@@ -692,6 +696,7 @@ impl Master {
             }
         }
     }
+    */
 
     /// This method returns a handle to a tenant if it exists.
     ///
@@ -706,7 +711,8 @@ impl Master {
         // Acquire a read lock. The bucket is determined by the least significant byte of the
         // tenant id.
         let bucket = (tenant_id & 0xff) as usize & (TENANT_BUCKETS - 1);
-        let map = self.tenants[bucket].read();
+        // let map = self.tenants[bucket].read();
+        let map = &self.tenants[bucket];
 
         // Lookup, and return the tenant if it exists.
         map.get(&tenant_id)
@@ -718,11 +724,12 @@ impl Master {
     /// # Arguments
     ///
     /// * `tenant`: The tenant to be added.
-    fn insert_tenant(&self, tenant: Tenant) {
+    fn insert_tenant(&mut self, tenant: Tenant) {
         // Acquire a write lock. The bucket is determined by the least significant byte of the
         // tenant id.
         let bucket = (tenant.id() & 0xff) as usize & (TENANT_BUCKETS - 1);
-        let mut map = self.tenants[bucket].write();
+        // let mut map = self.tenants[bucket].write();
+        let ref mut map = self.tenants[bucket];
 
         // Insert the tenant and return.
         map.insert(tenant.id(), Arc::new(tenant));
@@ -844,7 +851,7 @@ impl Master {
                             } else {
                                 None
                             }
-                            })
+                        })
                 // If the value was written to the response payload,
                 // update the status of the rpc.
                 .and_then(| _ | {
@@ -885,6 +892,153 @@ impl Master {
     }
 
     /// Handed native get() RPC request.
+    #[allow(unreachable_code)]
+    #[allow(unused_assignments)]
+    fn get_native(
+        &self,
+        req: Packet<UdpHeader, EmptyMetadata>,
+        res: Packet<UdpHeader, EmptyMetadata>,
+    ) -> Result<
+        (
+            Packet<UdpHeader, EmptyMetadata>,
+            Packet<UdpHeader, EmptyMetadata>,
+        ),
+        (
+            Packet<UdpHeader, EmptyMetadata>,
+            Packet<UdpHeader, EmptyMetadata>,
+        ),
+    > {
+        // First, parse the request packet.
+        let req = req.parse_header::<GetRequest>();
+
+        // Read fields off the request header.
+        let mut tenant_id: TenantId = 0;
+        let mut table_id: TableId = 0;
+        let mut key_length = 0;
+        let mut rpc_stamp = 0;
+
+        {
+            let hdr = req.get_header();
+            tenant_id = hdr.common_header.tenant as TenantId;
+            table_id = hdr.table_id as TableId;
+            key_length = hdr.key_length;
+            rpc_stamp = hdr.common_header.stamp;
+        }
+
+        // Next, add a header to the response packet.
+        let mut res = res
+            .push_header(&GetResponse::new(
+                rpc_stamp,
+                OpCode::SandstormGetRpc,
+                tenant_id,
+            ))
+            .expect("Failed to setup GetResponse");
+
+        // If the payload size is less than the key length, return an error.
+        if req.get_payload().len() < key_length as usize {
+            res.get_mut_header().common_header.status = RpcStatus::StatusMalformedRequest;
+            return Err((
+                req.deparse_header(PACKET_UDP_LEN as usize),
+                res.deparse_header(PACKET_UDP_LEN as usize),
+            ));
+        }
+
+        // Lookup the tenant, and get a handle to the allocator. Required to avoid capturing a
+        // reference to Master in the generator below.
+        let tenant = self.get_tenant(tenant_id);
+        let alloc: *const Allocator = &self.heap;
+
+        // Create a generator for this request.
+        // let gen = Box::pin(move || {
+        let mut status: RpcStatus = RpcStatus::StatusTenantDoesNotExist;
+        let optype: u8 = 0x1; // OpType::SandstormRead
+
+        let outcome =
+            // Check if the tenant exists. If it does, then check if the
+            // table exists, and update the status of the rpc.
+            tenant.and_then(| tenant | {
+                            status = RpcStatus::StatusTableDoesNotExist;
+                            tenant.get_table(table_id)
+                        })
+            // If the table exists, lookup the provided key, and update
+            // the status of the rpc.
+            .and_then(| table | {
+                            status = RpcStatus::StatusObjectDoesNotExist;
+                            let (key, _) = req.get_payload().split_at(key_length as usize);
+                            table.get(key)
+                        })
+            // If the lookup succeeded, obtain the value, and update the
+            // status of the rpc.
+            .and_then(| entry | {
+                            status = RpcStatus::StatusInternalError;
+                            let alloc: &Allocator = accessor(alloc);
+                            Some((alloc.resolve(entry.value), entry.version))
+                        })
+            // If the value was obtained, then write to the response packet
+            // and update the status of the rpc.
+            .and_then(| (opt, version) | {
+                if let Some(opt) = opt {
+                            let (k, value) = &opt;
+                            status = RpcStatus::StatusInternalError;
+                            let _result = res.add_to_payload_tail(1, pack(&optype));
+                            let _ = res.add_to_payload_tail(size_of::<Version>(), &unsafe { transmute::<Version, [u8; 8]>(version) });
+                            let result = res.add_to_payload_tail(k.len(), &k[..]);
+                            match result {
+                                Ok(()) => {
+                                    res.add_to_payload_tail(value.len(), &value[..]).ok()
+                                }
+
+                                Err(_) => {
+                                    Some(())
+                                }
+                            }
+                        } else {
+                            None
+                        }
+                    })
+            // If the value was written to the response payload,
+            // update the status of the rpc.
+            .and_then(| _ | {
+                            status = RpcStatus::StatusOk;
+                            Some(())
+                        });
+
+        match outcome {
+            // The RPC completed successfully. Update the response header with
+            // the status and value length.
+            Some(()) => {
+                let val_len = res.get_payload().len() as u32;
+
+                let hdr: &mut GetResponse = res.get_mut_header();
+                hdr.value_length = val_len;
+                hdr.common_header.status = status;
+            }
+
+            // The RPC failed. Update the response header with the status.
+            None => {
+                res.get_mut_header().common_header.status = status;
+            }
+        }
+
+        // Deparse request and response packets down to UDP, and return from the generator.
+        return Ok((
+            req.deparse_header(PACKET_UDP_LEN as usize),
+            res.deparse_header(PACKET_UDP_LEN as usize),
+        ));
+        // return Some((
+        //     req.deparse_header(PACKET_UDP_LEN as usize),
+        //     res.deparse_header(PACKET_UDP_LEN as usize),
+        // ));
+
+        // XXX: This yield is required to get the compiler to compile this closure into a
+        // generator. It is unreachable and benign.
+        // yield 0;
+        // });
+
+        // Return a native task.
+        // return Ok(Box::new(Native::new(TaskPriority::REQUEST, gen)));
+    }
+    /* original implementation of get_native, missing optype(len=1) and version(len=8)
     #[allow(unreachable_code)]
     #[allow(unused_assignments)]
     fn get_native(
@@ -1012,6 +1166,7 @@ impl Master {
             res.deparse_header(PACKET_UDP_LEN as usize),
         ));
     }
+    */
 
     /// Handles the put() RPC request.
     ///
@@ -1549,6 +1704,7 @@ impl Master {
             name_length = hdr.name_length as usize;
             args_length = hdr.args_length as usize;
             rpc_stamp = hdr.common_header.stamp;
+            // NOTE: if we add a type field in InvokeRequest, parse it here
         }
 
         // Next, add a header to the response packet.
@@ -1768,7 +1924,6 @@ impl Master {
         // Return a native task.
         return Ok(Box::new(Native::new(TaskPriority::REQUEST, gen)));
     }
-
     /// Handles the install() RPC request.
     ///
     /// If issued by a valid tenant, installs (loads) an extension into the database.
@@ -1829,9 +1984,9 @@ impl Master {
                 let _ = file.write_all(extn).unwrap();
                 let _ = file.sync_all().unwrap();
 
-                if self.extensions.load(&path, tenant, name) {
-                    res.common_header.status = RpcStatus::StatusOk;
-                }
+                // if self.extensions.load(&path, tenant, name) {
+                //     res.common_header.status = RpcStatus::StatusOk;
+                // }
             }
         }
 

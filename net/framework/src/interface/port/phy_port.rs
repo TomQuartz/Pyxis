@@ -1,16 +1,16 @@
+use super::super::{PacketRx, PacketTx};
 use super::PortStats;
-use super::super::{PacketTx, PacketRx};
 use allocators::*;
 use common::*;
-use config::{NUM_RXD, NUM_TXD, PortConfiguration};
+use config::{PortConfiguration, NUM_RXD, NUM_TXD};
 use headers::MacAddress;
 use native::zcsi::*;
 use regex::Regex;
 use std::cmp::min;
 use std::ffi::CString;
 use std::fmt;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 /// A DPDK based PMD port. Send and receive should not be called directly on this structure but on the port queue
 /// structure instead.
@@ -20,8 +20,8 @@ pub struct PmdPort {
     port: i32,
     rxqs: i32,
     txqs: i32,
-    stats_rx: Vec<Arc<CacheAligned<PortStats>>>,
-    stats_tx: Vec<Arc<CacheAligned<PortStats>>>,
+    // stats_rx: Vec<Arc<CacheAligned<PortStats>>>,
+    // stats_tx: Vec<Arc<CacheAligned<PortStats>>>,
 }
 
 /// A port queue represents a single queue for a physical port, and should be used to send and receive data.
@@ -30,8 +30,8 @@ pub struct PortQueue {
     // The Arc cost here should not affect anything, since we are really not doing anything to make it go in and out of
     // scope.
     pub port: Arc<PmdPort>,
-    stats_rx: Arc<CacheAligned<PortStats>>,
-    stats_tx: Arc<CacheAligned<PortStats>>,
+    // stats_rx: Arc<CacheAligned<PortStats>>,
+    // stats_tx: Arc<CacheAligned<PortStats>>,
     port_id: i32,
     txq: i32,
     rxq: i32,
@@ -157,8 +157,8 @@ impl PmdPort {
                 port_id: port.port,
                 txq: txq,
                 rxq: rxq,
-                stats_rx: port.stats_rx[rxq as usize].clone(),
-                stats_tx: port.stats_tx[txq as usize].clone(),
+                // stats_rx: port.stats_rx[rxq as usize].clone(),
+                // stats_tx: port.stats_tx[txq as usize].clone(),
             }))
         }
     }
@@ -171,11 +171,12 @@ impl PmdPort {
 
     /// Get stats for an RX/TX queue pair.
     pub fn stats(&self, queue: i32) -> (usize, usize) {
-        let idx = queue as usize;
-        (
-            self.stats_rx[idx].stats.load(Ordering::Relaxed),
-            self.stats_tx[idx].stats.load(Ordering::Relaxed),
-        )
+        // let idx = queue as usize;
+        // (
+        //     self.stats_rx[idx].stats.load(Ordering::Relaxed),
+        //     self.stats_tx[idx].stats.load(Ordering::Relaxed),
+        // )
+        (0, 0)
     }
 
     /// Create a PMD port with a given number of RX and TXQs.
@@ -191,7 +192,6 @@ impl PmdPort {
         tso: bool,
         csumoffload: bool,
     ) -> Result<Arc<PmdPort>> {
-
         let loopbackv = i32_from_bool(loopback);
         let tsov = i32_from_bool(tso);
         let csumoffloadv = i32_from_bool(csumoffload);
@@ -222,8 +222,8 @@ impl PmdPort {
                     rxqs: actual_rxqs,
                     txqs: actual_txqs,
                     should_close: true,
-                    stats_rx: (0..rxqs).map(|_| Arc::new(PortStats::new())).collect(),
-                    stats_tx: (0..txqs).map(|_| Arc::new(PortStats::new())).collect(),
+                    // stats_rx: (0..rxqs).map(|_| Arc::new(PortStats::new())).collect(),
+                    // stats_tx: (0..txqs).map(|_| Arc::new(PortStats::new())).collect(),
                 }))
             } else {
                 Err(ErrorKind::FailedToInitializePort(port).into())
@@ -249,8 +249,8 @@ impl PmdPort {
                 rxqs: 1,
                 txqs: 1,
                 should_close: false,
-                stats_rx: vec![Arc::new(PortStats::new())],
-                stats_tx: vec![Arc::new(PortStats::new())],
+                // stats_rx: vec![Arc::new(PortStats::new())],
+                // stats_tx: vec![Arc::new(PortStats::new())],
             }))
         } else {
             Err(ErrorKind::FailedToInitializePort(port).into())
@@ -269,8 +269,8 @@ impl PmdPort {
                         rxqs: 1,
                         txqs: 1,
                         should_close: false,
-                        stats_rx: vec![Arc::new(PortStats::new())],
-                        stats_tx: vec![Arc::new(PortStats::new())],
+                        // stats_rx: vec![Arc::new(PortStats::new())],
+                        // stats_tx: vec![Arc::new(PortStats::new())],
                     }))
                 } else {
                     Err(ErrorKind::FailedToInitializePort(port).into())
@@ -307,7 +307,8 @@ impl PmdPort {
                 loopback,
                 tso,
                 csumoffload,
-            ).chain_err(|| ErrorKind::BadDev(String::from(spec)))
+            )
+            .chain_err(|| ErrorKind::BadDev(String::from(spec)))
         } else {
             Err(ErrorKind::BadDev(String::from(spec)).into())
         }
@@ -320,8 +321,8 @@ impl PmdPort {
             rxqs: 0,
             txqs: 0,
             should_close: false,
-            stats_rx: vec![Arc::new(PortStats::new())],
-            stats_tx: vec![Arc::new(PortStats::new())],
+            // stats_rx: vec![Arc::new(PortStats::new())],
+            // stats_tx: vec![Arc::new(PortStats::new())],
         }))
     }
 
@@ -365,35 +366,31 @@ impl PmdPort {
         match parts[0] {
             "bess" => PmdPort::new_bess_port(parts[1], rx_cores[0]),
             "ovs" => PmdPort::new_ovs_port(parts[1], rx_cores[0]),
-            "dpdk" => {
-                PmdPort::new_dpdk_port(
-                    parts[1],
-                    rxqs,
-                    txqs,
-                    rx_cores,
-                    tx_cores,
-                    nrxd,
-                    ntxd,
-                    loopback,
-                    tso,
-                    csumoffload,
-                )
-            }
+            "dpdk" => PmdPort::new_dpdk_port(
+                parts[1],
+                rxqs,
+                txqs,
+                rx_cores,
+                tx_cores,
+                nrxd,
+                ntxd,
+                loopback,
+                tso,
+                csumoffload,
+            ),
             "null" => PmdPort::null_port(),
-            _ => {
-                PmdPort::new_dpdk_port(
-                    name,
-                    rxqs,
-                    txqs,
-                    rx_cores,
-                    tx_cores,
-                    nrxd,
-                    ntxd,
-                    loopback,
-                    tso,
-                    csumoffload,
-                )
-            }
+            _ => PmdPort::new_dpdk_port(
+                name,
+                rxqs,
+                txqs,
+                rx_cores,
+                tx_cores,
+                nrxd,
+                ntxd,
+                loopback,
+                tso,
+                csumoffload,
+            ),
         }
     }
 
@@ -405,16 +402,7 @@ impl PmdPort {
         tx_cores: &[i32],
     ) -> Result<Arc<PmdPort>> {
         PmdPort::new_port_with_queues_descriptors_offloads(
-            name,
-            rxqs,
-            txqs,
-            rx_cores,
-            tx_cores,
-            NUM_RXD,
-            NUM_TXD,
-            false,
-            false,
-            false,
+            name, rxqs, txqs, rx_cores, tx_cores, NUM_RXD, NUM_TXD, false, false, false,
         )
     }
 
@@ -422,7 +410,6 @@ impl PmdPort {
         let rx_vec = vec![rx_core];
         let tx_vec = vec![tx_core];
         PmdPort::new_with_queues(name, 1, 1, &rx_vec[..], &tx_vec[..])
-
     }
 
     pub fn new(name: &str, core: i32) -> Result<Arc<PmdPort>> {
