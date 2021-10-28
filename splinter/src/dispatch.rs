@@ -450,3 +450,11 @@ where
         }
     }
 }
+
+// pub struct Dispatch<T>
+// where
+//     T: PacketTx + PacketRx + Display + Clone + 'static,
+// {
+//     sender: Arc<Sender>,
+//     receiver: Receiver<T>,
+// }
