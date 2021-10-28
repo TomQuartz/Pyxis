@@ -13,7 +13,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
 
@@ -28,6 +28,17 @@ use e2d2::headers::IpHeader;
 use e2d2::interface::Packet;
 
 use spin::RwLock;
+
+// use super::dispatch::Resp;
+
+use e2d2::allocators::CacheAligned;
+use e2d2::interface::{PacketTx, PortQueue};
+
+// /// The number of resp packets to send in one go
+// const TX_PACKETS_THRESH: usize = 8;
+
+// /// The maximum interval between two resp packets transmission, 8us
+// const TX_CYCLES_THRESH: u64 = 2400 * 8;
 
 /// The maximum number of tasks the dispatcher can take in one go.
 const MAX_RX_PACKETS: usize = 32;
@@ -60,9 +71,14 @@ pub struct RoundRobin {
     // the Dispatch task.
     responses: RwLock<Vec<Packet<IpHeader, EmptyMetadata>>>,
 
+    // /// last tx
+    // pub last_tx: Cell<u64>,
+
     // task_completed is incremented after the completion of each task. Reset to zero
     // after every 1M tasks.
     task_completed: RefCell<u64>,
+    // // the dispatcher in this roundrobin(FCFS) scheduler
+    // dispatcher_port: CacheAligned<PortQueue>,
 }
 
 // Implementation of methods on RoundRobin.
@@ -83,6 +99,8 @@ impl RoundRobin {
             waiting: RwLock::new(VecDeque::new()),
             responses: RwLock::new(Vec::new()),
             task_completed: RefCell::new(0),
+            // dispatcher_port: portq.clone(),
+            // last_tx: Cell::new(cycles::rdtsc()),
         }
     }
 
@@ -133,6 +151,53 @@ impl RoundRobin {
         let mut responses = self.responses.write();
         return responses.drain(..).collect();
     }
+
+    // #[inline]
+    // fn pending_resps(&self) -> Option<Vec<Packet<IpHeader, EmptyMetadata>>> {
+    //     let pending = self.responses.read().len();
+    //     if pending >= TX_PACKETS_THRESH {
+    //         self.last_tx.set(cycles::rdtsc());
+    //         Some(self.responses.write().drain(..).collect())
+    //     } else if pending > 0 {
+    //         let now = cycles::rdtsc();
+    //         if now - self.last_tx.get() > TX_CYCLES_THRESH {
+    //             self.last_tx.set(now);
+    //             Some(self.responses.write().drain(..).collect())
+    //         } else {
+    //             None
+    //         }
+    //     } else {
+    //         None
+    //     }
+    // }
+
+    // // no statistics, so that we may use &self instead of mut self
+    // fn send_resps(&self, mut packets: Vec<Packet<IpHeader, EmptyMetadata>>) {
+    //     unsafe {
+    //         let mut mbufs = vec![];
+    //         let num_packets = packets.len();
+
+    //         // Extract Mbuf's from the batch of packets.
+    //         while let Some(packet) = packets.pop() {
+    //             mbufs.push(packet.get_mbuf());
+    //         }
+
+    //         // Send out the above MBuf's.
+    //         match self.dispatcher_port.send(&mut mbufs) {
+    //             Ok(sent) => {
+    //                 if sent < num_packets as u32 {
+    //                     warn!("Was able to send only {} of {} packets.", sent, num_packets);
+    //                 }
+
+    //                 // self.responses_sent += mbufs.len() as u64;
+    //             }
+
+    //             Err(ref err) => {
+    //                 error!("Error on packet send: {}", err);
+    //             }
+    //         }
+    //     }
+    // }
 
     /// Appends a list of responses to the scheduler.
     ///
@@ -216,6 +281,9 @@ impl RoundRobin {
                         self.responses
                             .write()
                             .push(rpc::fixup_header_length_fields(res));
+                        // if let Some(responses) = self.pending_resps() {
+                        //     self.send_resps(responses);
+                        // }
                     }
                     if cfg!(feature = "execution") {
                         total_time += task.time();

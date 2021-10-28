@@ -47,6 +47,8 @@ use libc::ucontext_t;
 use nix::sys::signal;
 use util::model::{insert_model, MODEL};
 
+use std::cell::RefCell;
+
 /// Interval in milliseconds at which all schedulers in the system will be scanned for misbehaving
 /// tasks.
 const SCAN_INTERVAL_MS: u64 = 10;

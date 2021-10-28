@@ -9,6 +9,7 @@ crate-type = ["dylib"]
 [dependencies]
 db        = { path = "../../db" }
 sandstorm = { path = "../../sandstorm" }
+cfg-if = "1.0.0"
 
 [features]
 default = ["yield"]

@@ -78,8 +78,8 @@ pub enum OpCode {
 /// response can be safely read and interpreted.
 #[repr(u8)]
 #[derive(PartialEq, Clone)]
+/// The RPC completed successfully. The response can be safely unpacked
 pub enum RpcStatus {
-    /// The RPC completed successfully. The response can be safely unpacked
     /// at the client.
     StatusOk = 0x01,
 

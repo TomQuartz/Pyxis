@@ -4,23 +4,23 @@ use std::thread;
 extern crate atomic_float;
 use self::atomic_float::AtomicF32;
 
-fn main() {
-    let mut v = vec![];
-    for _ in 0..5 {
-        v.push(Arc::new(AtomicUsize::new(0)));
-    }
-    let mut pool = vec![];
-    for i in 0..5 {
-        let vc = v.clone();
-        pool.push(thread::spawn(move || {
-            vc[i].fetch_add(i, Ordering::SeqCst);
-            println!("{:?}", vc);
-        }));
-    }
-    for t in pool {
-        t.join();
-    }
-}
+// fn main() {
+//     let mut v = vec![];
+//     for _ in 0..5 {
+//         v.push(Arc::new(AtomicUsize::new(0)));
+//     }
+//     let mut pool = vec![];
+//     for i in 0..5 {
+//         let vc = v.clone();
+//         pool.push(thread::spawn(move || {
+//             vc[i].fetch_add(i, Ordering::SeqCst);
+//             println!("{:?}", vc);
+//         }));
+//     }
+//     for t in pool {
+//         t.join();
+//     }
+// }
 
 // fn copy_vec(v: &Vec<i32>){
 //     let vc = v.clone();
@@ -34,3 +34,9 @@ fn main() {
 //     f.store(2.0, Ordering::Release);
 //     println!("{:?}", f);
 // }
+
+fn main(){
+    let x:Vec<i32> = (0..8).collect();
+    println!("{:?}",x)
+}
+    
