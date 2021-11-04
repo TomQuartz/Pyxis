@@ -20,6 +20,7 @@ use std::str::FromStr;
 
 use self::rand::{Rng, SeedableRng, XorShiftRng};
 use db::config;
+use db::config::*;
 use db::e2d2::allocators::*;
 use db::e2d2::common::EmptyMetadata;
 use db::e2d2::headers::*;
@@ -29,6 +30,14 @@ use db::rpc;
 use db::wireformat::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
+
+use db::master::Master;
+use db::rpc::*;
+use sandstorm::common;
+use sched::TaskManager;
+use std::sync::Arc;
+
+use std::collections::VecDeque;
 
 /// A simple RPC request generator for Sandstorm.
 pub struct Sender {
@@ -56,6 +65,9 @@ pub struct Sender {
 
     // Rng generator
     rng: RefCell<XorShiftRng>,
+
+    buffer: RefCell<VecDeque<Packet<IpHeader, EmptyMetadata>>>,
+    credits: Cell<u32>,
 }
 
 impl Sender {
@@ -77,6 +89,7 @@ impl Sender {
         config: &config::ClientConfig,
         port: CacheAligned<PortQueue>,
         dst_ports: u16,
+        max_credits: u32,
     ) -> Sender {
         // Create UDP, IP, and MAC headers that are placed on all outgoing packets.
         // Length fields are tweaked on a request-by-request basis in the outgoing
@@ -130,6 +143,8 @@ impl Sender {
             dst_ports: dst_ports,
             type2core: mapping,
             rng: RefCell::new(XorShiftRng::from_seed(seed)),
+            credits: Cell::new(max_credits),
+            buffer: RefCell::new(VecDeque::new()),
         }
     }
 
@@ -155,8 +170,23 @@ impl Sender {
             self.get_dst_port(tenant),
             GetGenerator::SandstormClient,
         );
+        let credits = self.credits.get();
+        if credits > 0 {
+            self.credits.set(credits - 1);
+            self.send_req(request);
+        } else {
+            self.buffer.borrow_mut().push_back(request);
+        }
+    }
 
-        self.send_req(request);
+    pub fn return_credit(&self) {
+        let mut buffer = self.buffer.borrow_mut();
+        if let Some(request) = buffer.pop_front() {
+            self.send_req(request);
+        } else {
+            let credits = self.credits.get();
+            self.credits.set(credits + 1);
+        }
     }
 
     /// Creates and sends out a get() RPC request. Network headers are populated based on arguments
@@ -450,11 +480,3 @@ where
         }
     }
 }
-
-// pub struct Dispatch<T>
-// where
-//     T: PacketTx + PacketRx + Display + Clone + 'static,
-// {
-//     sender: Arc<Sender>,
-//     receiver: Receiver<T>,
-// }

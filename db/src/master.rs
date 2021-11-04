@@ -787,6 +787,7 @@ impl Master {
                 rpc_stamp,
                 OpCode::SandstormGetRpc,
                 tenant_id,
+                table_id as u32,
             ))
             .expect("Failed to setup GetResponse");
 
@@ -866,7 +867,7 @@ impl Master {
                     let val_len = res.get_payload().len() as u32;
 
                     let hdr: &mut GetResponse = res.get_mut_header();
-                    hdr.value_length = val_len;
+                    // hdr.value_length = val_len;
                     hdr.common_header.status = status;
                 }
 
@@ -931,6 +932,7 @@ impl Master {
                 rpc_stamp,
                 OpCode::SandstormGetRpc,
                 tenant_id,
+                table_id as u32,
             ))
             .expect("Failed to setup GetResponse");
 
@@ -1010,7 +1012,7 @@ impl Master {
                 let val_len = res.get_payload().len() as u32;
 
                 let hdr: &mut GetResponse = res.get_mut_header();
-                hdr.value_length = val_len;
+                // hdr.value_length = val_len;
                 hdr.common_header.status = status;
             }
 

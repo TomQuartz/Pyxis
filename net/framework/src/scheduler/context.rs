@@ -234,7 +234,8 @@ pub fn initialize_system(configuration: &NetbricksConfiguration) -> Result<NetBr
                     return Err(ErrorKind::ConfigurationError(format!(
                         "Port {} could not be initialized {:?}",
                         port.name, e
-                    )).into())
+                    ))
+                    .into())
                 }
             }
 
@@ -251,7 +252,8 @@ pub fn initialize_system(configuration: &NetbricksConfiguration) -> Result<NetBr
                             "Queue {} on port {} could not be \
                              initialized {:?}",
                             rx_q, port.name, e
-                        )).into())
+                        ))
+                        .into())
                     }
                 }
             }
@@ -266,7 +268,8 @@ pub fn initialize_system(configuration: &NetbricksConfiguration) -> Result<NetBr
                 "Strict configuration selected but core(s) {} appear \
                  in port configuration but not in cores",
                 missing_str
-            )).into());
+            ))
+            .into());
         }
     } else {
         cores.extend(ctx.rx_queues.keys());

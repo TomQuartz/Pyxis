@@ -1,6 +1,7 @@
 all: netbricks
 	(cd db; cargo build --release)
-	# (cd splinter; cargo build --release)
+	(cd compute; cargo build --release)
+	(cd splinter; cargo build --release)
 	# (cd ext/bad; cargo build --release)
 	# (cd ext/tao; cargo build --release)
 	# (cd ext/get; cargo build --release)
@@ -54,6 +55,7 @@ coverage: netbricks
 clean:
 	(cd db; cargo clean)
 	(cd splinter; cargo clean)
+	(cd compute; cargo clean)
 	(cd ext/bad; cargo clean)
 	(cd ext/tao; cargo clean)
 	(cd ext/get; cargo clean)

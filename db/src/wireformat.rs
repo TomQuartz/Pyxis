@@ -362,7 +362,8 @@ pub struct GetResponse {
 
     /// The length of the value returned in the response if the RPC completed
     /// successfully.
-    pub value_length: u32,
+    // pub value_length: u32,
+    pub table_id: u32,
 }
 
 impl GetResponse {
@@ -375,10 +376,11 @@ impl GetResponse {
     ///
     /// - `return`: A header of type GetResponse that can be added to an RPC
     ///             response.
-    pub fn new(req_stamp: u64, opcode: OpCode, tenant: u32) -> GetResponse {
+    pub fn new(req_stamp: u64, opcode: OpCode, tenant: u32, table_id: u32) -> GetResponse {
         GetResponse {
             common_header: RpcResponseHeader::new(req_stamp, opcode, tenant),
-            value_length: 0,
+            // value_length: 0,
+            table_id: table_id,
         }
     }
 }

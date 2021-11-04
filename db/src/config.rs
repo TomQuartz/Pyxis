@@ -153,6 +153,13 @@ pub struct ClientConfig {
     pub server_ip_address: String,
     /// Number of UDP ports to send requests to.
     pub server_udp_ports: u16,
+
+    /// Load Balancer MAC Address.
+    lb_mac_address: String,
+    /// Server IP Address.
+    pub lb_ip_address: String,
+    /// Number of UDP ports to send requests to.
+
     /// Number of tenants for requests generation.
     pub num_tenants: u32,
     /// Server network endpoint to install new extensions.
@@ -249,6 +256,7 @@ pub struct ClientConfig {
     pub bimodal_rpc: Vec<u32>,
     /// how many cycles between each stats output
     pub output_factor: u64,
+    pub max_credits: u32,
 }
 
 impl ClientConfig {
@@ -320,3 +328,171 @@ mod tests {
         }
     }
 }
+
+/// load
+pub fn load<T>(path: &str) -> T
+where
+    T: Default + serde::de::DeserializeOwned,
+{
+    let mut contents = String::new();
+
+    let _ = File::open(path).and_then(|mut file| file.read_to_string(&mut contents));
+    match toml::from_str(&contents) {
+        Ok(config) => config,
+        Err(e) => {
+            warn!("Failure paring config file {}: {}", path, e);
+            T::default()
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(default)]
+pub struct NetConfig {
+    pub num_ports: u16,
+    pub ip_addr: String,
+    pub mac_addr: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(default)]
+pub struct LBConfig {
+    pub num_tenants: u32,
+    pub key_len: usize,
+    pub value_len: usize,
+    pub n_keys: usize,
+    pub put_pct: usize,
+    pub skew: f64,
+    pub tenant_skew: f64,
+    pub num_reqs: usize,
+    pub multi_kv: Vec<u32>,
+    pub multi_ord: Vec<u32>,
+    pub multi_ratio: Vec<f32>,
+    pub multi_rpc: bool,
+    // pub type2core: Vec<Vec<u16>>,
+    pub learnable: bool,
+    pub invoke_p: usize,
+    pub partition: i32,
+    pub max_out: u32,
+    pub kayak_xloop_factor: usize,
+    // bimodal, not used for now
+    pub bimodal: bool,
+    pub bimodal_interval: u64,
+    pub bimodal_interval2: u64,
+    pub bimodal_ratio: Vec<u32>,
+    pub bimodal_rpc: Vec<u32>,
+    pub output_factor: u64,
+    // network configuration
+    pub nic_pci: String,
+    pub src: NetConfig,
+    pub compute: Vec<NetConfig>,
+    pub storage: Vec<NetConfig>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+#[serde(default)]
+pub struct ComputeConfig {
+    pub nic_pci: String,
+    pub src: NetConfig,
+    // lb: NetConfig,
+    pub storage: Vec<NetConfig>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+#[serde(default)]
+pub struct StorageConfig {
+    pub nic_pci: String,
+    pub src: NetConfig,
+    // lb: NetConfig,
+    // storage: Vec<NetConfig>,
+}
+
+// impl ComputeConfig {
+//     /// Load client config from client.toml file in the current directory or otherwise return a
+//     /// default structure.
+//     pub fn load() -> ComputeConfig {
+//         let mut contents = String::new();
+//         let filename = "compute.toml";
+
+//         let _ = File::open(filename).and_then(|mut file| file.read_to_string(&mut contents));
+
+//         match toml::from_str(&contents) {
+//             Ok(config) => config,
+//             Err(e) => {
+//                 warn!("Failure paring config file {}: {}", filename, e);
+//                 ComputeConfig::default()
+//             }
+//         }
+//     }
+// }
+
+// struct PacketHeaders{
+//     // network_ip_addr: u32,
+
+//     /// The UDP header that will be appended to every response packet (cached
+//     /// here to avoid wasting time creating a new one for every response
+//     /// packet).
+//     udp_header: UdpHeader,
+
+//     /// The IP header that will be appended to every response packet (cached
+//     /// here to avoid creating a new one for every response packet).
+//     ip_header: IpHeader,
+
+//     /// The MAC header that will be appended to every response packet (cached
+//     /// here to avoid creating a new one for every response packet).
+//     mac_header: MacHeader,
+// }
+
+// impl PacketHeaders{
+//     fn new(
+//         src: NetConfig,
+//         dst: NetConfig,
+//     )->PacketHeaders{
+//         // Create a common udp header for response packets.
+//         let udp_length: u16 = common::PACKET_UDP_LEN;
+//         let udp_checksum: u16 = common::PACKET_UDP_CHECKSUM;
+
+//         let mut udp_header: UdpHeader = UdpHeader::new();
+//         udp_header.set_src_port(src.udp_port);
+//         udp_header.set_dst_port(dst.udp_port); // will be changed by the rng of sender
+//         udp_header.set_length(udp_length);
+//         udp_header.set_checksum(udp_checksum);
+
+//         // Create a common ip header for response packets.
+//         let ip_src_addr: u32 = u32::from(
+//             Ipv4Addr::from_str(&src.ip_addr).expect("Failed to create server IP address."),
+//         );
+//         let ip_dst_addr: u32 = u32::from(
+//             Ipv4Addr::from_str(&dst.ip_addr).expect("Failed to create client IP address."),
+//         );
+//         let ip_ttl: u8 = common::PACKET_IP_TTL;
+//         let ip_version: u8 = common::PACKET_IP_VER;
+//         let ip_ihl: u8 = common::PACKET_IP_IHL;
+//         let ip_length: u16 = common::PACKET_IP_LEN;
+
+//         let mut ip_header: IpHeader = IpHeader::new();
+//         ip_header.set_src(ip_src_addr);
+//         ip_header.set_dst(ip_dst_addr);
+//         ip_header.set_ttl(ip_ttl);
+//         ip_header.set_version(ip_version);
+//         ip_header.set_ihl(ip_ihl);
+//         ip_header.set_length(ip_length);
+//         ip_header.set_protocol(0x11);
+
+//         // Create a common mac header for response packets.
+//         let mac_src_addr: MacAddress = config::parse_mac(&src.mac_addr).expect("Missing or malformed mac_address field.");
+//         let mac_dst_addr: MacAddress = config::parse_mac(&src.mac_addr).expect("Missing or malformed mac_address field.");
+//         let mac_etype: u16 = common::PACKET_ETYPE;
+
+//         let mut mac_header: MacHeader = MacHeader::new();
+//         mac_header.src = mac_src_addr;
+//         mac_header.dst = mac_dst_addr;
+//         mac_header.set_etype(mac_etype);
+
+//         PacketHeaders{
+//             udp_header: udp_header,
+//             ip_header: ip_header,
+//             mac_header: mac_header,
+//         }
+//     }
+// }

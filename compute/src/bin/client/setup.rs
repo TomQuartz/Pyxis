@@ -13,8 +13,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-use db::config::ClientConfig;
-
 use db::e2d2::config::{NetbricksConfiguration, PortConfiguration};
 use db::e2d2::scheduler::*;
 
@@ -29,19 +27,19 @@ use db::e2d2::scheduler::*;
 /// receive descriptors, and 256 transmit descriptors will be made available to
 /// Netbricks. Loopback, hardware transmit segementation offload, and hardware
 /// checksum offload will be disabled on this port.
-fn get_default_netbricks_config(config: &ClientConfig) -> NetbricksConfiguration {
+fn get_default_netbricks_config(nic_pci: String, num_ports: u16) -> NetbricksConfiguration {
     // General arguments supplied to netbricks.
     let net_config_name = String::from("client");
     let dpdk_secondary: bool = false;
     let net_primary_core: i32 = 19;
-    let net_cores: Vec<i32> = (0i32..config.num_sender as i32).collect();
+    let net_cores: Vec<i32> = (0i32..num_ports as i32).collect();
     let net_strict_cores: bool = true;
     let net_pool_size: u32 = 8192 - 1;
     let net_cache_size: u32 = 128;
     let net_dpdk_args: Option<String> = None;
 
     // Port configuration. Required to configure the physical network interface.
-    let net_port_name = config.nic_pci.clone();
+    let net_port_name = nic_pci;
     let net_port_rx_queues: Vec<i32> = net_cores.clone();
     let net_port_tx_queues: Vec<i32> = net_cores.clone();
     let net_port_rxd: i32 = 256;
@@ -83,8 +81,8 @@ fn get_default_netbricks_config(config: &ClientConfig) -> NetbricksConfiguration
 /// # Return
 ///
 /// Netbricks context which can be used to setup and start the client.
-pub fn config_and_init_netbricks(config: &ClientConfig) -> NetBricksContext {
+pub fn config_and_init_netbricks(nic_pci: String, num_ports: u16) -> NetBricksContext {
     // Initialize Netbricks and return a handle.
-    let net_config = get_default_netbricks_config(config);
+    let net_config = get_default_netbricks_config(nic_pci, num_ports);
     initialize_system(&net_config).expect("Failed to initialize Netbricks")
 }

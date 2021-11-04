@@ -9,16 +9,12 @@ name = "splinter"
 path = "src/lib.rs"
 
 [[bin]]
-name = "pushback-ours"
-path = "src/bin/client/pushback-ours.rs"
+name = "compute"
+path = "src/bin/client/compute.rs"
 
-#[[bin]]
-#name = "ours"
-#path = "src/bin/client/ours.rs"
-
-#[[bin]]
-#name = "test"
-#path = "src/bin/client/test.rs"
+[[bin]]
+name = "lb"
+path = "src/bin/client/lb.rs"
 
 
 [dependencies]

@@ -468,7 +468,7 @@ where
                 config.num_tenants,
                 config.tenant_skew,
             )),
-            sender: Arc::new(dispatch::Sender::new(config, tx_port, dst_ports, config.max_credits)),
+            sender: Arc::new(dispatch::Sender::new(config, tx_port, dst_ports)),
             requests: reqs,
             sent: 0,
             native: !config.use_invoke,
@@ -766,7 +766,6 @@ where
                             match p.get_header().common_header.status {
                                 RpcStatus::StatusOk => {
                                     state.op_num += 1;
-                                    self.sender.return_credit();
                                     let record = p.get_payload();
                                     state.update_rwset(&record, self.key_len);
                                     let MultiType {

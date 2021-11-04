@@ -156,33 +156,34 @@ impl<'a> Context<'a> {
         }
 
         if let Some(table) = self.tenant.lock_table().get(&table_id) {
-            match table.validate(self.tenant.id(), table_id, &mut *self.tx.borrow_mut()) {
-                Ok(()) => {
-                    return (self.request, self.response.into_inner());
-                }
+            // match table.validate(self.tenant.id(), table_id, &mut *self.tx.borrow_mut()) {
+            //     Ok(()) => {
+            //         return (self.request, self.response.into_inner());
+            //     }
 
-                Err(()) => {
-                    let payload_len = self.response.borrow().get_payload().len();
-                    // Remove the already added payload.
-                    let _ = self
-                        .response
-                        .borrow_mut()
-                        .remove_from_payload_tail(payload_len);
+            //     Err(()) => {
+            //         let payload_len = self.response.borrow().get_payload().len();
+            //         // Remove the already added payload.
+            //         let _ = self
+            //             .response
+            //             .borrow_mut()
+            //             .remove_from_payload_tail(payload_len);
 
-                    let _ = self.response.borrow_mut().add_to_payload_tail(
-                        self.request.get_payload().len(),
-                        self.request.get_payload(),
-                    );
+            //         let _ = self.response.borrow_mut().add_to_payload_tail(
+            //             self.request.get_payload().len(),
+            //             self.request.get_payload(),
+            //         );
 
-                    // Modify status to Transaction Abort.
-                    self.response
-                        .borrow_mut()
-                        .get_mut_header()
-                        .common_header
-                        .status = RpcStatus::StatusTxAbort;
-                    return (self.request, self.response.into_inner());
-                }
-            }
+            //         // Modify status to Transaction Abort.
+            //         self.response
+            //             .borrow_mut()
+            //             .get_mut_header()
+            //             .common_header
+            //             .status = RpcStatus::StatusTxAbort;
+            //         return (self.request, self.response.into_inner());
+            //     }
+            // }
+            return (self.request, self.response.into_inner());
         } else {
             info!("No table-id {} for commit", table_id);
         }
@@ -423,7 +424,8 @@ impl<'a> DB for Context<'a> {
         self.response
             .borrow_mut()
             .add_to_payload_tail(data.len(), data)
-            .unwrap();
+            // .unwrap();
+            .expect("fail to write response");
     }
 
     /// Lookup the `DB` trait for documentation on this method.

@@ -87,7 +87,7 @@ where
 
         // Create a common udp header for response packets.
         let udp_src_port: u16 = config.udp_port;
-        let udp_dst_port: u16 = common::CLIENT_UDP_PORT;
+        let udp_dst_port: u16 = common::DEFAULT_UDP_PORT;
         let udp_length: u16 = common::PACKET_UDP_LEN;
         let udp_checksum: u16 = common::PACKET_UDP_CHECKSUM;
 

@@ -13,16 +13,15 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-extern crate atomic_float;
 extern crate bytes;
 extern crate db;
-extern crate order_stat;
 extern crate rand;
 extern crate sandstorm;
 extern crate spin;
 extern crate splinter;
 extern crate time;
 extern crate zipf;
+extern crate order_stat;
 
 mod setup;
 
@@ -52,9 +51,6 @@ use splinter::sched::TaskManager;
 use splinter::*;
 use zipf::ZipfDistribution;
 
-use self::atomic_float::AtomicF32;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
 // Flag to indicate that the client has finished sending and receiving the packets.
 static mut FINISHED: bool = false;
 
@@ -62,6 +58,7 @@ static mut FINISHED: bool = false;
 static mut ORD_DIST: bool = false;
 static ORDER: f64 = 2500.0;
 static STD_DEV: f64 = 500.0;
+
 
 // PUSHBACK benchmark.
 // The benchmark is created and parameterized with `new()`. Many threads
@@ -164,49 +161,6 @@ impl Pushback {
     }
 }
 
-#[derive(Debug)]
-struct MultiType {
-    num_kv: u32,
-    order: u32,
-    // steps: u32,
-}
-impl MultiType {
-    fn new(multi_kv: &Vec<u32>, multi_ord: &Vec<u32>) -> Vec<MultiType> {
-        let mut multi_types = Vec::<MultiType>::new();
-        for (kv, ord) in multi_kv.iter().zip(multi_ord.iter())
-        // .zip(multi_steps.iter())
-        {
-            multi_types.push(MultiType {
-                num_kv: *kv,
-                order: *ord,
-                // steps: *steps,
-            });
-        }
-        // trace!("multi-types {:?}", multi_types);
-        multi_types
-    }
-}
-
-struct AvgMeter {
-    counter: f64,
-    aggr: f64,
-}
-impl AvgMeter {
-    fn new() -> AvgMeter {
-        AvgMeter {
-            counter: 0.0,
-            aggr: 0.0,
-        }
-    }
-    fn update(&mut self, delta: f64) {
-        self.counter += 1.0;
-        self.aggr += delta;
-    }
-    fn avg(&self) -> f64 {
-        self.aggr / self.counter
-    }
-}
-
 /// Receives responses to PUSHBACK requests sent out by PushbackSend.
 struct PushbackRecvSend<T>
 where
@@ -221,22 +175,19 @@ where
     // Time stamp in cycles at which measurement started. Required to calculate observed
     // throughput of the Sandstorm server.
     start: u64,
-    init_rdtsc: u64,
 
     // The total number of responses received so far.
-    recvd: Arc<AtomicUsize>,
-    local_recvd: u64,
+    recvd: u64,
 
     // Count how many reqs has been pushed back.
     counter_pushback: u64,
 
     // Vector of sampled request latencies. Required to calculate distributions once all responses
     // have been received.
-    latencies: Vec<Vec<u64>>,
+    latencies: Vec<u64>,
 
     /// The percentage of operations that are extention. The rest are native.
-    // ext_p: Vec<Arc<AtomicUsize>>,
-    ext_p: Vec<Arc<AtomicF32>>,
+    ext_p: f32,
 
     // If true, this receiver will make latency measurements.
     master: bool,
@@ -305,16 +256,16 @@ where
     xloop_last_recvd: u64,
     xloop_last_rdtsc: u64,
     xloop_last_rate: f32,
-    // xloop_last_X: f32,
-    xloop_last_X: Vec<f32>,
+    xloop_last_X: f32,
+
+
     rloop_last_recvd: u64,
     rloop_last_rdtsc: u64,
     rloop_last_out: f32,
     rloop_last_kth: u64,
 
-    kth: Vec<Vec<Arc<AtomicUsize>>>,
-    avg_lat: Vec<usize>,
-    // tput_meter: AvgMeter,
+    kth: u64,
+
     /// These 2 var is just for exchange info between slow and fast loop
     rate: i64,
     d_rate: i64,
@@ -324,20 +275,6 @@ where
 
     // The length of the record.
     record_len: usize,
-    // modified here
-    idx: usize,
-    num_types: usize,
-    multi_types: Vec<MultiType>,
-    cum_prob: Vec<u32>,
-    partition: i32,
-    learnable: bool,
-    bimodal_interval2: u64,
-    bimodal_ratio: Vec<Vec<u32>>,
-    bimodal_rpc: Vec<u32>,
-    // which_modal: Arc<AtomicUsize>,
-    modal_idx: usize,
-    output_factor: u64,
-    output_last_rdtsc: u64,
 }
 
 // Implementation of methods on PushbackRecv.
@@ -370,12 +307,6 @@ where
         number: u32,
         order: u32,
         ord2: u32,
-        idx: usize,
-        num_types: usize,
-        kth: Vec<Vec<Arc<AtomicUsize>>>,
-        ext_p: Vec<Arc<AtomicF32>>,
-        recvd: Arc<AtomicUsize>,
-        init_rdtsc: u64,
     ) -> PushbackRecvSend<T> {
         // The payload on an invoke() based get request consists of the extensions name ("pushback"),
         // the table id to perform the lookup on, number of get(), number of CPU cycles and the key to lookup.
@@ -407,56 +338,15 @@ where
             transmute::<u16, [u8; 2]>((config.key_len as u16).to_le())
         });
         payload_put.resize(payload_len, 0);
-        // modified here
-        let mut cumsum: f32 = 0.0;
-        // let estimated_load: Vec<f32> = config.multi_ord.iter().map(|&x| 1.0 / (x as f32)).collect();
-        // let total: f32 = estimated_load.iter().sum();
-        // let n_types = config.multi_kv.len();
-        // let cum_prob: Vec<u32> = if config.equal_ratio {
-        //     (1..=n_types)
-        //         .map(|x| (x * 10000 / n_types) as u32)
-        //         .collect()
-        // } else {
-        //     estimated_load
-        //         .iter()
-        //         .map(|&x| {
-        //             cumsum += x / total;
-        //             (cumsum * 10000.0) as u32
-        //         })
-        //         .collect()
-        // };
-        let cum_prob = config
-            .multi_ratio
-            .iter()
-            .map(|&x| {
-                cumsum += x;
-                (cumsum * 100.0) as u32
-            })
-            .collect();
-        // if master {
-        //     println!("cumulative prob {:?}", cum_prob);
-        // }
-        let mut bimodal_ratio = vec![];
-        for type1_ratio in &config.bimodal_ratio {
-            bimodal_ratio.push(vec![type1_ratio * 100, 10000]);
-        }
-
-        let mut latencies: Vec<Vec<u64>> = Vec::with_capacity(num_types);
-        for _ in 0..num_types {
-            latencies.push(Vec::with_capacity(resps as usize));
-        }
-
         PushbackRecvSend {
             receiver: dispatch::Receiver::new(rx_port),
             responses: resps,
-            start: 0,
-            init_rdtsc: init_rdtsc,
-            recvd: recvd,
-            local_recvd: 0,
+            start: cycles::rdtsc(),
+            recvd: 0,
             counter_pushback: 0,
-            latencies: latencies,
+            latencies: Vec::with_capacity(resps as usize),
             /// The percentage of operations that are extention. The rest are native.
-            // ext_p: config.invoke_p as f32,
+            ext_p: config.invoke_p as f32,
             master: master,
             stop: 0,
             workload: RefCell::new(Pushback::new(
@@ -468,7 +358,7 @@ where
                 config.num_tenants,
                 config.tenant_skew,
             )),
-            sender: Arc::new(dispatch::Sender::new(config, tx_port, dst_ports, config.max_credits)),
+            sender: Arc::new(dispatch::Sender::new(config, tx_port, dst_ports)),
             requests: reqs,
             sent: 0,
             native: !config.use_invoke,
@@ -478,7 +368,7 @@ where
             finished: false,
             outstanding: 0,
             manager: RefCell::new(TaskManager::new(Arc::clone(&masterservice))),
-            native_state: RefCell::new(HashMap::with_capacity(64)),
+            native_state: RefCell::new(HashMap::with_capacity(32)),
             num: number,
             ord: order,
             ord1: order,
@@ -491,11 +381,9 @@ where
             last_op: 1,
             xloop_last_rdtsc: cycles::rdtsc(),
             xloop_last_rate: 0.0,
-            // xloop_last_X: 50.5,
+            xloop_last_X: 50.5,
             xloop_last_recvd: 0,
-            kth: kth,
-            avg_lat: vec![0;num_types],
-            // tput_meter:AvgMeter::new(),
+            kth: 0,
             rloop_last_recvd: 0,
             rloop_last_rdtsc: cycles::rdtsc(),
             rloop_last_out: 0.0,
@@ -504,80 +392,22 @@ where
             d_rate: 0,
             key_len: config.key_len,
             record_len: 1 + 8 + config.key_len + config.value_len,
-            // modified here
-            xloop_last_X: vec![50.5;ext_p.len()],
-            // tput: tput,
-            ext_p: ext_p,
-            // ext_p: vec![config.invoke_p as f32;num_x],
-            num_types: num_types,
-            multi_types: MultiType::new(&config.multi_kv,&config.multi_ord),
-            cum_prob: cum_prob,
-            partition: config.partition,
-            idx: idx,
-            learnable: config.learnable,
-            bimodal_interval2: config.bimodal_interval2,
-            bimodal_ratio: bimodal_ratio,
-            bimodal_rpc: config.bimodal_rpc.clone(),
-            // which_modal: which_modal,
-            modal_idx: 0,
-            output_factor: config.output_factor,
-            output_last_rdtsc: 0,
-        }
-    }
-    // is it the same across all cores?
-    fn get_type_idx(&mut self) -> usize {
-        let o = self.workload.borrow_mut().rng.gen::<u32>() % 10000;
-        if self.is_bimodal {
-            self.modal_idx = if (cycles::rdtsc() - self.init_rdtsc)
-                % (self.bimodal_interval + self.bimodal_interval2)
-                < self.bimodal_interval
-            {
-                0
-            } else {
-                1
-            };
-            self.bimodal_ratio[self.modal_idx]
-                .iter()
-                .position(|&x| x > o)
-                .unwrap() as usize
-        } else {
-            self.cum_prob.iter().position(|&x| x > o).unwrap() as usize
-        }
-    }
-
-    fn native_or_rpc(&mut self, type_idx: usize) -> bool {
-        // partition = -1 if not ours
-        let o = self.workload.borrow_mut().rng.gen::<u32>() % 10000;
-        if self.partition >= 0 {
-            if (type_idx as i32) < self.partition {
-                false
-            } else if self.partition < type_idx as i32 {
-                true
-            } else {
-                let ext_p = if self.is_bimodal {
-                    self.bimodal_rpc[self.modal_idx]
-                } else {
-                    (self.ext_p[0].load(Ordering::Relaxed) * 100.0) as u32
-                    // self.ext_p[0] as u32
-                };
-                o > ext_p
-            }
-        } else if self.ext_p.len() > 1 {
-            o > (self.ext_p[type_idx].load(Ordering::Relaxed) * 100.0) as u32
-            // o > self.ext_p[type_idx] as u32
-        } else {
-            o > (self.ext_p[0].load(Ordering::Relaxed) * 100.0) as u32
-            // o > self.ext_p[0] as u32
         }
     }
 
     fn send(&mut self) {
-        if self.start == 0 {
-            self.start = cycles::rdtsc();
-        }
         // Return if there are no more requests to generate.
         if self.requests <= self.sent {
             return;
+        }
+
+        // Switch ord between ord1 and ord2, only when bimodal
+        if self.is_bimodal {
+            if (cycles::rdtsc() / self.bimodal_interval) % 2 == 1 {
+                self.ord = self.ord1;
+            } else {
+                self.ord = self.ord2;
+            }
         }
 
         while self.outstanding < self.max_out as u64
@@ -585,18 +415,17 @@ where
         {
             // Get the current time stamp so that we can determine if it is time to issue the next RPC.
             let curr = cycles::rdtsc();
-            let type_idx: usize = self.get_type_idx();
-            let o = self.native_or_rpc(type_idx);
+
+            let o = self.workload.borrow_mut().rng.gen::<u32>() % 10000 >= (self.ext_p * 100.0) as u32;
             if o == true {
                 // Configured to issue native RPCs, issue a regular get()/put() operation.
                 self.workload.borrow_mut().abc(
                     |tenant, key, _ord| self.sender.send_get(tenant, 1, key, curr),
                     |tenant, key, val, _ord| self.sender.send_put(tenant, 1, key, val, curr),
                 );
-                self.native_state.borrow_mut().insert(
-                    curr,
-                    PushbackState::new(self.num, self.record_len as usize, type_idx),
-                );
+                self.native_state
+                    .borrow_mut()
+                    .insert(curr, PushbackState::new(self.num, self.record_len as usize));
                 self.outstanding += 1;
             } else {
                 // Configured to issue invoke() RPCs.
@@ -608,29 +437,25 @@ where
                 self.workload.borrow_mut().abc(
                     |tenant, key, ord| {
                         unsafe {
-                            p_get[16..20].copy_from_slice(&{
-                                transmute::<u32, [u8; 4]>(self.multi_types[type_idx].num_kv.to_le())
-                            });
-                            p_get[20..24].copy_from_slice(&{
-                                transmute::<u32, [u8; 4]>(self.multi_types[type_idx].order.to_le())
-                            });
+                            // Bimodal workload generator
+                            if self.is_bimodal {
+                                // We do not need to use the ord passed in, we can generate our own ord here.
+                                p_get[20..24].copy_from_slice(&{ transmute::<u32, [u8; 4]>(self.ord.to_le()) });
+                            }
                         }
                         // First 24 bytes on the payload were already pre-populated with the
                         // extension name (8 bytes), the table id (8 bytes), number of get()
                         // (4 bytes), and number of CPU cycles compute(4 bytes). Just write
                         // in the first 4 bytes of the key.
                         p_get[24..28].copy_from_slice(&key[0..4]);
-                        // self.manager.borrow_mut().create_task(
-                        //     curr,
-                        //     &p_get,
-                        //     tenant,
-                        //     8,
-                        //     Arc::clone(&self.sender),
-                        // );
-                        self.native_state
-                            .borrow_mut()
-                            .insert(curr, PushbackState::new(0, 0, type_idx));
-                        self.sender.send_invoke(tenant, 8, &p_get, curr, type_idx)
+                        self.manager.borrow_mut().create_task(
+                            curr,
+                            &p_get,
+                            tenant,
+                            8,
+                            Arc::clone(&self.sender),
+                        );
+                        self.sender.send_invoke(tenant, 8, &p_get, curr)
                     },
                     |tenant, key, _val, _ord| {
                         // First 18 bytes on the payload were already pre-populated with the
@@ -638,17 +463,14 @@ where
                         // bytes). Just write in the first 4 bytes of the key. The value is anyway
                         // always zero.
                         p_put[18..22].copy_from_slice(&key[0..4]);
-                        // self.manager.borrow_mut().create_task(
-                        //     curr,
-                        //     &p_put,
-                        //     tenant,
-                        //     8,
-                        //     Arc::clone(&self.sender),
-                        // );
-                        self.native_state
-                            .borrow_mut()
-                            .insert(curr, PushbackState::new(0, 0, type_idx));
-                        self.sender.send_invoke(tenant, 8, &p_put, curr, type_idx)
+                        self.manager.borrow_mut().create_task(
+                            curr,
+                            &p_put,
+                            tenant,
+                            8,
+                            Arc::clone(&self.sender),
+                        );
+                        self.sender.send_invoke(tenant, 8, &p_put, curr)
                     },
                 );
                 self.outstanding += 1;
@@ -674,7 +496,6 @@ where
             let curr = cycles::rdtsc();
             while let Some(packet) = packets.pop() {
                 // Process the commit response and continue.
-                /*
                 match parse_rpc_opcode(&packet) {
                     OpCode::SandstormCommitRpc => {
                         let p = packet.parse_header::<CommitResponse>();
@@ -690,185 +511,144 @@ where
 
                             _ => {}
                         }
-                        // self.recvd += 1;
-                        self.local_recvd += 1;
-                        self.recvd.fetch_add(1, Ordering::Relaxed);
+                        self.recvd += 1;
                         packet_recvd_signal = true;
                         p.free_packet();
                         /// In rust remove won't complain if no key.
                         self.native_state.borrow_mut().remove(&timestamp);
 
-                        // continue;
+                        continue;
                     }
 
                     _ => {}
                 }
-                */
-                // Removed the condition is_native
-                match parse_rpc_opcode(&packet) {
-                    // The response corresponds to an invoke() RPC.
-                    OpCode::SandstormInvokeRpc => {
-                        let p = packet.parse_header::<InvokeResponse>();
-                        match p.get_header().common_header.status {
-                            // If the status is StatusOk then add the stamp to the latencies and
-                            // free the packet.
-                            RpcStatus::StatusOk => {
-                                let timestamp = p.get_header().common_header.stamp;
-                                let mut native_state = self.native_state.borrow_mut();
-                                let type_idx = native_state.get(&timestamp).unwrap().type_idx;
-                                // self.recvd += 1;
-                                self.local_recvd += 1;
-                                self.recvd.fetch_add(1, Ordering::Relaxed);
-                                packet_recvd_signal = true;
-                                self.latencies[type_idx]
-                                    .push(curr - p.get_header().common_header.stamp);
-                                self.outstanding -= 1;
-                                // self.manager
-                                //     .borrow_mut()
-                                //     .delete_task(p.get_header().common_header.stamp);
-                                native_state.remove(&timestamp);
-                            }
 
-                            // If the status is StatusPushback then compelete the task, add the
-                            // stamp to the latencies, and free the packet.
-                            RpcStatus::StatusPushback => {
-                                // let records = p.get_payload();
-                                // let hdr = &p.get_header();
-                                // let timestamp = hdr.common_header.stamp;
-
-                                // self.counter_pushback += 1;
-
-                                // // Unblock the task and put it in the ready queue.
-                                // // self.manager.borrow_mut().update_rwset(
-                                // //     timestamp,
-                                // //     records,
-                                // //     self.record_len,
-                                // //     self.key_len,
-                                // // );
-                                // self.outstanding -= 1;
-                            }
-
-                            _ => {}
-                        }
-                        p.free_packet();
-                    }
-
-                    // _ => packet.free_packet(),
-                    OpCode::SandstormGetRpc => {
-                        let p = packet.parse_header::<GetResponse>();
-                        let timestamp = p.get_header().common_header.stamp;
-                        let tenant = p.get_header().common_header.tenant;
-                        // NOTE: record_len = 1(optype::read/write)+8(version)+key+val
-                        // if FAST_PATH=true, then there's no optype, will have to modify val_len below
-                        let val_len = self.record_len - self.key_len - 9; // originally 9
-                        let mut native_state = self.native_state.borrow_mut();
-                        if let Some(state) = native_state.get_mut(&timestamp) {
+                /// Removed the condition is_native
+                {
+                    match parse_rpc_opcode(&packet) {
+                        // The response corresponds to an invoke() RPC.
+                        OpCode::SandstormInvokeRpc => {
+                            let p = packet.parse_header::<InvokeResponse>();
                             match p.get_header().common_header.status {
+                                // If the status is StatusOk then add the stamp to the latencies and
+                                // free the packet.
                                 RpcStatus::StatusOk => {
-                                    state.op_num += 1;
-                                    self.sender.return_credit();
-                                    let record = p.get_payload();
-                                    state.update_rwset(&record, self.key_len);
-                                    let MultiType {
-                                        num_kv: n,
-                                        order: o,
-                                        // steps: s,
-                                    } = self.multi_types[state.type_idx];
-                                    if state.op_num == n as u8 {
-                                        /*let start = cycles::rdtsc();
-                                        while cycles::rdtsc() - start < self.ord as u64 {}*/
-                                        // Ord will change with bimodal
-                                        state.execute_task(n, o);
-                                        // self.sender.send_commit(
-                                        //     tenant,
-                                        //     1,
-                                        //     &state.commit_payload,
-                                        //     timestamp,
-                                        //     self.key_len as u16,
-                                        //     val_len as u16,
-                                        // );
-                                        self.outstanding -= 1;
+                                    self.recvd += 1;
+                                    packet_recvd_signal = true;
+                                    self.latencies
+                                        .push(curr - p.get_header().common_header.stamp);
+                                    self.outstanding -= 1;
+                                    self.manager
+                                        .borrow_mut()
+                                        .delete_task(p.get_header().common_header.stamp);
+                                }
 
-                                        self.latencies[state.type_idx].push(curr - timestamp);
-                                        self.local_recvd += 1;
-                                        self.recvd.fetch_add(1, Ordering::Relaxed);
-                                        packet_recvd_signal = true;
-                                        // In rust remove won't complain if no key.
-                                        native_state.remove(&timestamp);
-                                    } else {
-                                        match parse_record_optype(record) {
-                                            OpType::SandstormRead => {
-                                                // if (state.op_num as u32) % (n / s) == 0 {
-                                                //     let start = cycles::rdtsc();
-                                                //     while cycles::rdtsc() - start < (o / s) as u64 {
-                                                //     }
-                                                // }
+                                // If the status is StatusPushback then compelete the task, add the
+                                // stamp to the latencies, and free the packet.
+                                RpcStatus::StatusPushback => {
+                                    let records = p.get_payload();
+                                    let hdr = &p.get_header();
+                                    let timestamp = hdr.common_header.stamp;
 
-                                                // Send the packet with same tenantid, curr etc.
-                                                let record = record.split_at(1).1;
-                                                let (version, entry) = record.split_at(8);
-                                                let (key, val) = entry.split_at(self.key_len);
-                                                // Deserializing is required in actual client;
-                                                // even we are doing the same for Pushback.
-                                                let kv = KV::new(
-                                                    Bytes::from(version),
-                                                    Bytes::from(key),
-                                                    Bytes::from(val),
-                                                );
-                                                self.sender.send_get(
-                                                    tenant,
-                                                    1,
-                                                    &kv.value[0..30],
-                                                    timestamp,
-                                                );
-                                                // if (state.op_num as u32) % (n / s) == 0 {
-                                                //     let start = cycles::rdtsc();
-                                                //     while cycles::rdtsc() - start < (o / s) as u64 {
-                                                //     }
-                                                // }
-                                            }
-                                            _ => {
-                                                info!("The record is expected to be SandstormRead type");
-                                            }
-                                        }
-                                    }
+                                    self.counter_pushback += 1;
+
+                                    // Unblock the task and put it in the ready queue.
+                                    self.manager.borrow_mut().update_rwset(
+                                        timestamp,
+                                        records,
+                                        self.record_len,
+                                        self.key_len,
+                                    );
+                                    self.outstanding -= 1;
                                 }
 
                                 _ => {}
                             }
+                            p.free_packet();
                         }
-                        p.free_packet();
+
+                        // _ => packet.free_packet(),
+
+                        OpCode::SandstormGetRpc => {
+                            let p = packet.parse_header::<GetResponse>();
+                            let timestamp = p.get_header().common_header.stamp;
+                            let tenant = p.get_header().common_header.tenant;
+                            let val_len = self.record_len - self.key_len - 9;
+                            if let Some(ref mut state) =
+                                self.native_state.borrow_mut().get_mut(&timestamp)
+                            {
+                                match p.get_header().common_header.status {
+                                    RpcStatus::StatusOk => {
+                                        let record = p.get_payload();
+                                        state.update_rwset(&record, self.key_len);
+                                        if state.op_num == self.num as u8 {
+                                            /*let start = cycles::rdtsc();
+                                            while cycles::rdtsc() - start < self.ord as u64 {}*/
+                                            // Ord will change with bimodal
+                                            state.execute_task(self.num, self.ord);
+                                            self.sender.send_commit(
+                                                tenant,
+                                                1,
+                                                &state.commit_payload,
+                                                timestamp,
+                                                self.key_len as u16,
+                                                val_len as u16,
+                                            );
+                                            self.outstanding -= 1;
+                                        } else {
+                                            match parse_record_optype(record) {
+                                                OpType::SandstormRead => {
+                                                    // Send the packet with same tenantid, curr etc.
+                                                    let record = record.split_at(1).1;
+                                                    let (version, entry) = record.split_at(8);
+                                                    let (key, val) = entry.split_at(self.key_len);
+                                                    // Deserializing is required in actual client;
+                                                    // even we are doing the same for Pushback.
+                                                    let kv = KV::new(
+                                                        Bytes::from(version),
+                                                        Bytes::from(key),
+                                                        Bytes::from(val),
+                                                    );
+                                                    self.sender.send_get(
+                                                        tenant,
+                                                        1,
+                                                        &kv.value[0..30],
+                                                        timestamp,
+                                                    );
+                                                    state.op_num += 1;
+                                                }
+                                                _ => {
+                                                    info!("The record is expected to be SandstormRead type");
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    _ => {}
+                                }
+                            }
+                            p.free_packet();
+                        }
+
+                        _ => packet.free_packet(),
                     }
-
-                    OpCode::SandstormCommitRpc => {}
-
-                    _ => packet.free_packet(),
                 }
 
                 // kth measurement here
-                for (type_idx, lat) in self.latencies.iter().enumerate() {
-                    let len = lat.len();
-                    if len > 100 && len % 10 == 0 {
-                        let mut tmp = &lat[(len - 100)..len];
-                        let mut tmpvec = tmp.to_vec();
-                        self.kth[type_idx][self.idx].store(
-                            *order_stat::kth(&mut tmpvec, 98) as usize,
-                            Ordering::Relaxed,
-                        );
-                    }
+                let len = self.latencies.len();
+                if len > 100 && len % 10 == 0 {
+                    let mut tmp = &self.latencies[(len-100)..len];
+                    let mut tmpvec = tmp.to_vec();
+                    self.kth = *order_stat::kth(&mut tmpvec, 98);
                 }
-                /*
+
                 // Loop logic here
                 // This is R-loop
                 let rloop_rdtsc = cycles::rdtsc();
-                if self.rloop_factor != 0
-                    && packet_recvd_signal
-                    && (rloop_rdtsc - self.rloop_last_rdtsc > 2400000000 / self.rloop_factor as u64)
-                    && len > 100
-                    && len % self.rloop_factor == 0
-                {
-                    let rloop_rate = 2.4e6 * (self.recvd - self.rloop_last_recvd) as f32
-                        / (rloop_rdtsc - self.rloop_last_rdtsc) as f32;
+                if self.rloop_factor != 0 && packet_recvd_signal && (rloop_rdtsc - self.rloop_last_rdtsc > 2400000000 / self.rloop_factor as u64) &&
+                    len > 100 && len % self.rloop_factor == 0 {
+
+                    let rloop_rate = 2.4e6 * (self.recvd - self.rloop_last_recvd) as f32 / (rloop_rdtsc - self.rloop_last_rdtsc) as f32;
                     self.rloop_last_rdtsc = rloop_rdtsc;
                     self.rloop_last_recvd = self.recvd;
 
@@ -879,18 +659,17 @@ where
                     // let last_out_delta = self.max_out - self.rloop_last_out;
                     // self.rloop_last_out = self.max_out;
 
-                    let lat_offset = self.slo as f32 - self.kth as f32;
+                    let lat_offset = self.slo as f32- self.kth as f32;
 
                     // 3e-6 for heavy, 2e-5 normal
                     let out_delta = 3e-6 * lat_offset; // * last_out_delta / kth_delta as f32;
+
 
                     if self.max_out + out_delta > 2.0 {
                         self.max_out += out_delta;
                     } else {
                         self.max_out = self.max_out * 0.5;
-                        if self.max_out < 2.0 {
-                            self.max_out = 2.0;
-                        }
+                        if self.max_out < 2.0 {self.max_out = 2.0;}
                     }
 
                     // // AIMD version
@@ -902,104 +681,108 @@ where
 
                     // Debug output
                     // info!("rdtsc {} len {} tail {} out {} rloop_rate {} RL", cycles::rdtsc(), len, self.kth, self.max_out, rloop_rate);
-                }*/
-                if self.master {
-                    let xloop_rdtsc = cycles::rdtsc();
-                    let recvd = self.recvd.load(Ordering::Relaxed) as u64;
-                    let xloop_rate = 2.4e6 * (recvd - self.xloop_last_recvd) as f32
-                        / (xloop_rdtsc - self.xloop_last_rdtsc) as f32;
-                    if self.output_factor != 0
-                        && (xloop_rdtsc - self.output_last_rdtsc > 2400000000 / self.output_factor)
-                    {
-                        self.output_last_rdtsc = xloop_rdtsc;
-                        for (type_idx, kth) in self.kth.iter().enumerate() {
-                            self.avg_lat[type_idx] = 0;
-                            for lat in kth {
-                                self.avg_lat[type_idx] += lat.load(Ordering::Relaxed);
-                            }
-                            self.avg_lat[type_idx] /= kth.len();
-                        }
-                        println!(
-                            "rdtsc {} tail {:?} tput {} rpc {:?}",
-                            xloop_rdtsc, self.avg_lat, xloop_rate, self.ext_p,
-                        );
-                    }
-                    // This is X-loop
-                    if self.xloop_factor != 0
-                        && packet_recvd_signal
-                        && (xloop_rdtsc - self.xloop_last_rdtsc
-                            > 2400000000 / self.xloop_factor as u64)
-                        && recvd > 100
-                        && recvd % self.xloop_factor as u64 == 0
-                    {
-                        // self.tput_meter.update(xloop_rate as f64);
-                        if self.master {
-                            trace!(
-                                "rdtsc {} recvd {} rate {} last_rate {} ext_p {:?}",
-                                xloop_rdtsc,
-                                // self.xloop_last_rdtsc,
-                                recvd,
-                                // self.xloop_last_recvd,
-                                xloop_rate,
-                                self.xloop_last_rate,
-                                self.ext_p,
-                            );
-                        }
-                        self.xloop_last_rdtsc = xloop_rdtsc;
-                        self.xloop_last_recvd = recvd;
-                        if self.learnable {
-                            let delta_rate = xloop_rate - self.xloop_last_rate;
-                            self.xloop_last_rate = xloop_rate;
-                            for i in 0..self.ext_p.len() {
-                                let x = self.ext_p[i].load(Ordering::Relaxed) as f32;
-                                // let x = self.ext_p[i];
-                                let delta_X = x - self.xloop_last_X[i];
-                                self.xloop_last_X[i] = x;
-                                let grad = 2.0 * delta_rate / delta_X;
-                                let mut bounded_offset_X: f32 = -1.0;
-                                if grad > 0.0 {
-                                    if grad < 1.0 {
-                                        bounded_offset_X = 1.0;
-                                    } else if grad > 20.0 {
-                                        bounded_offset_X = 5.0;
-                                    } else {
-                                        bounded_offset_X = grad;
-                                    }
-                                } else {
-                                    if grad > -1.0 {
-                                        bounded_offset_X = -1.0;
-                                    } else if grad < -20.0 {
-                                        bounded_offset_X = -5.0;
-                                    } else {
-                                        bounded_offset_X = grad;
-                                    }
-                                }
-                                let mut new_X = bounded_offset_X + x;
-                                if new_X > 100.0 || new_X < 0.0 {
-                                    new_X = x - bounded_offset_X; // bounce back
-                                }
-                                self.ext_p[i].store(new_X, Ordering::Relaxed);
-                                // self.ext_p[i] = new_X;
-                                if self.master {
-                                    trace!(
-                                        "rdtsc {} d_rate {} ext_p {:?} off {} modal {}",
-                                        xloop_rdtsc,
-                                        delta_rate,
-                                        self.ext_p[i],
-                                        bounded_offset_X,
-                                        self.modal_idx
-                                    );
-                                }
-                            }
-                        }
-                    }
                 }
+
+                let xloop_rdtsc = cycles::rdtsc();
+                // This is X-loop
+                if self.xloop_factor != 0 && packet_recvd_signal && (xloop_rdtsc - self.xloop_last_rdtsc > 2400000000 / self.xloop_factor as u64) &&
+                    len > 100 && len % self.xloop_factor == 0 {
+                    // first calc the rate
+                    let xloop_rate = 2.4e6 * (self.recvd - self.xloop_last_recvd) as f32 / (xloop_rdtsc - self.xloop_last_rdtsc) as f32;
+                    self.xloop_last_rdtsc = xloop_rdtsc;
+                    self.xloop_last_recvd = self.recvd;
+
+                    let delta_rate = xloop_rate - self.xloop_last_rate;
+                    self.xloop_last_rate = xloop_rate;
+
+                    let delta_X = self.ext_p - self.xloop_last_X;
+                    self.xloop_last_X = self.ext_p;
+
+                    let grad = 2.0 * delta_rate / delta_X;
+
+                    let mut bounded_offset_X: f32 = -1.0;
+                    if grad > 0.0 {
+                        if grad < 1.0 {
+                            bounded_offset_X = 1.0;
+                        } else if grad > 20.0 {
+                            bounded_offset_X = 5.0;
+                        } else {
+                            bounded_offset_X = grad;
+                        }
+                    } else {
+                        if grad > -1.0 {
+                            bounded_offset_X = -1.0;
+                        } else if grad < -20.0 {
+                            bounded_offset_X = -5.0;
+                        } else {
+                            bounded_offset_X = grad;
+                        }
+                    }
+
+                    let new_X = bounded_offset_X + self.ext_p;
+                    if new_X > 100.0 || new_X < 0.0 {
+                        self.ext_p -= bounded_offset_X; // bounce back
+                    } else {
+                        self.ext_p = new_X;
+                    }
+
+                    // No GD version X-loop. Static step size.
+                    // self.d_rate = self.rate - self.last_rate;
+                    // self.last_rate = self.rate;
+                    //
+                    // if self.d_rate > 3 {
+                    //     // continue last operation
+                    //     if self.last_op == 1 {
+                    //         if self.ext_p < 99.0 { self.ext_p += 5.0; }
+                    //     } else {
+                    //         if self.ext_p > 0.0 {  self.ext_p -= 5.0; }
+                    //     }
+                    //
+                    // } else if self.d_rate < -3 {
+                    //     // revert last operation
+                    //     if self.last_op == 1 {
+                    //         if self.ext_p > 0.0 {  self.ext_p -= 5.0; }
+                    //         self.last_op = 0;
+                    //
+                    //     } else if self.last_op == 0 {
+                    //         if self.ext_p < 99.0 {  self.ext_p += 5.0; }
+                    //         self.last_op = 1;
+                    //     }
+                    // }
+
+
+                    // let delta_kth = self.kth as i32 - self.xloop_last_kth as i32;
+                    // let delta_X = self.ext_p - self.xloop_last_X;
+                    // self.xloop_last_X = self.ext_p;
+                    //
+                    // let grad: f32 = delta_kth as f32 / delta_X as f32;
+                    // let mut diff_X = grad / 10000.0;
+                    //
+                    // if diff_X > 20.0 {
+                    //     diff_X = 20.0;
+                    // } else if diff_X < -20.0 {
+                    //     diff_X = 20.0;
+                    // }
+                    //
+                    // let new_X = self.ext_p + diff_X;
+                    // if new_X >= 0.0 && new_X <= 100.0 {
+                    //     self.ext_p = new_X;
+                    // }
+
+
+                    // Debug output
+//                        info!("rate {} d_rate {} ext_p {} op {}", rate, d_rate, self.ext_p, self.last_op);
+                    trace!("rdtsc {} len {} tail {} out {} recvd {} rate {} d_rate {} ext_p {} off {} XL",
+                          xloop_rdtsc, len, self.kth, self.max_out, self.recvd, xloop_rate, delta_rate, self.ext_p, bounded_offset_X);
+
+                }
+
             }
         }
 
         // The moment all response packets have been received, set the value of the
         // stop timestamp so that throughput can be estimated later.
-        if self.responses <= self.local_recvd {
+        if self.responses <= self.recvd {
             self.stop = cycles::rdtsc();
             self.finished = true;
         }
@@ -1014,47 +797,37 @@ where
     fn drop(&mut self) {
         if self.stop == 0 {
             self.stop = cycles::rdtsc();
-            info!(
-                "The client thread {} received only {:?} packets",
-                self.idx, self.local_recvd
-            );
+            info!("The client thread received only {} packets", self.recvd);
         }
 
-        info!(
-            "client thread {} pushedback {} of total {:?}",
-            self.idx, self.counter_pushback, self.local_recvd
-        );
+        info!("pushedback {} of total {}", self.counter_pushback, self.recvd);
 
         // Calculate & print the throughput for all client threads.
-        if self.master {
-            println!(
-                "PUSHBACK Throughput {}",
-                self.recvd.load(Ordering::Relaxed) as f64
-                    / cycles::to_seconds(self.stop - self.start) // self.tput_meter.avg()
-            );
-        }
+        println!(
+            "PUSHBACK Throughput {}",
+            self.recvd as f64 / cycles::to_seconds(self.stop - self.start)
+        );
+
         // Calculate & print median & tail latency only on the master thread.
         if self.master {
-            for (type_idx, lat) in self.latencies.iter_mut().enumerate() {
-                lat.sort();
-                let m;
-                let t = lat[(lat.len() * 99) / 100];
-                match lat.len() % 2 {
-                    0 => {
-                        let n = lat.len();
-                        m = (lat[n / 2] + lat[(n / 2) + 1]) / 2;
-                    }
+            self.latencies.sort();
 
-                    _ => m = lat[lat.len() / 2],
+            let m;
+            let t = self.latencies[(self.latencies.len() * 99) / 100];
+            match self.latencies.len() % 2 {
+                0 => {
+                    let n = self.latencies.len();
+                    m = (self.latencies[n / 2] + self.latencies[(n / 2) + 1]) / 2;
                 }
 
-                println!(
-                    "type {} >>> lat50:{} lat99:{}",
-                    type_idx,
-                    cycles::to_seconds(m) * 1e9,
-                    cycles::to_seconds(t) * 1e9
-                );
+                _ => m = self.latencies[self.latencies.len() / 2],
             }
+
+            println!(
+                ">>> {} {}",
+                cycles::to_seconds(m) * 1e9,
+                cycles::to_seconds(t) * 1e9
+            );
         }
     }
 }
@@ -1068,9 +841,9 @@ where
     fn execute(&mut self) {
         self.send();
         self.recv();
-        // for _i in 0..self.max_out as usize {
-        //     self.manager.borrow_mut().execute_task();
-        // }
+        for _i in 0..self.max_out as usize {
+            self.manager.borrow_mut().execute_task();
+        }
         if self.finished == true {
             unsafe { FINISHED = true }
             return;
@@ -1089,14 +862,6 @@ fn setup_send_recv<S>(
     master: bool,
     config: &config::ClientConfig,
     masterservice: Arc<Master>,
-    idx: usize,
-    num_types: usize,
-    kth: Vec<Vec<Arc<AtomicUsize>>>,
-    ext_p: Vec<Arc<AtomicF32>>,
-    recvd: Arc<AtomicUsize>,
-    init_rdtsc: u64,
-    // tput: Vec<Arc<AtomicUsize>>,
-    // which_modal: Arc<AtomicUsize>,
 ) where
     S: Scheduler + Sized,
 {
@@ -1123,14 +888,6 @@ fn setup_send_recv<S>(
         num,
         ord,
         ord2,
-        idx,
-        num_types,
-        kth,
-        ext_p,
-        recvd,
-        init_rdtsc,
-        // tput,
-        // which_modal,
     )) {
         Ok(_) => {
             info!(
@@ -1150,17 +907,15 @@ fn main() {
     db::env_logger::init().expect("ERROR: failed to initialize logger!");
 
     let config = config::ClientConfig::load();
-    warn!("Starting up Sandstorm client with config {:?}", config);
+    info!("Starting up Sandstorm client with config {:?}", config);
 
-    let mut masterservice = Master::new();
+    let masterservice = Arc::new(Master::new());
 
     // Create tenants with extensions.
     info!("Populating extension for {} tenants", config.num_tenants);
     for tenant in 1..(config.num_tenants + 1) {
         masterservice.load_test(tenant);
     }
-    // finished populating, now mark as immut
-    let masterservice = Arc::new(masterservice);
 
     // Setup Netbricks.
     let mut net_context = setup::config_and_init_netbricks(&config);
@@ -1174,31 +929,8 @@ fn main() {
     let senders_receivers = [0, 1, 2, 3, 4, 5, 6, 7];
     assert!(senders_receivers.len() == 8);
 
-    // modified here
-    // setup shared data
-    let num_types = config.multi_kv.len();
-    let mut kth = vec![];
-    for _ in 0..num_types {
-        let mut kth_type = vec![];
-        for _ in 0..config.num_sender {
-            kth_type.push(Arc::new(AtomicUsize::new(0)));
-        }
-        kth.push(kth_type);
-    }
-    let mut ext_p = vec![];
-    let num_x = if config.partition < 0 && config.multi_rpc {
-        num_types
-    } else {
-        1
-    };
-    for _ in 0..num_x {
-        ext_p.push(Arc::new(AtomicF32::new(config.invoke_p as f32)));
-    }
-    let recvd = Arc::new(AtomicUsize::new(0));
-
     // Setup 1 senders, and receivers.
-    let init_rdtsc = cycles::rdtsc();
-    for i in 0..config.num_sender {
+    for i in 0..1 {
         // First, retrieve a tx-rx queue pair from Netbricks
         let port = net_context
             .rx_queues
@@ -1212,9 +944,6 @@ fn main() {
         }
 
         let master_service = Arc::clone(&masterservice);
-        let kth_copy = kth.clone();
-        let ext_p_copy = ext_p.clone();
-        let recvd_copy = recvd.clone();
         // Setup the receive and transmit side.
         net_context
             .add_pipeline_to_core(
@@ -1228,14 +957,6 @@ fn main() {
                             master,
                             &config::ClientConfig::load(),
                             Arc::clone(&master_service),
-                            i,
-                            num_types,
-                            kth_copy.clone(),
-                            ext_p_copy.clone(),
-                            recvd_copy.clone(),
-                            init_rdtsc,
-                            // tput_copy.clone(),
-                            // which_modal_copy.clone(),
                         )
                     },
                 ),
