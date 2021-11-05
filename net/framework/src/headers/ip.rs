@@ -16,7 +16,7 @@ pub struct IpHeader {
     id_to_foffset: u32,
     ttl_to_csum: u32,
     src_ip: u32,
-    dst_ip: u32,
+    pub dst_ip: u32,
 }
 
 impl fmt::Display for IpHeader {

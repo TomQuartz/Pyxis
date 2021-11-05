@@ -224,7 +224,7 @@ impl Sender {
             // self.get_dst_port_by_type(type_idx),
             // (id & 0xffff) as u16 & (self.dst_ports - 1),
         );
-
+        trace!("send req to dst ip {}",self.req_hdrs[0].ip_header.dst_ip);
         self.send_pkt(request);
     }
 

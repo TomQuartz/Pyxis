@@ -19,6 +19,7 @@ Cargo.lock
 # Ignore config files
 db/server.toml
 splinter/client.toml
+compute/*.toml
 nic_info
 client_nic_info
 clients.txt

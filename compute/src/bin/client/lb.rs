@@ -460,6 +460,7 @@ impl LoadBalancer {
                     // (4 bytes), and number of CPU cycles compute(4 bytes). Just write
                     // in the first 4 bytes of the key.
                     p_get[24..28].copy_from_slice(&key[0..4]);
+                    trace!("send type {} rpc {}", type_idx, o);
                     self.dispatcher
                         .sender2compute
                         .send_invoke(tenant, 8, &p_get, curr, type_idx)
