@@ -164,18 +164,22 @@ impl Sender {
             &self.req_ip_header,
             &self.req_udp_header,
             tenant,
-            table,
+            1u64,
             key,
             id,
             self.get_dst_port(tenant),
             GetGenerator::SandstormClient,
         );
-        let credits = self.credits.get();
-        if credits > 0 {
-            self.credits.set(credits - 1);
-            self.send_req(request);
+        if table == 0 {
+            let credits = self.credits.get();
+            if credits > 0 {
+                self.credits.set(credits - 1);
+                self.send_req(request);
+            } else {
+                self.buffer.borrow_mut().push_back(request);
+            }
         } else {
-            self.buffer.borrow_mut().push_back(request);
+            self.send_req(request);
         }
     }
 

@@ -154,12 +154,6 @@ pub struct ClientConfig {
     /// Number of UDP ports to send requests to.
     pub server_udp_ports: u16,
 
-    /// Load Balancer MAC Address.
-    lb_mac_address: String,
-    /// Server IP Address.
-    pub lb_ip_address: String,
-    /// Number of UDP ports to send requests to.
-
     /// Number of tenants for requests generation.
     pub num_tenants: u32,
     /// Server network endpoint to install new extensions.

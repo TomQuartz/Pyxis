@@ -590,7 +590,7 @@ where
             if o == true {
                 // Configured to issue native RPCs, issue a regular get()/put() operation.
                 self.workload.borrow_mut().abc(
-                    |tenant, key, _ord| self.sender.send_get(tenant, 1, key, curr),
+                    |tenant, key, _ord| self.sender.send_get(tenant, type_idx as u64, key, curr),
                     |tenant, key, val, _ord| self.sender.send_put(tenant, 1, key, val, curr),
                 );
                 self.native_state.borrow_mut().insert(
@@ -766,8 +766,10 @@ where
                             match p.get_header().common_header.status {
                                 RpcStatus::StatusOk => {
                                     state.op_num += 1;
-                                    self.sender.return_credit();
                                     let record = p.get_payload();
+                                    if state.type_idx == 0 {
+                                        self.sender.return_credit();
+                                    }
                                     state.update_rwset(&record, self.key_len);
                                     let MultiType {
                                         num_kv: n,
@@ -1036,6 +1038,9 @@ where
         // Calculate & print median & tail latency only on the master thread.
         if self.master {
             for (type_idx, lat) in self.latencies.iter_mut().enumerate() {
+                if lat.len() == 0 {
+                    continue;
+                }
                 lat.sort();
                 let m;
                 let t = lat[(lat.len() * 99) / 100];
@@ -1171,8 +1176,8 @@ fn main() {
     // The core id's which will run the sender and receiver threads.
     // XXX The following array heavily depend on the set of cores
     // configured in setup.rs
-    let senders_receivers = [0, 1, 2, 3, 4, 5, 6, 7];
-    assert!(senders_receivers.len() == 8);
+    let senders_receivers: Vec<i32> = (0i32..(config.num_sender as i32)).collect();
+    // assert!(senders_receivers.len() == 8);
 
     // modified here
     // setup shared data
