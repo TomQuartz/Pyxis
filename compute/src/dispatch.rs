@@ -270,6 +270,7 @@ impl Sender {
     }
 
     pub fn send_pkts(&self, packets: &mut Vec<Packet<IpHeader, EmptyMetadata>>) {
+        trace!("send {} resps", packets.len());
         unsafe {
             let mut mbufs = vec![];
             let num_packets = packets.len();
@@ -539,6 +540,7 @@ impl ComputeNodeDispatcher {
 
     pub fn poll(&mut self) {
         if let Some(mut packets) = self.receiver.recv() {
+            trace!("recv {} packets", packets.len());
             while let Some(packet) = packets.pop() {
                 self.dispatch(packet);
             }
@@ -551,7 +553,9 @@ impl ComputeNodeDispatcher {
 
     pub fn send_resps(&mut self) {
         let resps = &mut self.manager.responses;
-        self.sender.send_pkts(resps);
+        if resps.len() > 0 {
+            self.sender.send_pkts(resps);
+        }
     }
 
     // 1. invoke_req: lb to compute
@@ -559,6 +563,7 @@ impl ComputeNodeDispatcher {
     pub fn dispatch(&mut self, packet: Packet<UdpHeader, EmptyMetadata>) {
         match parse_rpc_opcode(&packet) {
             OpCode::SandstormInvokeRpc => {
+                trace!("recv invoke rpc");
                 self.dispatch_invoke(packet);
             }
             OpCode::SandstormGetRpc => {
@@ -633,6 +638,7 @@ impl ComputeNodeDispatcher {
                 tenant_id,
             ))
             .expect("Failed to push InvokeResponse");
+        trace!("add req to manager");
         self.manager.create_task(
             cycles::rdtsc(),
             req,

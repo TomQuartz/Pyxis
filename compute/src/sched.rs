@@ -119,10 +119,12 @@ impl TaskManager {
                 sender_service,
                 model,
             ));
-            self.waiting.insert(
-                id,
-                Box::new(Container::new(TaskPriority::REQUEST, db, ext, id)),
-            );
+            // self.waiting.insert(
+            //     id,
+            //     Box::new(Container::new(TaskPriority::REQUEST, db, ext, id)),
+            // );
+            self.ready
+                .push_back(Box::new(Container::new(TaskPriority::REQUEST, db, ext, id)))
         } else {
             info!("Unable to create a generator for this request");
         }
@@ -207,6 +209,7 @@ impl TaskManager {
         let mut time: u64 = 0;
         while let Some(mut task) = self.ready.pop_front() {
             if task.run().0 == COMPLETED {
+                trace!("task complete");
                 taskstate = task.state();
                 time = task.time();
                 // unsafe {
@@ -215,6 +218,7 @@ impl TaskManager {
                 // }
                 if let Some((req, res)) = unsafe { task.tear() } {
                     req.free_packet();
+                    trace!("push resps");
                     self.responses.push(rpc::fixup_header_length_fields(res))
                 }
             } else {

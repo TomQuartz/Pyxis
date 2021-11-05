@@ -118,10 +118,14 @@ fn main() {
     ));
 
     // Allow the system to bootup fully.
-    std::thread::sleep(std::time::Duration::from_secs(1));
+    std::thread::sleep(std::time::Duration::from_secs(2));
 
     // Run the client.
     net_context.execute();
+
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+    }
 
     // Stop the client.
     // net_context.stop();
