@@ -110,6 +110,7 @@ pub struct ServerConfig {
     pub workload: String,
     /// Number of records in the table for each tenant.
     pub num_records: u32,
+    pub num_cores: i32,
 }
 
 impl ServerConfig {

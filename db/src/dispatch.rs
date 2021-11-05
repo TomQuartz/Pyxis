@@ -184,7 +184,7 @@ where
         sched: Arc<RoundRobin>,
         id: i32,
     ) -> Dispatch<T> {
-        let rx_batch_size: u8 = 32;
+        let rx_batch_size: u8 = 128;
 
         // Create a common udp header for response packets.
         let udp_src_port: u16 = config.udp_port;

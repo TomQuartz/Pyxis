@@ -393,7 +393,7 @@ where
     pub fn new(port: T) -> Receiver<T> {
         Receiver {
             net_port: port.clone(),
-            max_rx_packets: 32,
+            max_rx_packets: 64,
             responses_recv: Cell::new(0),
         }
     }

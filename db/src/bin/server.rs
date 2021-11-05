@@ -198,7 +198,7 @@ fn get_default_netbricks_config(config: &config::ServerConfig) -> NetbricksConfi
     let net_config_name = String::from("server");
     let dpdk_secondary: bool = false;
     let net_primary_core: i32 = 19;
-    let net_cores: Vec<i32> = vec![10, 11, 12, 13, 14, 15, 16, 17];
+    let net_cores: Vec<i32> = (0i32..config.num_cores).collect();
     let net_strict_cores: bool = true;
     let net_pool_size: u32 = 8192 - 1;
     let net_cache_size: u32 = 128;
