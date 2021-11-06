@@ -10,7 +10,7 @@ sudo ./mlnxofedinstall
 sudo /etc/init.d/openibd restart
 cd $workspace
 
-sudo apt-get install -y libnuma-dev clang
+sudo apt-get update && sudo apt-get install -y libnuma-dev clang
 
 if [ -f $HOME/.cargo/env ]; then
     source $HOME/.cargo/env
