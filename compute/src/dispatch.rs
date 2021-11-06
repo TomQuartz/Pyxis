@@ -500,11 +500,7 @@ pub struct LBDispatcher {
 }
 
 impl LBDispatcher {
-    pub fn new(
-        config: &LBConfig,
-        net_port: CacheAligned<PortQueue>,
-        max_rx_packets: usize,
-    ) -> LBDispatcher {
+    pub fn new(config: &LBConfig, net_port: CacheAligned<PortQueue>) -> LBDispatcher {
         LBDispatcher {
             sender2compute: Sender::new(net_port.clone(), &config.src, &config.compute),
             sender2storage: Sender::new(net_port.clone(), &config.src, &config.storage),
@@ -512,7 +508,7 @@ impl LBDispatcher {
                 net_port: net_port,
                 sib_port: None,
                 stealing: false,
-                max_rx_packets: max_rx_packets,
+                max_rx_packets: config.max_rx_packets,
             },
         }
     }
@@ -537,7 +533,6 @@ impl ComputeNodeDispatcher {
         net_port: CacheAligned<PortQueue>,
         sib_port: Option<CacheAligned<PortQueue>>,
         // req_ports: u16, // for sender
-        max_rx_packets: usize,
     ) -> ComputeNodeDispatcher {
         ComputeNodeDispatcher {
             sender: Rc::new(Sender::new(net_port.clone(), &config.src, &config.storage)),
@@ -545,7 +540,7 @@ impl ComputeNodeDispatcher {
                 stealing: !sib_port.is_none(),
                 net_port: net_port,
                 sib_port: sib_port,
-                max_rx_packets: max_rx_packets,
+                max_rx_packets: config.max_rx_packets,
             },
             manager: TaskManager::new(Arc::clone(&masterservice)),
             resp_hdr: PacketHeaders::new(&config.src, &NetConfig::default()),
@@ -577,7 +572,6 @@ impl ComputeNodeDispatcher {
     pub fn dispatch(&mut self, packet: Packet<UdpHeader, EmptyMetadata>) {
         match parse_rpc_opcode(&packet) {
             OpCode::SandstormInvokeRpc => {
-                trace!("recv invoke rpc");
                 self.dispatch_invoke(packet);
             }
             OpCode::SandstormGetRpc => {
@@ -652,7 +646,6 @@ impl ComputeNodeDispatcher {
                 tenant_id,
             ))
             .expect("Failed to push InvokeResponse");
-        trace!("add req to manager");
         self.manager.create_task(
             cycles::rdtsc(),
             req,

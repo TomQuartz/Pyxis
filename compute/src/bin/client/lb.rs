@@ -332,7 +332,7 @@ impl LoadBalancer {
         }
 
         LoadBalancer {
-            dispatcher: LBDispatcher::new(config, net_port, 32),
+            dispatcher: LBDispatcher::new(config, net_port),
             workload: RefCell::new(Pushback::new(
                 config.key_len,
                 config.value_len,

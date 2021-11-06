@@ -184,7 +184,7 @@ where
         sched: Arc<RoundRobin>,
         id: i32,
     ) -> Dispatch<T> {
-        let rx_batch_size: u8 = 32;
+        let rx_batch_size: u8 = config.max_rx_packets as u8;
 
         // Create a common udp header for response packets.
         let udp_src_port: u16 = config.udp_port;
@@ -277,7 +277,7 @@ where
                         // No packets were available for receive.
                         return None;
                     }
-                    trace!("{} recv {} pkts", self.network_port, num_received);
+                    // trace!("{} recv {} pkts", self.network_port, num_received);
                     // Allocate a vector for the received packets.
                     let mut recvd_packets = Vec::<Packet<NullHeader, EmptyMetadata>>::with_capacity(
                         self.max_rx_packets as usize,
@@ -636,12 +636,11 @@ where
         while let Some(request) = requests.pop() {
             // Set the destination ip address on the response IP header.
             let ip = request.deparse_header(common::IP_HDR_LEN);
-            self.resp_ip_header.set_src(ip.get_header().dst());
+            // self.resp_ip_header.set_src(ip.get_header().dst());
             self.resp_ip_header.set_dst(ip.get_header().src());
-
             // Set the destination mac address on the response MAC header.
             let mac = ip.deparse_header(common::MAC_HDR_LEN);
-            self.resp_mac_header.set_src(mac.get_header().dst());
+            // self.resp_mac_header.set_src(mac.get_header().dst());
             self.resp_mac_header.set_dst(mac.get_header().src());
 
             let request = mac.parse_header::<IpHeader>().parse_header::<UdpHeader>();
@@ -711,7 +710,14 @@ where
                                         req.free_packet();
 
                                         // Push response packet on the local queue of responses that are ready to be sent out.
-                                        native_responses.push(rpc::fixup_header_length_fields(res));
+                                        let resp = rpc::fixup_header_length_fields(res);
+                                        assert_eq!(
+                                            resp.get_header().dst(),
+                                            self.resp_ip_header.dst(),
+                                            "self.resp_ip {}",
+                                            self.resp_ip_header.dst()
+                                        );
+                                        native_responses.push(resp);
                                     }
 
                                     Err((req, res)) => {

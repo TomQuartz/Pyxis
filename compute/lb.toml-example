@@ -24,6 +24,7 @@ output_factor = 0
 
 ############################### LB N/W CONFIG ##############################
 
+max_rx_packets = 32
 nic_pci = "0000:03:00.1"
 [src]
 num_ports = 1

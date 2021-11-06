@@ -198,7 +198,7 @@ fn get_default_netbricks_config(config: &config::ServerConfig) -> NetbricksConfi
     let net_config_name = String::from("server");
     let dpdk_secondary: bool = false;
     let net_primary_core: i32 = 19;
-    let net_cores: Vec<i32> = vec![10, 11, 12, 13, 14, 15, 16, 17];
+    let net_cores: Vec<i32> = (0i32..config.num_cores).collect();
     let net_strict_cores: bool = true;
     let net_pool_size: u32 = 8192 - 1;
     let net_cache_size: u32 = 128;
@@ -477,7 +477,7 @@ fn main() {
     loop {
         // Scan schedulers every few milliseconds.
         sleep(Duration::from_millis(SCAN_INTERVAL_MS));
-
+        /*
         for sched in handles.write().iter_mut() {
             // Get the current time stamp to compare scheduler time stamps against.
             let current = rdtsc();
@@ -557,6 +557,7 @@ fn main() {
             sched.enqueue_many(tasks);
             sched.append_resps(&mut resps);
         }
+        */
     }
 
     // Stop the server.

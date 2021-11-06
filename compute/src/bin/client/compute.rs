@@ -73,7 +73,6 @@ fn setup_compute(
         master,
         ports[0].clone(),
         sibling,
-        32,
     )) {
         Ok(_) => {
             info!(
