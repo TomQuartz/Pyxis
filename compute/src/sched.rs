@@ -205,8 +205,8 @@ impl TaskManager {
     }
 
     pub fn execute_tasks(&mut self) {
-        let mut taskstate: TaskState = INITIALIZED;
-        let mut time: u64 = 0;
+        let mut taskstate: TaskState;
+        let mut time: u64;
         while let Some(mut task) = self.ready.pop_front() {
             if task.run().0 == COMPLETED {
                 trace!("task complete");

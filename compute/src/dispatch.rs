@@ -136,6 +136,11 @@ impl Sender {
             self.get_dst_port(endpoint),
             GetGenerator::SandstormExtension,
         );
+        trace!(
+            "ext id: {} send kv req, ip {}",
+            id,
+            self.req_hdrs[endpoint].ip_header.src()
+        );
         self.send_pkt(request);
     }
 
@@ -238,7 +243,10 @@ impl Sender {
             // self.get_dst_port_by_type(type_idx),
             // (id & 0xffff) as u16 & (self.dst_ports - 1),
         );
-        trace!("send req to dst ip {}", self.req_hdrs[endpoint].ip_header.dst_ip);
+        trace!(
+            "send req to dst ip {}",
+            self.req_hdrs[endpoint].ip_header.dst()
+        );
         self.send_pkt(request);
     }
 
@@ -588,8 +596,12 @@ impl ComputeNodeDispatcher {
         let table_id = hdr.table_id as usize;
         let records = p.get_payload();
         let recordlen = records.len();
-        self.manager
-            .update_rwset(timestamp, table_id, records, recordlen);
+        if p.get_header().common_header.status == RpcStatus::StatusOk {
+            self.manager
+                .update_rwset(timestamp, table_id, records, recordlen);
+        } else {
+            warn!("kv req of ext id: {} failed", timestamp);
+        }
         p.free_packet();
     }
 

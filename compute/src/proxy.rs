@@ -397,6 +397,7 @@ impl DB for ProxyDB {
             *self.db_credit.borrow_mut() += rdtsc() - start;
             return (false, true, unsafe { Some(ReadBuf::new(value)) });
         }
+        trace!("ext id: {} yield due to missing key", self.parent_id);
         self.set_waiting(true);
         self.sender
             .send_get_from_extension(self.tenant, table, key, self.parent_id);
