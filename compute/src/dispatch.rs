@@ -46,6 +46,8 @@ use db::e2d2::scheduler::Executable;
 pub struct Sender {
     // The network interface over which requests will be sent out.
     net_port: CacheAligned<PortQueue>,
+    // number of endpoints, either storage or compute
+    num_endpoints: usize,
     // udp+ip+mac header for sending reqs
     req_hdrs: Vec<PacketHeaders>,
     // The number of destination UDP ports a req can be sent to.
@@ -59,13 +61,15 @@ pub struct Sender {
 }
 
 impl Sender {
+    /// create sender from src and several endpoints
     pub fn new(
         net_port: CacheAligned<PortQueue>,
         src: &NetConfig,
         endpoints: &Vec<NetConfig>,
     ) -> Sender {
         Sender {
-            req_hdrs: PacketHeaders::get_req_hdrs(src, net_port.txq() as u16, &endpoints),
+            num_endpoints: endpoints.len(),
+            req_hdrs: PacketHeaders::get_req_hdrs(src, net_port.txq() as u16, endpoints),
             net_port: net_port, //.clone()
             // TODO: make this a vector, different number of ports for each storage endpoint
             dst_ports: endpoints.iter().map(|x| x.num_ports).collect(),
@@ -75,6 +79,11 @@ impl Sender {
             },
         }
     }
+
+    fn get_endpoint(&self, _key: &[u8]) -> usize {
+        self.rng.borrow_mut().gen::<usize>() % self.num_endpoints
+    }
+
     /// Creates and sends out a get() RPC request. Network headers are populated based on arguments
     /// passed into new() above.
     ///
@@ -88,15 +97,16 @@ impl Sender {
     // TODO: hash the target storage with LSB in key
     // for now, the vec len of req_hdrs=1
     pub fn send_get(&self, tenant: u32, table: u64, key: &[u8], id: u64) {
+        let endpoint = self.get_endpoint(key);
         let request = rpc::create_get_rpc(
-            &self.req_hdrs[0].mac_header,
-            &self.req_hdrs[0].ip_header,
-            &self.req_hdrs[0].udp_header,
+            &self.req_hdrs[endpoint].mac_header,
+            &self.req_hdrs[endpoint].ip_header,
+            &self.req_hdrs[endpoint].udp_header,
             tenant,
             table,
             key,
             id,
-            self.get_dst_port(tenant),
+            self.get_dst_port(endpoint),
             GetGenerator::SandstormClient,
         );
 
@@ -114,15 +124,16 @@ impl Sender {
     /// * `id`:     RPC identifier.
     #[allow(dead_code)]
     pub fn send_get_from_extension(&self, tenant: u32, table: u64, key: &[u8], id: u64) {
+        let endpoint = self.get_endpoint(key);
         let request = rpc::create_get_rpc(
-            &self.req_hdrs[0].mac_header,
-            &self.req_hdrs[0].ip_header,
-            &self.req_hdrs[0].udp_header,
+            &self.req_hdrs[endpoint].mac_header,
+            &self.req_hdrs[endpoint].ip_header,
+            &self.req_hdrs[endpoint].udp_header,
             tenant,
             table,
             key,
             id,
-            self.get_dst_port(tenant),
+            self.get_dst_port(endpoint),
             GetGenerator::SandstormExtension,
         );
         self.send_pkt(request);
@@ -140,16 +151,17 @@ impl Sender {
     /// * `id`:     RPC identifier.
     #[allow(dead_code)]
     pub fn send_put(&self, tenant: u32, table: u64, key: &[u8], val: &[u8], id: u64) {
+        let endpoint = self.get_endpoint(key);
         let request = rpc::create_put_rpc(
-            &self.req_hdrs[0].mac_header,
-            &self.req_hdrs[0].ip_header,
-            &self.req_hdrs[0].udp_header,
+            &self.req_hdrs[endpoint].mac_header,
+            &self.req_hdrs[endpoint].ip_header,
+            &self.req_hdrs[endpoint].udp_header,
             tenant,
             table,
             key,
             val,
             id,
-            self.get_dst_port(tenant),
+            self.get_dst_port(endpoint),
         );
 
         self.send_pkt(request);
@@ -177,17 +189,18 @@ impl Sender {
         keys: &[u8],
         id: u64,
     ) {
+        let endpoint = self.get_endpoint(keys);
         let request = rpc::create_multiget_rpc(
-            &self.req_hdrs[0].mac_header,
-            &self.req_hdrs[0].ip_header,
-            &self.req_hdrs[0].udp_header,
+            &self.req_hdrs[endpoint].mac_header,
+            &self.req_hdrs[endpoint].ip_header,
+            &self.req_hdrs[endpoint].udp_header,
             tenant,
             table,
             k_len,
             n_keys,
             keys,
             id,
-            self.get_dst_port(tenant),
+            self.get_dst_port(endpoint),
         );
 
         self.send_pkt(request);
@@ -212,29 +225,30 @@ impl Sender {
         id: u64,
         _type_idx: usize,
     ) {
+        let endpoint = self.get_endpoint(payload);
         let request = rpc::create_invoke_rpc(
-            &self.req_hdrs[0].mac_header,
-            &self.req_hdrs[0].ip_header,
-            &self.req_hdrs[0].udp_header,
+            &self.req_hdrs[endpoint].mac_header,
+            &self.req_hdrs[endpoint].ip_header,
+            &self.req_hdrs[endpoint].udp_header,
             tenant,
             name_len,
             payload,
             id,
-            self.get_dst_port(tenant),
+            self.get_dst_port(endpoint),
             // self.get_dst_port_by_type(type_idx),
             // (id & 0xffff) as u16 & (self.dst_ports - 1),
         );
-        trace!("send req to dst ip {}",self.req_hdrs[0].ip_header.dst_ip);
+        trace!("send req to dst ip {}", self.req_hdrs[endpoint].ip_header.dst_ip);
         self.send_pkt(request);
     }
 
     /// Computes the destination UDP port given a tenant identifier.
     #[inline]
-    fn get_dst_port(&self, tenant: u32) -> u16 {
+    fn get_dst_port(&self, endpoint: usize) -> u16 {
         // The two least significant bytes of the tenant id % the total number of destination
         // ports.
         // (tenant & 0xffff) as u16 & (self.dst_ports - 1)
-        self.rng.borrow_mut().gen::<u16>() % self.dst_ports[0]
+        self.rng.borrow_mut().gen::<u16>() % self.dst_ports[endpoint]
     }
 
     // #[inline]

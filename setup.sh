@@ -10,7 +10,7 @@ sudo ./mlnxofedinstall
 sudo /etc/init.d/openibd restart
 cd $workspace
 
-sudo apt-get update && sudo apt-get install -y libnuma-dev clang
+sudo apt-get update && sudo apt-get install -y libnuma-dev clang numactl
 
 if [ -f $HOME/.cargo/env ]; then
     source $HOME/.cargo/env
@@ -36,9 +36,15 @@ cd ../..
 mkdir -p net/target/native
 cp net/native/libzcsi.so net/target/native/libzcsi.so
 
-PCI=$(python ./net/3rdparty/dpdk/usertools/dpdk-devbind.py --status-dev=net | grep ens1f1 | grep Active | tail -1 | awk '{ print $1 }')
-MAC=$(ethtool -P ens1f1 | awk '{ print $3 }')
+source ../.bashrc
+make
 
-echo "pci: $PCI" > nic_info
-echo "mac: $MAC" >> nic_info
+sudo bash -c "echo 4096 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages"
 
+# PCI=$(python ./net/3rdparty/dpdk/usertools/dpdk-devbind.py --status-dev=net | grep ens1f1 | grep Active | tail -1 | awk '{ print $1 }')
+# MAC=$(ethtool -P ens1f1 | awk '{ print $3 }')
+
+# echo "pci: $PCI" > nic_info
+# echo "mac: $MAC" >> nic_info
+
+# default_hugepagesz=1G hugepagesz=1G hugepages=16 intel_idle.max_cstate=0 idle=halt 
