@@ -40,6 +40,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use db::e2d2::scheduler::Executable;
+use std::collections::VecDeque;
 
 /// A simple RPC request generator for Sandstorm.
 // TODO: the dst_ports available for each endpoint may be different, make dst_ports a vec
@@ -58,6 +59,8 @@ pub struct Sender {
     rng: RefCell<XorShiftRng>,
     // // Tracks number of packets sent to the server for occasional debug messages.
     // requests_sent: Cell<u64>,
+    credits: Cell<u32>,
+    buffer: RefCell<VecDeque<Packet<IpHeader, EmptyMetadata>>>,
 }
 
 impl Sender {
@@ -66,6 +69,7 @@ impl Sender {
         net_port: CacheAligned<PortQueue>,
         src: &NetConfig,
         endpoints: &Vec<NetConfig>,
+        max_credits: u32,
     ) -> Sender {
         Sender {
             num_endpoints: endpoints.len(),
@@ -77,11 +81,23 @@ impl Sender {
                 let seed: [u32; 4] = rand::random::<[u32; 4]>();
                 RefCell::new(XorShiftRng::from_seed(seed))
             },
+            credits: Cell::new(max_credits),
+            buffer: RefCell::new(VecDeque::new()),
         }
     }
 
     fn get_endpoint(&self, _key: &[u8]) -> usize {
         self.rng.borrow_mut().gen::<usize>() % self.num_endpoints
+    }
+
+    pub fn return_credit(&self) {
+        let mut buffer = self.buffer.borrow_mut();
+        if let Some(request) = buffer.pop_front() {
+            self.send_pkt(request);
+        } else {
+            let credits = self.credits.get();
+            self.credits.set(credits + 1);
+        }
     }
 
     /// Creates and sends out a get() RPC request. Network headers are populated based on arguments
@@ -141,7 +157,13 @@ impl Sender {
             id,
             self.req_hdrs[endpoint].ip_header.src()
         );
-        self.send_pkt(request);
+        let credits = self.credits.get();
+        if credits > 0 {
+            self.credits.set(credits - 1);
+            self.send_pkt(request);
+        } else {
+            self.buffer.borrow_mut().push_back(request);
+        }
     }
 
     /// Creates and sends out a put() RPC request. Network headers are populated based on arguments
@@ -510,8 +532,8 @@ pub struct LBDispatcher {
 impl LBDispatcher {
     pub fn new(config: &LBConfig, net_port: CacheAligned<PortQueue>) -> LBDispatcher {
         LBDispatcher {
-            sender2compute: Sender::new(net_port.clone(), &config.src, &config.compute),
-            sender2storage: Sender::new(net_port.clone(), &config.src, &config.storage),
+            sender2compute: Sender::new(net_port.clone(), &config.src, &config.compute, 0),
+            sender2storage: Sender::new(net_port.clone(), &config.src, &config.storage, 0),
             receiver: Receiver {
                 net_port: net_port,
                 sib_port: None,
@@ -543,7 +565,12 @@ impl ComputeNodeDispatcher {
         // req_ports: u16, // for sender
     ) -> ComputeNodeDispatcher {
         ComputeNodeDispatcher {
-            sender: Rc::new(Sender::new(net_port.clone(), &config.src, &config.storage)),
+            sender: Rc::new(Sender::new(
+                net_port.clone(),
+                &config.src,
+                &config.storage,
+                config.max_credits,
+            )),
             receiver: Receiver {
                 stealing: !sib_port.is_none(),
                 net_port: net_port,
@@ -599,6 +626,7 @@ impl ComputeNodeDispatcher {
         if p.get_header().common_header.status == RpcStatus::StatusOk {
             self.manager
                 .update_rwset(timestamp, table_id, records, recordlen);
+            self.sender.return_credit();
         } else {
             warn!("kv req of ext id: {} failed", timestamp);
         }

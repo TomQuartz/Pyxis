@@ -391,6 +391,7 @@ pub struct LBConfig {
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(default)]
 pub struct ComputeConfig {
+    pub max_credits: u32,
     pub max_rx_packets: usize,
     pub nic_pci: String,
     pub src: NetConfig,
