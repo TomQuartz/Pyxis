@@ -206,6 +206,7 @@ impl RpcRequestHeader {
 /// This is intentional, and makes it easier to construct RPC responses because
 /// there is only one unique type (like GetResponse) identifying the response.
 #[repr(C, packed)]
+#[derive(Debug)]
 pub struct RpcResponseHeader {
     /// The status of the RPC indicating whether it completed successfully.
     pub status: RpcStatus,

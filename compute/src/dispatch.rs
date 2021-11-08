@@ -628,7 +628,11 @@ impl ComputeNodeDispatcher {
                 .update_rwset(timestamp, table_id, records, recordlen);
             self.sender.return_credit();
         } else {
-            warn!("kv req of ext id: {} failed", timestamp);
+            warn!(
+                "kv req of ext id: {} failed with status {:?}",
+                timestamp,
+                p.get_header().common_header.status
+            );
         }
         p.free_packet();
     }
