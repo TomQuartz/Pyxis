@@ -1,0 +1,2 @@
+cd compute
+sudo env RUST_LOG=debug LD_LIBRARY_PATH=../net/target/native ./target/release/compute
