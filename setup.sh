@@ -39,7 +39,8 @@ cp net/native/libzcsi.so net/target/native/libzcsi.so
 source ../.bashrc
 make
 
-sudo bash -c "echo 4096 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages"
+sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=""/GRUB_CMDLINE_LINUX_DEFAULT="default_hugepagesz=1G hugepagesz=1G hugepages=16 intel_idle.max_cstate=0 idle=halt"/g' /etc/default/grub
+sudo update-grub
 
 # PCI=$(python ./net/3rdparty/dpdk/usertools/dpdk-devbind.py --status-dev=net | grep ens1f1 | grep Active | tail -1 | awk '{ print $1 }')
 # MAC=$(ethtool -P ens1f1 | awk '{ print $3 }')
