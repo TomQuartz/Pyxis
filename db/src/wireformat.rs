@@ -34,10 +34,10 @@ pub enum Service {
     /// The most common of all services provided by a sandstorm server. This
     /// service implements the primary interface to the database consisting of
     /// operations such as get() and put().
-    MasterService = 0x0f,
+    MasterService = 0x01,
 
     /// Any value beyond this represents an invalid service.
-    InvalidService = 0xff,
+    InvalidService = 0x02,
 }
 
 /// This enum represents the different operations that can be invoked by a
