@@ -545,8 +545,6 @@ impl LoadBalancer {
                                         .push(curr - p.get_header().common_header.stamp);
                                     self.outstanding_reqs.remove(&timestamp);
                                     self.send_once();
-                                } else {
-                                    warn!("no outstanding req with id {}", timestamp);
                                 }
                             }
 
@@ -771,6 +769,7 @@ impl Executable for LoadBalancer {
         if self.start == 0 {
             self.send_all();
         }
+        trace!("{:?}", self.outstanding_reqs.keys());
         self.recv();
         if self.finished == true {
             unsafe { FINISHED = true }
