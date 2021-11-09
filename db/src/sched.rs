@@ -237,6 +237,7 @@ impl RoundRobin {
         let mut total_time: u64 = 0;
         let mut db_time: u64 = 0;
         let credit = (CREDIT_LIMIT_US / 1000000f64) * (cycles::cycles_per_second() as f64);
+        let mut overhead_per_req: u64 = 0;
 
         // XXX: Trigger Pushback if the two dispatcher invocation is 20 us apart.
         let time_trigger: u64 = 2000 * credit as u64;
@@ -254,7 +255,7 @@ impl RoundRobin {
             // If there are tasks to run, then pick one from the head of the queue, and run it until it
             // either completes or yields back.
             let task = self.waiting.write().pop_front();
-            // TODO: run dispatch first, profile dispatch time, and evenly distribute to all tasks with state initialized
+            // TODO: run dispatch first, profile dispatch time, and evenly distribute to all tasks with state=INITIALIZED
             if let Some(mut task) = task {
                 let mut is_dispatcher: bool = false;
                 let mut queue_length: usize = 0;
@@ -273,6 +274,15 @@ impl RoundRobin {
                     _ => {}
                 }
 
+                if is_dispatcher {
+                    overhead_per_req = task.run().1;
+                    self.waiting.write().push_back(task);
+                    continue;
+                }
+                // handle requests
+                if task.state() == INITIALIZED {
+                    task.set_time(overhead_per_req);
+                }
                 if task.run().0 == COMPLETED {
                     // The task finished execution, check for request and response packets. If they
                     // exist, then free the request packet, and enqueue the response packet.
@@ -281,9 +291,6 @@ impl RoundRobin {
                         self.responses
                             .write()
                             .push(rpc::fixup_header_length_fields(res));
-                        // if let Some(responses) = self.pending_resps() {
-                        //     self.send_resps(responses);
-                        // }
                     }
                     if cfg!(feature = "execution") {
                         total_time += task.time();

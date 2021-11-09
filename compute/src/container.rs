@@ -244,4 +244,6 @@ impl Task for Container {
     fn get_id(&self) -> u64 {
         self.id.clone()
     }
+
+    fn set_time(&mut self, _overhead: u64) {}
 }

@@ -136,4 +136,6 @@ pub trait Task {
     ///
     /// Task id to identifiy the task uniquely.
     fn get_id(&self) -> u64;
+
+    fn set_time(&mut self, overhead: u64);
 }

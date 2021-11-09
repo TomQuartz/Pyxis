@@ -25,6 +25,10 @@ use e2d2::common::EmptyMetadata;
 use e2d2::headers::UdpHeader;
 use e2d2::interface::Packet;
 
+use sandstorm::common::PACKET_UDP_LEN;
+use std::{mem, slice};
+use wireformat::GetResponse;
+
 // The expected type signature on a generator for a native operation (ex: get()). The return
 // value is an optional tuple consisting of a request and response packet parsed/deparsed upto
 // their UDP headers. This is to allow for operations that might not require a response packet
@@ -60,7 +64,7 @@ pub struct Native {
     gen: NativeGenerator,
 
     // The result (if any) returned by the generator once it completes execution.
-    res: Cell<
+    req_res: Cell<
         Option<(
             Packet<UdpHeader, EmptyMetadata>,
             Packet<UdpHeader, EmptyMetadata>,
@@ -89,7 +93,7 @@ impl Native {
             db_time: 0,
             priority: prio,
             gen: generator,
-            res: Cell::new(None),
+            req_res: Cell::new(None),
         }
     }
 }
@@ -110,8 +114,8 @@ impl Task for Native {
                     self.state = YIELDED;
                 }
 
-                GeneratorState::Complete(pkts) => {
-                    self.res.set(pkts);
+                GeneratorState::Complete(req_res) => {
+                    self.req_res.set(req_res);
                     self.state = COMPLETED;
                 }
             }
@@ -153,7 +157,15 @@ impl Task for Native {
         Packet<UdpHeader, EmptyMetadata>,
         Packet<UdpHeader, EmptyMetadata>,
     )> {
-        self.res.replace(None)
+        let (req, res) = self.req_res.replace(None).unwrap();
+        let mut get_resp = res.parse_header::<GetResponse>();
+        let time_ptr = &self.time as *const _ as *const u8;
+        let time_u8 = unsafe { slice::from_raw_parts(time_ptr, mem::size_of::<u64>()) };
+        get_resp
+            .add_to_payload_tail(time_u8.len(), time_u8)
+            .unwrap();
+        let res = get_resp.deparse_header(PACKET_UDP_LEN as usize);
+        Some((req, res))
     }
 
     /// Refer to the `Task` trait for Documentation.
@@ -167,5 +179,10 @@ impl Task for Native {
     /// Refer to the `Task` trait for Documentation.
     fn get_id(&self) -> u64 {
         0
+    }
+
+    fn set_time(&mut self, overhead: u64) {
+        // assert_eq!(self.state,INITIALIZED,"setting overhead for task not in INITIALIZED state");
+        self.time = overhead;
     }
 }

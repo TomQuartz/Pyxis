@@ -30,6 +30,7 @@ use e2d2::headers::UdpHeader;
 use e2d2::interface::Packet;
 
 use sandstorm::common::PACKET_UDP_LEN;
+use std::{mem, slice};
 
 /// A container for untrusted code that can be scheduled by the database.
 pub struct Container<'a> {
@@ -194,7 +195,11 @@ impl<'a> Task for Container<'a> {
 
                     return Some((req, res));
                 } else {
-                    let (req, res) = db.commit();
+                    let (req, mut res) = db.commit();
+                    // add time to resp
+                    let time_ptr = &self.time as *const _ as *const u8;
+                    let time_u8 = unsafe { slice::from_raw_parts(time_ptr, mem::size_of::<u64>()) };
+                    res.add_to_payload_tail(time_u8.len(),time_u8).unwrap();
 
                     let req = req.deparse_header(PACKET_UDP_LEN as usize);
                     let res = res.deparse_header(PACKET_UDP_LEN as usize);
@@ -220,5 +225,10 @@ impl<'a> Task for Container<'a> {
     /// Refer to the `Task` trait for Documentation.
     fn get_id(&self) -> u64 {
         0
+    }
+
+    fn set_time(&mut self, overhead: u64) {
+        // assert_eq!(self.state,INITIALIZED,"setting overhead for task not in INITIALIZED state");
+        self.time = overhead;
     }
 }

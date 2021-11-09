@@ -22,7 +22,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use super::config;
-#[cfg(feature = "dispatch")]
+// #[cfg(feature = "dispatch")]
 use super::cyclecounter::CycleCounter;
 use super::cycles;
 use super::master::Master;
@@ -43,7 +43,7 @@ use std::rc::Rc;
 
 /// This flag enables or disables fast path for native requests.
 /// Later, it will be set from the server.toml file probably.
-pub const FAST_PATH: bool = true;
+pub const FAST_PATH: bool = false;
 
 // This is a thread local variable to count the number of occurrences
 // of cycle counting to average for 1 M events.
@@ -55,7 +55,7 @@ thread_local!(static COUNTER: RefCell<u64> = RefCell::new(0));
 /// rx_tx: Cycle counter for packets receive and transmit stage.
 /// parse: Cycle counter for packet parsing stage.
 /// dispatch: Cycle counter for generator and task creation stage.
-#[cfg(feature = "dispatch")]
+// #[cfg(feature = "dispatch")]
 struct DispatchCounters {
     poll: CycleCounter,
     rx_tx: CycleCounter,
@@ -63,7 +63,7 @@ struct DispatchCounters {
     dispatch: CycleCounter,
 }
 
-#[cfg(feature = "dispatch")]
+// #[cfg(feature = "dispatch")]
 impl DispatchCounters {
     /// Creates and return an object of DispatchCounters. This object is used for
     /// couting CPU cycles for various parts in dispatch stage.
@@ -151,7 +151,7 @@ where
 
     /// The CPU cycle counter to count the number of cycles per event. Need to use start() and
     /// stop() a code block or function call to profile the events.
-    #[cfg(feature = "dispatch")]
+    // #[cfg(feature = "dispatch")]
     cycle_counter: DispatchCounters,
 }
 
@@ -246,7 +246,7 @@ where
             time: 0,
             priority: TaskPriority::DISPATCH,
             id: id,
-            #[cfg(feature = "dispatch")]
+            // #[cfg(feature = "dispatch")]
             cycle_counter: DispatchCounters::new(),
         }
     }
@@ -754,6 +754,29 @@ where
         self.free_packets(ignore_packets);
     }
 
+    #[inline]
+    fn dispatch(&mut self, packets: Vec<Packet<NullHeader, EmptyMetadata>>) -> u64 {
+        #[cfg(feature = "dispatch")]
+        self.cycle_counter.rx_tx.stop(packets.len() as u64);
+
+        // Perform basic network processing on the received packets.
+        #[cfg(feature = "dispatch")]
+        self.cycle_counter.parse.start();
+        let packets = self.parse_mac_headers(packets);
+        let packets = self.parse_ip_headers(packets);
+        let packets = self.parse_udp_headers(packets);
+        let count = packets.len();
+        #[cfg(feature = "dispatch")]
+        self.cycle_counter.parse.stop(count as u64);
+        // Dispatch these packets to the appropriate service.
+        #[cfg(feature = "dispatch")]
+        self.cycle_counter.dispatch.start();
+        self.dispatch_requests(packets);
+        #[cfg(feature = "dispatch")]
+        self.cycle_counter.dispatch.stop(count as u64);
+        count as u64
+    }
+
     /// This method polls the dispatchers network port for any received packets,
     /// dispatches them to the appropriate service, and sends out responses over
     /// the network port.
@@ -774,40 +797,11 @@ where
 
         // Next, try to receive packets from the network.
         if let Some(packets) = self.try_receive_packets() {
-            #[cfg(feature = "dispatch")]
-            self.cycle_counter.rx_tx.stop(packets.len() as u64);
-
-            // Perform basic network processing on the received packets.
-            #[cfg(feature = "dispatch")]
-            self.cycle_counter.parse.start();
-            let packets = self.parse_mac_headers(packets);
-            let packets = self.parse_ip_headers(packets);
-            let packets = self.parse_udp_headers(packets);
-            let count = packets.len();
-            #[cfg(feature = "dispatch")]
-            self.cycle_counter.parse.stop(count as u64);
-
-            // Dispatch these packets to the appropriate service.
-            #[cfg(feature = "dispatch")]
-            self.cycle_counter.dispatch.start();
-            self.dispatch_requests(packets);
-            #[cfg(feature = "dispatch")]
-            self.cycle_counter.dispatch.stop(count as u64);
-            count as u64
+            self.dispatch(packets)
+        } else if let Some(stolen) = self.try_steal_packets() {
+            self.dispatch(stolen)
         } else {
-            let mut count = 0;
-            // There were no packets at the receive queue. Try to steal some from the sibling.
-            if let Some(stolen) = self.try_steal_packets() {
-                // Perform basic network processing on the stolen packets.
-                let stolen = self.parse_mac_headers(stolen);
-                let stolen = self.parse_ip_headers(stolen);
-                let stolen = self.parse_udp_headers(stolen);
-
-                // Dispatch these packets to the appropriate service.
-                count = stolen.len();
-                self.dispatch_requests(stolen);
-            }
-            count as u64
+            0
         }
     }
 }
@@ -824,15 +818,15 @@ where
 
         // Run the dispatch task, polling for received packets and sending out pending responses.
         self.state = TaskState::RUNNING;
-        let _count = self.poll();
+        let count = self.poll();
         self.state = TaskState::YIELDED;
 
         // Update the time the task spent executing and return.
         let exec = cycles::rdtsc() - start;
 
         self.time += exec;
-        #[cfg(feature = "dispatch")]
-        self.cycle_counter.poll.total_cycles(exec, _count);
+        // #[cfg(feature = "dispatch")]
+        self.cycle_counter.poll.total_cycles(exec, count);
 
         #[cfg(feature = "dispatch")]
         COUNTER.with(|count_a| {
@@ -852,7 +846,7 @@ where
                 *count = 0;
             }
         });
-        return (self.state, exec); 
+        return (self.state, self.cycle_counter.poll.get_average());
     }
 
     /// Refer to the `Task` trait for Documentation.
@@ -898,6 +892,8 @@ where
     fn get_id(&self) -> u64 {
         0
     }
+
+    fn set_time(&mut self, _overhead: u64) {}
 }
 
 impl<T> Drop for Dispatch<T>
