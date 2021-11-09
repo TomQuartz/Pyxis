@@ -537,14 +537,15 @@ impl LoadBalancer {
                             // free the packet.
                             RpcStatus::StatusOk => {
                                 let timestamp = p.get_header().common_header.stamp;
-                                let type_idx = self.outstanding_reqs.get(&timestamp).unwrap();
-                                self.local_recvd += 1;
-                                self.recvd.fetch_add(1, Ordering::Relaxed);
-                                packet_recvd_signal = true;
-                                self.latencies[*type_idx]
-                                    .push(curr - p.get_header().common_header.stamp);
-                                self.outstanding_reqs.remove(&timestamp);
-                                self.send_once();
+                                if let Some(type_idx) = self.outstanding_reqs.get(&timestamp) {
+                                    self.local_recvd += 1;
+                                    self.recvd.fetch_add(1, Ordering::Relaxed);
+                                    packet_recvd_signal = true;
+                                    self.latencies[*type_idx]
+                                        .push(curr - p.get_header().common_header.stamp);
+                                    self.outstanding_reqs.remove(&timestamp);
+                                    self.send_once();
+                                }
                             }
 
                             _ => {}
@@ -768,6 +769,7 @@ impl Executable for LoadBalancer {
         if self.start == 0 {
             self.send_all();
         }
+        trace!("{:?}", self.outstanding_reqs.keys());
         self.recv();
         if self.finished == true {
             unsafe { FINISHED = true }
