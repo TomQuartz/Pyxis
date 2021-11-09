@@ -109,7 +109,7 @@ impl TaskManager {
             });
         }
 
-        if let Some(ext) = self.master.extensions.get(tenant_id, name) {
+        if let Some(ext) = self.master.extensions.get(tenant_id, name.clone()) {
             let db = Rc::new(ProxyDB::new(
                 tenant,
                 id,
@@ -126,7 +126,7 @@ impl TaskManager {
             self.ready
                 .push_back(Box::new(Container::new(TaskPriority::REQUEST, db, ext, id)))
         } else {
-            info!("Unable to create a generator for this request");
+            info!("Unable to create a generator for this ext of name {}", name);
         }
     }
 

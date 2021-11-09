@@ -388,13 +388,15 @@ pub struct Receiver {
     stealing: bool,
     // The maximum number of packets that can be received from the network port in one shot.
     max_rx_packets: usize,
+    // ip_addr
+    ip_addr: u32,
     // // The total number of responses received.
     // responses_recv: Cell<u64>,
 }
 
 // Implementation of methods on Receiver.
 impl Receiver {
-    pub fn recv(&self) -> Option<Vec<Packet<UdpHeader, EmptyMetadata>>> {
+    fn recv(&self) -> Option<Vec<Packet<UdpHeader, EmptyMetadata>>> {
         // Allocate a vector of mutable MBuf pointers into which raw packets will be received.
         let mut mbuf_vector = Vec::with_capacity(self.max_rx_packets);
 
@@ -440,15 +442,76 @@ impl Receiver {
             // DPDK, and do not need to be bumped up here. Hence, the call to
             // packet_from_mbuf_no_increment().
             for mbuf in mbuf_vector.iter_mut() {
-                let packet = packet_from_mbuf_no_increment(*mbuf, 0)
-                    .parse_header::<MacHeader>()
-                    .parse_header::<IpHeader>()
-                    .parse_header::<UdpHeader>();
-
-                packets.push(packet);
+                let packet = packet_from_mbuf_no_increment(*mbuf, 0);
+                if let Some(packet) = self.check_mac(packet) {
+                    if let Some(packet) = self.check_ip(packet) {
+                        if let Some(packet) = self.check_udp(packet) {
+                            packets.push(packet);
+                        }
+                    }
+                }
             }
 
             return Some(packets);
+        }
+    }
+
+    #[inline]
+    fn check_mac(
+        &self,
+        packet: Packet<NullHeader, EmptyMetadata>,
+    ) -> Option<Packet<MacHeader, EmptyMetadata>> {
+        let packet = packet.parse_header::<MacHeader>();
+        // The following block borrows the MAC header from the parsed
+        // packet, and checks if the ethertype on it matches what the
+        // server expects.
+        if packet.get_header().etype().eq(&common::PACKET_ETYPE) {
+            Some(packet)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    fn check_ip(
+        &self,
+        packet: Packet<MacHeader, EmptyMetadata>,
+    ) -> Option<Packet<IpHeader, EmptyMetadata>> {
+        let packet = packet.parse_header::<IpHeader>();
+        // The following block borrows the Ip header from the parsed
+        // packet, and checks if it is valid. A packet is considered
+        // valid if:
+        //      - It is an IPv4 packet,
+        //      - It's TTL (time to live) is greater than zero,
+        //      - It is not long enough,
+        //      - It's destination Ip address matches that of the server.
+        const MIN_LENGTH_IP: u16 = common::PACKET_IP_LEN + 2;
+        let ip_header: &IpHeader = packet.get_header();
+        if (ip_header.version() == 4)
+            && (ip_header.ttl() > 0)
+            && (ip_header.length() >= MIN_LENGTH_IP)
+            && (ip_header.dst() == self.ip_addr)
+        {
+            Some(packet)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    fn check_udp(
+        &self,
+        packet: Packet<IpHeader, EmptyMetadata>,
+    ) -> Option<Packet<UdpHeader, EmptyMetadata>> {
+        let packet = packet.parse_header::<UdpHeader>();
+        // This block borrows the UDP header from the parsed packet, and
+        // checks if it is valid. A packet is considered valid if:
+        //      - It is not long enough,
+        const MIN_LENGTH_UDP: u16 = common::PACKET_UDP_LEN + 2;
+        if packet.get_header().length() >= MIN_LENGTH_UDP {
+            Some(packet)
+        } else {
+            None
         }
     }
 }
@@ -539,6 +602,9 @@ impl LBDispatcher {
                 sib_port: None,
                 stealing: false,
                 max_rx_packets: config.max_rx_packets,
+                ip_addr: u32::from(
+                    Ipv4Addr::from_str(&config.src.ip_addr).expect("missing src ip for LB"),
+                ),
             },
         }
     }
@@ -576,6 +642,9 @@ impl ComputeNodeDispatcher {
                 net_port: net_port,
                 sib_port: sib_port,
                 max_rx_packets: config.max_rx_packets,
+                ip_addr: u32::from(
+                    Ipv4Addr::from_str(&config.src.ip_addr).expect("missing src ip for LB"),
+                ),
             },
             manager: TaskManager::new(Arc::clone(&masterservice)),
             resp_hdr: PacketHeaders::new(&config.src, &NetConfig::default()),
