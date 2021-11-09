@@ -153,7 +153,7 @@ impl Master {
         // Allocate objects, and fill up the above table. Each object consists of a 30 Byte key
         // and a 100 Byte value.
         for i in 1..(num + 1) {
-            let value: [u8; 4] = unsafe { transmute((i % (num + 1) + 1).to_le()) };
+            let value: [u8; 4] = unsafe { transmute((i % num + 1).to_le()) };
             let temp: [u8; 4] = unsafe { transmute(i.to_le()) };
             &key[0..4].copy_from_slice(&temp);
             &val[0..4].copy_from_slice(&value);
