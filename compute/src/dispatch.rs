@@ -396,7 +396,7 @@ pub struct Receiver {
 
 // Implementation of methods on Receiver.
 impl Receiver {
-    fn recv(&self) -> Option<Vec<Packet<UdpHeader, EmptyMetadata>>> {
+    pub fn recv(&self) -> Option<Vec<Packet<UdpHeader, EmptyMetadata>>> {
         // Allocate a vector of mutable MBuf pointers into which raw packets will be received.
         let mut mbuf_vector = Vec::with_capacity(self.max_rx_packets);
 
