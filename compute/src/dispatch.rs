@@ -605,14 +605,19 @@ impl ComputeNodeDispatcher {
     // 1. invoke_req: lb to compute
     // 2. get_resp: storage to compute
     pub fn dispatch(&mut self, packet: Packet<UdpHeader, EmptyMetadata>) {
-        match parse_rpc_opcode(&packet) {
-            OpCode::SandstormInvokeRpc => {
-                self.dispatch_invoke(packet);
+        if parse_rpc_service(&packet) == Service::MasterService {
+            match parse_rpc_opcode(&packet) {
+                OpCode::SandstormInvokeRpc => {
+                    self.dispatch_invoke(packet);
+                }
+                OpCode::SandstormGetRpc => {
+                    self.process_get_resp(packet);
+                }
+                _ => {}
             }
-            OpCode::SandstormGetRpc => {
-                self.process_get_resp(packet);
-            }
-            _ => {}
+        } else {
+            trace!("ignore packet");
+            packet.free_packet();
         }
     }
 
