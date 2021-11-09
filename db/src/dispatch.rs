@@ -852,7 +852,7 @@ where
                 *count = 0;
             }
         });
-        return (self.state.clone(), exec);
+        return (self.state, exec); 
     }
 
     /// Refer to the `Task` trait for Documentation.

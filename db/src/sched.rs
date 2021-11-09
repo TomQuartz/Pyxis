@@ -254,7 +254,7 @@ impl RoundRobin {
             // If there are tasks to run, then pick one from the head of the queue, and run it until it
             // either completes or yields back.
             let task = self.waiting.write().pop_front();
-
+            // TODO: run dispatch first, profile dispatch time, and evenly distribute to all tasks with state initialized
             if let Some(mut task) = task {
                 let mut is_dispatcher: bool = false;
                 let mut queue_length: usize = 0;
