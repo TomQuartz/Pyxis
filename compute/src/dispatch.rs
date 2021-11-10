@@ -468,6 +468,7 @@ impl Receiver {
         if packet.get_header().etype().eq(&common::PACKET_ETYPE) {
             Some(packet)
         } else {
+            trace!("mac check failed");
             None
         }
     }
@@ -494,6 +495,11 @@ impl Receiver {
         {
             Some(packet)
         } else {
+            trace!(
+                "ip check failed, dst {} local {}",
+                ip_header.dst(),
+                self.ip_addr
+            );
             None
         }
     }
@@ -511,6 +517,7 @@ impl Receiver {
         if packet.get_header().length() >= MIN_LENGTH_UDP {
             Some(packet)
         } else {
+            trace!("udp check failed");
             None
         }
     }
@@ -674,19 +681,22 @@ impl ComputeNodeDispatcher {
     // 1. invoke_req: lb to compute
     // 2. get_resp: storage to compute
     pub fn dispatch(&mut self, packet: Packet<UdpHeader, EmptyMetadata>) {
-        if parse_rpc_service(&packet) == Service::MasterService {
-            match parse_rpc_opcode(&packet) {
-                OpCode::SandstormInvokeRpc => {
+        match parse_rpc_opcode(&packet) {
+            OpCode::SandstormInvokeRpc => {
+                if parse_rpc_service(&packet) == Service::MasterService {
                     self.dispatch_invoke(packet);
+                } else {
+                    trace!("invalid rpc req, ignore");
+                    packet.free_packet();
                 }
-                OpCode::SandstormGetRpc => {
-                    self.process_get_resp(packet);
-                }
-                _ => {}
             }
-        } else {
-            trace!("ignore packet");
-            packet.free_packet();
+            OpCode::SandstormGetRpc => {
+                self.process_get_resp(packet);
+            }
+            _ => {
+                trace!("pkt is not for compute node, ignore");
+                packet.free_packet();
+            }
         }
     }
 

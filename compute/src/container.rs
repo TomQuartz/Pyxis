@@ -56,7 +56,7 @@ pub struct Container {
     // Required to determine the credit for each run of an extension.
     db_time: u64,
 
-    // storage_overhead
+    storage_overhead: u64,
 
     // An execution context for the task that implements the DB trait. Required
     // for the task to interact with the database.
@@ -112,6 +112,7 @@ impl Container {
                 return 0;
             }),
             id: id,
+            storage_overhead: 0,
         }
     }
 }
@@ -247,5 +248,7 @@ impl Task for Container {
         self.id.clone()
     }
 
-    fn set_time(&mut self, _overhead: u64) {}
+    fn set_time(&mut self, overhead: u64) {
+        self.storage_overhead+=overhead;
+    }
 }
