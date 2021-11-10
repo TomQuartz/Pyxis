@@ -56,7 +56,7 @@ pub struct Container {
     // Required to determine the credit for each run of an extension.
     db_time: u64,
 
-    storage_overhead
+    // storage_overhead
 
     // An execution context for the task that implements the DB trait. Required
     // for the task to interact with the database.
