@@ -159,11 +159,13 @@ impl Task for Native {
     )> {
         let (req, res) = self.req_res.replace(None).unwrap();
         let mut get_resp = res.parse_header::<GetResponse>();
-        let time_ptr = &self.time as *const _ as *const u8;
-        let time_u8 = unsafe { slice::from_raw_parts(time_ptr, mem::size_of::<u64>()) };
-        get_resp
-            .add_to_payload_tail(time_u8.len(), time_u8)
-            .unwrap();
+        // add task duration to resp
+        get_resp.get_mut_header().common_header.duration = self.time;
+        // let time_ptr = &self.time as *const _ as *const u8;
+        // let time_u8 = unsafe { slice::from_raw_parts(time_ptr, mem::size_of::<u64>()) };
+        // get_resp
+        //     .add_to_payload_tail(time_u8.len(), time_u8)
+        //     .unwrap();
         let res = get_resp.deparse_header(PACKET_UDP_LEN as usize);
         Some((req, res))
     }

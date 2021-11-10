@@ -34,10 +34,10 @@ pub enum Service {
     /// The most common of all services provided by a sandstorm server. This
     /// service implements the primary interface to the database consisting of
     /// operations such as get() and put().
-    MasterService = 0x01,
+    MasterService = 0x0f,
 
     /// Any value beyond this represents an invalid service.
-    InvalidService = 0x02,
+    InvalidService = 0xff,
 }
 
 /// This enum represents the different operations that can be invoked by a
@@ -218,6 +218,9 @@ pub struct RpcResponseHeader {
 
     /// Identifier of the RPC request this response is being generated for.
     pub stamp: u64,
+
+    /// duration
+    pub duration: u64,
 }
 
 impl RpcResponseHeader {
@@ -236,6 +239,7 @@ impl RpcResponseHeader {
             opcode: opcode,
             tenant: tenant,
             stamp: req_stamp,
+            duration: 0,
         }
     }
 }
@@ -597,6 +601,7 @@ impl EndOffset for InvokeRequest {
 pub struct InvokeResponse {
     /// A common RPC response header containing the status of the RPC.
     pub common_header: RpcResponseHeader,
+    pub overhead: u64,
 }
 
 impl InvokeResponse {
@@ -611,6 +616,7 @@ impl InvokeResponse {
     pub fn new(req_stamp: u64, opcode: OpCode, tenant: u32) -> InvokeResponse {
         InvokeResponse {
             common_header: RpcResponseHeader::new(req_stamp, opcode, tenant),
+            overhead: 0,
         }
     }
 }

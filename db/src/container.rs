@@ -196,10 +196,11 @@ impl<'a> Task for Container<'a> {
                     return Some((req, res));
                 } else {
                     let (req, mut res) = db.commit();
-                    // add time to resp
-                    let time_ptr = &self.time as *const _ as *const u8;
-                    let time_u8 = unsafe { slice::from_raw_parts(time_ptr, mem::size_of::<u64>()) };
-                    res.add_to_payload_tail(time_u8.len(),time_u8).unwrap();
+                    // add task duration to resp
+                    res.get_mut_header().common_header.duration = self.time;
+                    // let time_ptr = &self.time as *const _ as *const u8;
+                    // let time_u8 = unsafe { slice::from_raw_parts(time_ptr, mem::size_of::<u64>()) };
+                    // res.add_to_payload_tail(time_u8.len(),time_u8).unwrap();
 
                     let req = req.deparse_header(PACKET_UDP_LEN as usize);
                     let res = res.deparse_header(PACKET_UDP_LEN as usize);
