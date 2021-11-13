@@ -110,14 +110,23 @@ impl Sender {
         if *current_credits == 0 {
             return;
         }
-        while let mut current_credits = self.shared_credits.write().unwrap() {
-            if *current_credits > 0 {
-                if let Some(request) = self.buffer.borrow_mut().pop_front() {
-                    self.send_pkt(request);
+        let mut buffer = self.buffer.borrow_mut();
+        loop {
+            if buffer.len() == 0 {
+                break;
+            }
+            let acquired = {
+                let mut current_credits = self.shared_credits.write().unwrap();
+                if *current_credits > 0 {
                     *current_credits -= 1;
+                    true
                 } else {
-                    break;
+                    false
                 }
+            };
+            if acquired {
+                let request = buffer.pop_front().unwrap();
+                self.send_pkt(request);
             } else {
                 break;
             }
@@ -183,19 +192,19 @@ impl Sender {
         );
         let current_credits = self.shared_credits.read().unwrap();
         let mut buffer = self.buffer.borrow_mut();
-        let mut acquired: bool = false;
         if *current_credits == 0 {
             buffer.push_back(request);
             return;
         }
-        if let mut current_credits = self.shared_credits.write().unwrap() {
+        let acquired = {
+            let mut current_credits = self.shared_credits.write().unwrap();
             if *current_credits > 0 {
                 *current_credits -= 1;
-                acquired = true;
+                true
             } else {
-                acquired = false;
+                false
             }
-        }
+        };
         if acquired {
             self.send_pkt(request);
         } else {
@@ -467,7 +476,6 @@ impl Receiver {
             if recvd == 0 {
                 return None;
             }
-
             // // Update the number of responses received.
             // let r = self.responses_recv.get();
             // // if r & 0xffffff == 0 {
@@ -490,6 +498,7 @@ impl Receiver {
                     if let Some(packet) = self.check_ip(packet) {
                         if let Some(packet) = self.check_udp(packet) {
                             packets.push(packet);
+                            continue;
                         }
                     }
                 }
@@ -512,6 +521,7 @@ impl Receiver {
             Some(packet)
         } else {
             trace!("mac check failed");
+            packet.free_packet();
             None
         }
     }
@@ -543,6 +553,7 @@ impl Receiver {
                 ip_header.dst(),
                 self.ip_addr
             );
+            packet.free_packet();
             None
         }
     }
@@ -561,6 +572,7 @@ impl Receiver {
             Some(packet)
         } else {
             trace!("udp check failed");
+            packet.free_packet();
             None
         }
     }
