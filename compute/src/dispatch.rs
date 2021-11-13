@@ -41,7 +41,8 @@ use std::sync::Arc;
 
 use db::e2d2::scheduler::Executable;
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicUsize,Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::RwLock;
 
 /// A simple RPC request generator for Sandstorm.
 // TODO: the dst_ports available for each endpoint may be different, make dst_ports a vec
@@ -60,8 +61,8 @@ pub struct Sender {
     rng: RefCell<XorShiftRng>,
     // // Tracks number of packets sent to the server for occasional debug messages.
     // requests_sent: Cell<u64>,
-    id: usize,
-    credits_of_peers: Arc<Vec<Arc<AtomicUsize>>>,
+    // id: usize,
+    shared_credits: Arc<RwLock<u32>>,
     buffer: RefCell<VecDeque<Packet<IpHeader, EmptyMetadata>>>,
 }
 
@@ -71,10 +72,10 @@ impl Sender {
         net_port: CacheAligned<PortQueue>,
         src: &NetConfig,
         endpoints: &Vec<NetConfig>,
-        credits_of_peers: &Arc<Vec<Arc<AtomicUsize>>>,
+        shared_credits: Arc<RwLock<u32>>,
     ) -> Sender {
         Sender {
-            id: net_port.rxq() as usize,
+            // id: net_port.rxq() as usize,
             num_endpoints: endpoints.len(),
             req_hdrs: PacketHeaders::get_req_hdrs(src, net_port.txq() as u16, endpoints),
             net_port: net_port, //.clone()
@@ -84,7 +85,7 @@ impl Sender {
                 let seed: [u32; 4] = rand::random::<[u32; 4]>();
                 RefCell::new(XorShiftRng::from_seed(seed))
             },
-            credits_of_peers: credits_of_peers.clone(),
+            shared_credits: shared_credits,
             buffer: RefCell::new(VecDeque::new()),
         }
     }
@@ -92,7 +93,6 @@ impl Sender {
     fn get_endpoint(&self, _key: &[u8]) -> usize {
         self.rng.borrow_mut().gen::<usize>() % self.num_endpoints
     }
-    
     pub fn return_credit(&self) {
         // let mut buffer = self.buffer.borrow_mut();
         // if let Some(request) = buffer.pop_front() {
@@ -101,23 +101,28 @@ impl Sender {
         //     let credits = self.credits.get();
         //     self.credits.set(credits + 1);
         // }
-        let target = self.rng.borrow_mut().gen::<usize>() % self.credits_of_peers.len();
-        self.credits_of_peers[target].fetch_add(1,Ordering::Relaxed);
+        let mut shared_credits = self.shared_credits.write().unwrap();
+        *shared_credits += 1;
     }
 
-    pub fn try_send_packets(&self){
-        let my_credits = &self.credits_of_peers[self.id];
-        let mut buffer = self.buffer.borrow_mut();
-        while my_credits.load(Ordering::Relaxed)>0{
-            if let Some(request) = buffer.pop_front() {
-                self.send_pkt(request);
-                my_credits.fetch_sub(1,Ordering::Relaxed);
-            }else{
+    pub fn try_send_packets(&self) {
+        let current_credits = self.shared_credits.read().unwrap();
+        if *current_credits == 0 {
+            return;
+        }
+        while let mut current_credits = self.shared_credits.write().unwrap() {
+            if *current_credits > 0 {
+                if let Some(request) = self.buffer.borrow_mut().pop_front() {
+                    self.send_pkt(request);
+                    *current_credits -= 1;
+                } else {
+                    break;
+                }
+            } else {
                 break;
             }
         }
     }
-    
 
     /// Creates and sends out a get() RPC request. Network headers are populated based on arguments
     /// passed into new() above.
@@ -176,12 +181,25 @@ impl Sender {
             id,
             self.req_hdrs[endpoint].ip_header.src()
         );
-        let my_credits = &self.credits_of_peers[self.id];
-        if my_credits.load(Ordering::Relaxed)>0{
-            my_credits.fetch_sub(1,Ordering::Relaxed);
+        let current_credits = self.shared_credits.read().unwrap();
+        let mut buffer = self.buffer.borrow_mut();
+        let mut acquired: bool = false;
+        if *current_credits == 0 {
+            buffer.push_back(request);
+            return;
+        }
+        if let mut current_credits = self.shared_credits.write().unwrap() {
+            if *current_credits > 0 {
+                *current_credits -= 1;
+                acquired = true;
+            } else {
+                acquired = false;
+            }
+        }
+        if acquired {
             self.send_pkt(request);
-        }else{
-            self.buffer.borrow_mut().push_back(request);
+        } else {
+            buffer.push_back(request);
         }
         // if credits > 0 {
         //     self.credits.set(credits - 1);
@@ -627,8 +645,18 @@ pub struct LBDispatcher {
 impl LBDispatcher {
     pub fn new(config: &LBConfig, net_port: CacheAligned<PortQueue>) -> LBDispatcher {
         LBDispatcher {
-            sender2compute: Sender::new(net_port.clone(), &config.src, &config.compute, &Arc::new(vec![])),
-            sender2storage: Sender::new(net_port.clone(), &config.src, &config.storage, &Arc::new(vec![])),
+            sender2compute: Sender::new(
+                net_port.clone(),
+                &config.src,
+                &config.compute,
+                Arc::new(RwLock::new(0)),
+            ),
+            sender2storage: Sender::new(
+                net_port.clone(),
+                &config.src,
+                &config.storage,
+                Arc::new(RwLock::new(0)),
+            ),
             receiver: Receiver {
                 net_port: net_port,
                 sib_port: None,
@@ -660,14 +688,14 @@ impl ComputeNodeDispatcher {
         masterservice: Arc<Master>,
         net_port: CacheAligned<PortQueue>,
         sib_port: Option<CacheAligned<PortQueue>>,
-        credits_of_peers: &Arc<Vec<Arc<AtomicUsize>>>,
+        shared_credits: &Arc<RwLock<u32>>,
     ) -> ComputeNodeDispatcher {
         ComputeNodeDispatcher {
             sender: Rc::new(Sender::new(
                 net_port.clone(),
                 &config.src,
                 &config.storage,
-                credits_of_peers,
+                shared_credits.clone(),
             )),
             receiver: Receiver {
                 stealing: !sib_port.is_none(),

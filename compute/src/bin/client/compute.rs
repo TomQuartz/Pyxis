@@ -54,6 +54,7 @@ use zipf::ZipfDistribution;
 
 use self::atomic_float::AtomicF32;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::RwLock;
 
 use dispatch::ComputeNodeDispatcher;
 
@@ -63,7 +64,7 @@ fn setup_compute(
     sibling: Option<CacheAligned<PortQueue>>,
     scheduler: &mut StandaloneScheduler,
     master: Arc<Master>,
-    credits_of_peers: &Arc<Vec<Arc<AtomicUsize>>>,
+    shared_credits: &Arc<RwLock<u32>>,
 ) {
     if ports.len() != 1 {
         error!("Client should be configured with exactly 1 port!");
@@ -74,7 +75,7 @@ fn setup_compute(
         master,
         ports[0].clone(),
         sibling,
-        credits_of_peers,
+        shared_credits,
     )) {
         Ok(_) => {
             info!(
@@ -110,24 +111,20 @@ fn main() {
     let mut net_context =
         setup::config_and_init_netbricks(config.nic_pci.clone(), config.src.num_ports);
 
-    let mut credits_of_peers:Vec<Arc<AtomicUsize>> = vec![];
-    let mut total_credits = config.max_credits;
-    for _ in 0..config.src.num_ports{
-        let credits = if total_credits>0{
-            total_credits-=1;
-            Arc::new(AtomicUsize::new(1))
-        }else{
-            Arc::new(AtomicUsize::new(0))
-        };
-        credits_of_peers.push(credits);
-    }
-    let credits_of_peers = Arc::new(credits_of_peers);
+    let shared_credits = Arc::new(RwLock::new(config.max_credits));
 
     // Setup the client pipeline.
     net_context.start_schedulers();
     net_context.add_pipeline_to_run(Arc::new(
         move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
-            setup_compute(&config, ports, None, scheduler, master.clone(),&credits_of_peers)
+            setup_compute(
+                &config,
+                ports,
+                None,
+                scheduler,
+                master.clone(),
+                &shared_credits,
+            )
         },
     ));
 
