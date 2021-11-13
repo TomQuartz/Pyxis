@@ -436,7 +436,7 @@ fn main() {
     let mut net_context: NetbricksContext = config_and_init_netbricks(&config);
 
     // A handle to every scheduler for pre-emption.
-    let handles = Arc::new(RwLock::new(Vec::with_capacity(8)));
+    let handles = Arc::new(RwLock::new(Vec::with_capacity(config.num_cores as usize)));
 
     // Clone `master` and `handle` so that they are still around after the schedulers are
     // initialized.

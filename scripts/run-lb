@@ -1,3 +1,7 @@
 #!/usr/bin/env bash
+log_level = "info"
+if [ "$#" -eq 1 ]; then
+    log_level = $1
+fi
 cd compute
-sudo env RUST_LOG=debug LD_LIBRARY_PATH=../net/target/native ./target/release/lb
+sudo env RUST_LOG=$log_level LD_LIBRARY_PATH=../net/target/native ./target/release/lb
