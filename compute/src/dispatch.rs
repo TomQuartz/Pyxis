@@ -106,8 +106,8 @@ impl Sender {
     }
 
     pub fn try_send_packets(&self) {
-        let current_credits = self.shared_credits.read().unwrap();
-        if *current_credits == 0 {
+        let has_credit = *self.shared_credits.read().unwrap()>0;
+        if !has_credit {
             return;
         }
         let mut buffer = self.buffer.borrow_mut();
@@ -127,6 +127,7 @@ impl Sender {
             if acquired {
                 let request = buffer.pop_front().unwrap();
                 self.send_pkt(request);
+                trace!("send req from buffer");
             } else {
                 break;
             }
@@ -186,13 +187,14 @@ impl Sender {
             GetGenerator::SandstormExtension,
         );
         trace!(
-            "ext id: {} send kv req, ip {}",
+            "ext id: {} send kv req, from {}, to {}",
             id,
-            self.req_hdrs[endpoint].ip_header.src()
+            self.req_hdrs[endpoint].ip_header.src(),
+            self.req_hdrs[endpoint].ip_header.dst()
         );
-        let current_credits = self.shared_credits.read().unwrap();
         let mut buffer = self.buffer.borrow_mut();
-        if *current_credits == 0 {
+        let has_credit = *self.shared_credits.read().unwrap()>0;
+        if !has_credit{
             buffer.push_back(request);
             return;
         }
@@ -207,8 +209,10 @@ impl Sender {
         };
         if acquired {
             self.send_pkt(request);
+            trace!("send directly")
         } else {
             buffer.push_back(request);
+            trace!("failed to acquire");
         }
         // if credits > 0 {
         //     self.credits.set(credits - 1);

@@ -769,7 +769,7 @@ impl Executable for LoadBalancer {
         if self.start == 0 {
             self.send_all();
         }
-        trace!("{:?}", self.outstanding_reqs.keys());
+        // trace!("{:?}", self.outstanding_reqs.keys());
         self.recv();
         if self.finished == true {
             unsafe { FINISHED = true }
