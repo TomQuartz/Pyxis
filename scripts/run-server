@@ -26,7 +26,12 @@ if [[ ! -f server.toml ]]; then
     exit -1
 fi
 
+log_level="info"
+if [ "$#" -eq 1 ]; then
+    log_level=$1
+fi
+
 # Run the server.
-RUST_LOG=info numactl --interleave all ./target/release/server
+sudo RUST_LOG=${log_level} numactl --interleave all ./target/release/server
 
 exit 0
