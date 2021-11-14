@@ -106,7 +106,7 @@ impl Sender {
     }
 
     pub fn try_send_packets(&self) {
-        let has_credit = *self.shared_credits.read().unwrap()>0;
+        let has_credit = *self.shared_credits.read().unwrap() > 0;
         if !has_credit {
             return;
         }
@@ -193,8 +193,8 @@ impl Sender {
             self.req_hdrs[endpoint].ip_header.dst()
         );
         let mut buffer = self.buffer.borrow_mut();
-        let has_credit = *self.shared_credits.read().unwrap()>0;
-        if !has_credit{
+        let has_credit = *self.shared_credits.read().unwrap() > 0;
+        if !has_credit {
             buffer.push_back(request);
             return;
         }
@@ -208,8 +208,15 @@ impl Sender {
             }
         };
         if acquired {
-            self.send_pkt(request);
-            trace!("send directly")
+            if buffer.len() > 0 {
+                let pending_request = buffer.pop_front().unwrap();
+                self.send_pkt(pending_request);
+                buffer.push_back(request);
+                trace!("send from buffer, push current to queue");
+            } else {
+                self.send_pkt(request);
+                trace!("send directly");
+            }
         } else {
             buffer.push_back(request);
             trace!("failed to acquire");
