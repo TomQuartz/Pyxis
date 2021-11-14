@@ -277,7 +277,7 @@ where
                         // No packets were available for receive.
                         return None;
                     }
-                    // trace!("{} recv {} pkts", self.network_port, num_received);
+                    trace!("port {} recv {} raw pkts", self.id, num_received);
                     // Allocate a vector for the received packets.
                     let mut recvd_packets = Vec::<Packet<NullHeader, EmptyMetadata>>::with_capacity(
                         self.max_rx_packets as usize,
@@ -538,6 +538,9 @@ where
                     && (ip_header.ttl() > 0)
                     && (ip_header.length() >= MIN_LENGTH_IP)
                     && (ip_header.dst() == self.network_ip_addr);
+                if !valid {
+                    trace!("port {} ip {} drop invalid req: ip hdr {:?}",self.id,self.network_ip_addr,ip_header);
+                }
             }
 
             match valid {
@@ -626,6 +629,7 @@ where
     fn dispatch_requests(&mut self, mut requests: Vec<Packet<UdpHeader, EmptyMetadata>>) {
         // This vector will hold the set of packets that were for either an invalid service or
         // operation.
+        // trace!("recv {} reqs", requests.len());
         let mut ignore_packets = Vec::with_capacity(self.max_rx_packets as usize);
 
         // This vector will hold response packets of native requests.
@@ -666,6 +670,7 @@ where
                 if parse_rpc_service(&request) == wireformat::Service::MasterService {
                     // The request is for Master, get it's opcode, and call into Master.
                     let opcode = parse_rpc_opcode(&request);
+                    trace!("port {} dispatch req {:?}", self.id, opcode);
                     if !FAST_PATH {
                         match self.master_service.dispatch(opcode, request, response) {
                             Ok(task) => {
@@ -711,12 +716,12 @@ where
 
                                         // Push response packet on the local queue of responses that are ready to be sent out.
                                         let resp = rpc::fixup_header_length_fields(res);
-                                        assert_eq!(
-                                            resp.get_header().dst(),
-                                            self.resp_ip_header.dst(),
-                                            "self.resp_ip {}",
-                                            self.resp_ip_header.dst()
-                                        );
+                                        // assert_eq!(
+                                        //     resp.get_header().dst(),
+                                        //     self.resp_ip_header.dst(),
+                                        //     "self.resp_ip {}",
+                                        //     self.resp_ip_header.dst()
+                                        // );
                                         native_responses.push(resp);
                                     }
 
@@ -763,8 +768,11 @@ where
         #[cfg(feature = "dispatch")]
         self.cycle_counter.parse.start();
         let packets = self.parse_mac_headers(packets);
+        // trace!("after mac check {} pkts",packets.len());
         let packets = self.parse_ip_headers(packets);
+        // trace!("after ip check {} pkts",packets.len());
         let packets = self.parse_udp_headers(packets);
+        // trace!("after udp check {} pkts",packets.len());
         let count = packets.len();
         #[cfg(feature = "dispatch")]
         self.cycle_counter.parse.stop(count as u64);

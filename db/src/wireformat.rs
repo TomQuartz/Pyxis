@@ -49,7 +49,7 @@ pub enum Service {
 /// The second field on the header of every rpc request identifies the
 /// operation it should perform within the Sandstorm server.
 #[repr(u8)]
-#[derive(PartialEq)]
+#[derive(PartialEq,Debug)]
 pub enum OpCode {
     /// A simple operation that looks up the hash table for a given key.
     SandstormGetRpc = 0x01,
