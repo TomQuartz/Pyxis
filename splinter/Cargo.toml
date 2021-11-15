@@ -9,17 +9,20 @@ name = "splinter"
 path = "src/lib.rs"
 
 [[bin]]
-name = "pushback-ours"
-path = "src/bin/client/pushback-ours.rs"
+name = "pushback-kayak"
+path = "src/bin/client/pushback-kayak.rs"
 
 [[bin]]
-name = "ours"
-path = "src/bin/client/ours.rs"
+name = "ycsb-t-kayak"
+path = "src/bin/client/ycsb-t-kayak.rs"
 
 [[bin]]
-name = "test"
-path = "src/bin/client/test.rs"
+name = "ycsb-t"
+path = "src/bin/client/ycsb-t.rs"
 
+[[bin]]
+name = "pushback"
+path = "src/bin/client/pushback.rs"
 
 [dependencies]
 order-stat   = "0.1.3"

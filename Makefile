@@ -1,6 +1,6 @@
 all: netbricks
 	(cd db; cargo build --release)
-	# (cd splinter; cargo build --release)
+	(cd splinter; cargo build --release)
 	# (cd ext/bad; cargo build --release)
 	# (cd ext/tao; cargo build --release)
 	# (cd ext/get; cargo build --release)
@@ -12,7 +12,7 @@ all: netbricks
 	# (cd ext/scan; cargo build --release)
 	# (cd ext/analysis; cargo build --release)
 	# (cd ext/auth; cargo build --release)
-	# (cd ext/ycsbt; cargo build --release)
+	(cd ext/ycsbt; cargo build --release)
 	# (cd ext/checksum; cargo build --release)
 
 .PHONY: so-test

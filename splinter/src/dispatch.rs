@@ -285,11 +285,11 @@ impl Sender {
 
     /// Computes the destination UDP port given a tenant identifier.
     #[inline]
-    fn get_dst_port(&self, tenant: u32) -> u16 {
+    fn get_dst_port(&self, _tenant: u32) -> u16 {
         // The two least significant bytes of the tenant id % the total number of destination
         // ports.
         // (tenant & 0xffff) as u16 & (self.dst_ports - 1)
-        rand::random::<u16>() % self.dst_ports
+        self.rng.borrow_mut().gen::<u16>() % self.dst_ports
     }
 
     #[inline]

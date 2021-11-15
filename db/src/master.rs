@@ -599,6 +599,11 @@ impl Master {
         if self.extensions.load(name, tenant, "pushback") == false {
             panic!("Failed to load pushback() extension.");
         }
+        // Load the ycsbt() extension.
+        let name = "../ext/ycsbt/target/release/libycsbt.so";
+        if self.extensions.load(name, tenant, "ycsbt") == false {
+            panic!("Failed to load ycsbt() extension.");
+        }
         /*
         // Load the get() extension.
         let name = "../ext/get/target/release/libget.so";
@@ -652,12 +657,6 @@ impl Master {
         let name = "../ext/auth/target/release/libauth.so";
         if self.extensions.load(name, tenant, "auth") == false {
             panic!("Failed to load auth() extension.");
-        }
-
-        // Load the ycsbt() extension.
-        let name = "../ext/ycsbt/target/release/libycsbt.so";
-        if self.extensions.load(name, tenant, "ycsbt") == false {
-            panic!("Failed to load ycsbt() extension.");
         }
 
         // Load the checksum() extension.

@@ -381,7 +381,7 @@ where
                             Arc::clone(&self.sender),
                         );
                         self.sender
-                            .send_invoke(tenant, self.name_length, &p_get, curr)
+                            .send_invoke(tenant, self.name_length, &p_get, curr,0)
                     },
                     |tenant, multiget| {
                         p_put[13..17].copy_from_slice(&multiget[0..4]);
@@ -394,7 +394,7 @@ where
                             Arc::clone(&self.sender),
                         );
                         self.sender
-                            .send_invoke(tenant, self.name_length, &p_put, curr)
+                            .send_invoke(tenant, self.name_length, &p_put, curr,0)
                     },
                 );
                 self.outstanding += 1;
@@ -465,6 +465,7 @@ where
                                         name_length,
                                         &invoke_get_modify,
                                         timestamp,
+                                        0,
                                     );
                                     self.manager.borrow_mut().create_task(
                                         timestamp,
@@ -588,6 +589,7 @@ where
                             self.name_length,
                             p.get_payload(),
                             timestamp,
+                            0,
                         );
                     }
 
@@ -788,7 +790,7 @@ fn setup_send_recv<S>(
     // Add the receiver to a netbricks pipeline.
     match scheduler.add_task(PushbackRecvSend::new(
         ports[0].clone(),
-        34 * 1000 * 1000 as u64,
+        config.num_reqs as u64 / 2,
         master,
         config,
         ports[0].clone(),
@@ -817,13 +819,15 @@ fn main() {
     let config = config::ClientConfig::load();
     info!("Starting up Sandstorm client with config {:?}", config);
 
-    let masterservice = Arc::new(Master::new());
+    let mut masterservice = Master::new();
 
     // Create tenants with extensions.
     info!("Populating extension for {} tenants", config.num_tenants);
     for tenant in 1..(config.num_tenants + 1) {
         masterservice.load_test(tenant);
     }
+    // finished populating, now mark as immut
+    let masterservice = Arc::new(masterservice);
 
     // Setup Netbricks.
     let mut net_context = setup::config_and_init_netbricks(&config);

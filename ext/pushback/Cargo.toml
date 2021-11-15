@@ -12,5 +12,5 @@ sandstorm = { path = "../../sandstorm" }
 cfg-if = "1.0.0"
 
 [features]
-default = []
+default = ["yield"]
 yield = []
