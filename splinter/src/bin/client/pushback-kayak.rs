@@ -942,7 +942,7 @@ fn main() {
     assert!(senders_receivers.len() == 8);
 
     // Setup 1 senders, and receivers.
-    for i in 0..1 {
+    for i in 0..8 {
         // First, retrieve a tx-rx queue pair from Netbricks
         let port = net_context
             .rx_queues
