@@ -538,6 +538,7 @@ impl LoadBalancer {
                             RpcStatus::StatusOk => {
                                 let timestamp = p.get_header().common_header.stamp;
                                 if let Some(type_idx) = self.outstanding_reqs.get(&timestamp) {
+                                    trace!("req finished");
                                     self.local_recvd += 1;
                                     self.recvd.fetch_add(1, Ordering::Relaxed);
                                     packet_recvd_signal = true;
@@ -545,6 +546,8 @@ impl LoadBalancer {
                                         .push(curr - p.get_header().common_header.stamp);
                                     self.outstanding_reqs.remove(&timestamp);
                                     self.send_once();
+                                } else {
+                                    warn!("no outstanding request");
                                 }
                             }
 
