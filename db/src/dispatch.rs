@@ -277,6 +277,9 @@ where
                         // No packets were available for receive.
                         return None;
                     }
+                    if num_received==self.max_rx_packets{
+                        warn!("some recvd packets may still be in the rx ring");
+                    }
                     trace!("port {} recv {} raw pkts", self.id, num_received);
                     // Allocate a vector for the received packets.
                     let mut recvd_packets = Vec::<Packet<NullHeader, EmptyMetadata>>::with_capacity(
@@ -334,7 +337,7 @@ where
                         // No packets were available for receive.
                         return None;
                     }
-
+                    trace!("port {} steal {} raw pkts from sibling port", self.id, num_received);
                     // Allocate a vector for the received packets.
                     let mut recvd_packets = Vec::<Packet<NullHeader, EmptyMetadata>>::with_capacity(
                         self.max_rx_packets as usize,
