@@ -540,6 +540,8 @@ where
                     && (ip_header.dst() == self.network_ip_addr);
                 if !valid {
                     trace!("port {} ip {} drop invalid req: ip hdr {:?}",self.id,self.network_ip_addr,ip_header);
+                }else{
+                    trace!("port {} recv from ip {}",self.id,ip_header.src());
                 }
             }
 
@@ -640,6 +642,7 @@ where
         while let Some(request) = requests.pop() {
             // Set the destination ip address on the response IP header.
             let ip = request.deparse_header(common::IP_HDR_LEN);
+            let from = ip.get_header().src();
             // self.resp_ip_header.set_src(ip.get_header().dst());
             self.resp_ip_header.set_dst(ip.get_header().src());
             // Set the destination mac address on the response MAC header.
@@ -670,7 +673,7 @@ where
                 if parse_rpc_service(&request) == wireformat::Service::MasterService {
                     // The request is for Master, get it's opcode, and call into Master.
                     let opcode = parse_rpc_opcode(&request);
-                    trace!("port {} dispatch req {:?}", self.id, opcode);
+                    trace!("port {} dispatch req {:?} from ip {}", self.id, opcode, from);
                     if !FAST_PATH {
                         match self.master_service.dispatch(opcode, request, response) {
                             Ok(task) => {
@@ -680,6 +683,7 @@ where
                             Err((req, res)) => {
                                 // Master returned an error. The allocated request and response packets
                                 // need to be freed up.
+                                warn!("failed to dispatch req");
                                 ignore_packets.push(req);
                                 ignore_packets.push(res);
                             }
@@ -744,6 +748,7 @@ where
                 } else {
                     // The request is not for Master. The allocated request and response packets need
                     // to be freed up.
+                    trace!("drop req from ip {}", from);
                     ignore_packets.push(request);
                     ignore_packets.push(response);
                 }

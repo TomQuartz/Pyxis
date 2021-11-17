@@ -287,6 +287,7 @@ impl RoundRobin {
                     // The task finished execution, check for request and response packets. If they
                     // exist, then free the request packet, and enqueue the response packet.
                     if let Some((req, res)) = unsafe { task.tear() } {
+                        trace!("task complete");
                         req.free_packet();
                         self.responses
                             .write()
