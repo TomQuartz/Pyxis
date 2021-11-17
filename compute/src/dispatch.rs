@@ -487,6 +487,7 @@ impl Receiver {
             if recvd == 0 {
                 return None;
             }
+            trace!("port {} recv {} raw pkts", self.net_port.rxq(), recvd);
             // // Update the number of responses received.
             // let r = self.responses_recv.get();
             // // if r & 0xffffff == 0 {
@@ -557,6 +558,7 @@ impl Receiver {
             && (ip_header.length() >= MIN_LENGTH_IP)
             && (ip_header.dst() == self.ip_addr)
         {
+            trace!("recv from ip {}", ip_header.src());
             Some(packet)
         } else {
             trace!(
