@@ -277,7 +277,7 @@ where
                         // No packets were available for receive.
                         return None;
                     }
-                    if num_received==self.max_rx_packets{
+                    if num_received==self.max_rx_packets as u32{
                         warn!("some recvd packets may still be in the rx ring");
                     }
                     trace!("port {} recv {} raw pkts", self.id, num_received);
