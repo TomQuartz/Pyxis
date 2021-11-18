@@ -64,7 +64,7 @@ fn setup_compute(
     sibling: Option<CacheAligned<PortQueue>>,
     scheduler: &mut StandaloneScheduler,
     master: Arc<Master>,
-    shared_credits: &Arc<RwLock<u32>>,
+    // shared_credits: &Arc<RwLock<u32>>,
 ) {
     if ports.len() != 1 {
         error!("Client should be configured with exactly 1 port!");
@@ -75,7 +75,7 @@ fn setup_compute(
         master,
         ports[0].clone(),
         sibling,
-        shared_credits,
+        // shared_credits,
     )) {
         Ok(_) => {
             info!(
@@ -111,7 +111,7 @@ fn main() {
     let mut net_context =
         setup::config_and_init_netbricks(config.nic_pci.clone(), config.src.num_ports);
 
-    let shared_credits = Arc::new(RwLock::new(config.max_credits));
+    // let shared_credits = Arc::new(RwLock::new(config.max_credits));
 
     // Setup the client pipeline.
     net_context.start_schedulers();
@@ -123,7 +123,7 @@ fn main() {
                 None,
                 scheduler,
                 master.clone(),
-                &shared_credits,
+                // &shared_credits,
             )
         },
     ));

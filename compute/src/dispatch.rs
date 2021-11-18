@@ -61,9 +61,8 @@ pub struct Sender {
     rng: RefCell<XorShiftRng>,
     // // Tracks number of packets sent to the server for occasional debug messages.
     // requests_sent: Cell<u64>,
-    // id: usize,
-    shared_credits: Arc<RwLock<u32>>,
-    buffer: RefCell<VecDeque<Packet<IpHeader, EmptyMetadata>>>,
+    // shared_credits: Arc<RwLock<u32>>,
+    // buffer: RefCell<VecDeque<Packet<IpHeader, EmptyMetadata>>>,
 }
 
 impl Sender {
@@ -72,7 +71,7 @@ impl Sender {
         net_port: CacheAligned<PortQueue>,
         src: &NetConfig,
         endpoints: &Vec<NetConfig>,
-        shared_credits: Arc<RwLock<u32>>,
+        // shared_credits: Arc<RwLock<u32>>,
     ) -> Sender {
         Sender {
             // id: net_port.rxq() as usize,
@@ -85,14 +84,15 @@ impl Sender {
                 let seed: [u32; 4] = rand::random::<[u32; 4]>();
                 RefCell::new(XorShiftRng::from_seed(seed))
             },
-            shared_credits: shared_credits,
-            buffer: RefCell::new(VecDeque::new()),
+            // shared_credits: shared_credits,
+            // buffer: RefCell::new(VecDeque::new()),
         }
     }
 
     fn get_endpoint(&self, _key: &[u8]) -> usize {
         self.rng.borrow_mut().gen::<usize>() % self.num_endpoints
     }
+    /*
     pub fn return_credit(&self) {
         // let mut buffer = self.buffer.borrow_mut();
         // if let Some(request) = buffer.pop_front() {
@@ -133,6 +133,7 @@ impl Sender {
             }
         }
     }
+    */
 
     /// Creates and sends out a get() RPC request. Network headers are populated based on arguments
     /// passed into new() above.
@@ -192,40 +193,35 @@ impl Sender {
             self.req_hdrs[endpoint].ip_header.src(),
             self.req_hdrs[endpoint].ip_header.dst()
         );
-        let mut buffer = self.buffer.borrow_mut();
-        let has_credit = *self.shared_credits.read().unwrap() > 0;
-        if !has_credit {
-            buffer.push_back(request);
-            return;
-        }
-        let acquired = {
-            let mut current_credits = self.shared_credits.write().unwrap();
-            if *current_credits > 0 {
-                *current_credits -= 1;
-                true
-            } else {
-                false
-            }
-        };
-        if acquired {
-            if buffer.len() > 0 {
-                let pending_request = buffer.pop_front().unwrap();
-                self.send_pkt(pending_request);
-                buffer.push_back(request);
-                trace!("send from buffer, push current to queue");
-            } else {
-                self.send_pkt(request);
-                trace!("send directly");
-            }
-        } else {
-            buffer.push_back(request);
-            trace!("failed to acquire");
-        }
-        // if credits > 0 {
-        //     self.credits.set(credits - 1);
-        //     self.send_pkt(request);
+        self.send_pkt(request);
+        // let mut buffer = self.buffer.borrow_mut();
+        // let has_credit = *self.shared_credits.read().unwrap() > 0;
+        // if !has_credit {
+        //     buffer.push_back(request);
+        //     return;
+        // }
+        // let acquired = {
+        //     let mut current_credits = self.shared_credits.write().unwrap();
+        //     if *current_credits > 0 {
+        //         *current_credits -= 1;
+        //         true
+        //     } else {
+        //         false
+        //     }
+        // };
+        // if acquired {
+        //     if buffer.len() > 0 {
+        //         let pending_request = buffer.pop_front().unwrap();
+        //         self.send_pkt(pending_request);
+        //         buffer.push_back(request);
+        //         trace!("send from buffer, push current to queue");
+        //     } else {
+        //         self.send_pkt(request);
+        //         trace!("send directly");
+        //     }
         // } else {
-        //     self.buffer.borrow_mut().push_back(request);
+        //     buffer.push_back(request);
+        //     trace!("failed to acquire");
         // }
     }
 
@@ -674,13 +670,13 @@ impl LBDispatcher {
                 net_port.clone(),
                 &config.src,
                 &config.compute,
-                Arc::new(RwLock::new(0)),
+                // Arc::new(RwLock::new(0)),
             ),
             sender2storage: Sender::new(
                 net_port.clone(),
                 &config.src,
                 &config.storage,
-                Arc::new(RwLock::new(0)),
+                // Arc::new(RwLock::new(0)),
             ),
             receiver: Receiver {
                 net_port: net_port,
@@ -713,14 +709,14 @@ impl ComputeNodeDispatcher {
         masterservice: Arc<Master>,
         net_port: CacheAligned<PortQueue>,
         sib_port: Option<CacheAligned<PortQueue>>,
-        shared_credits: &Arc<RwLock<u32>>,
+        // shared_credits: &Arc<RwLock<u32>>,
     ) -> ComputeNodeDispatcher {
         ComputeNodeDispatcher {
             sender: Rc::new(Sender::new(
                 net_port.clone(),
                 &config.src,
                 &config.storage,
-                shared_credits.clone(),
+                // shared_credits.clone(),
             )),
             receiver: Receiver {
                 stealing: !sib_port.is_none(),
@@ -788,7 +784,7 @@ impl ComputeNodeDispatcher {
         if p.get_header().common_header.status == RpcStatus::StatusOk {
             self.manager
                 .update_rwset(timestamp, table_id, records, recordlen);
-            self.sender.return_credit();
+            // self.sender.return_credit();
         } else {
             warn!(
                 "kv req of ext id: {} failed with status {:?}",
@@ -866,7 +862,7 @@ impl ComputeNodeDispatcher {
 impl Executable for ComputeNodeDispatcher {
     fn execute(&mut self) {
         self.poll();
-        self.sender.try_send_packets();
+        // self.sender.try_send_packets();
         self.run_extensions();
         self.send_resps();
     }

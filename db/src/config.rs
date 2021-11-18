@@ -254,7 +254,7 @@ pub struct ClientConfig {
     pub bimodal_rpc: Vec<u32>,
     /// how many cycles between each stats output
     pub output_factor: u64,
-    pub max_credits: u32,
+    // pub max_credits: u32,
 }
 
 impl ClientConfig {
@@ -391,7 +391,7 @@ pub struct LBConfig {
 #[derive(Serialize, Deserialize, Debug, Default)]
 #[serde(default)]
 pub struct ComputeConfig {
-    pub max_credits: u32,
+    // pub max_credits: u32,
     pub max_rx_packets: usize,
     pub nic_pci: String,
     pub src: NetConfig,
