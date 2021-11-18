@@ -1,4 +1,3 @@
-max_credits = 1
 max_rx_packets = 32
 nic_pci = "0000:03:00.1"
 
