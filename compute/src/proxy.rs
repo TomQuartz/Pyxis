@@ -227,7 +227,7 @@ impl ProxyDB {
             self.readset.borrow_mut().push(KV::new(
                 Bytes::from(version),
                 Bytes::from(key),
-                Bytes::from(value),
+                Bytes::from(&kv_buffer[..]),
             ));
             true
         } else {
