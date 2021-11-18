@@ -41,3 +41,7 @@ workload = "PUSHBACK"
 num_records = 1000000
 
 num_cores = 8
+
+key_len = 30
+value_len = 16384
+record_len = 512

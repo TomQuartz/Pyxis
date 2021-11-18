@@ -107,7 +107,9 @@ pub struct ProxyDB {
     // The model for a given extension which is stored based on the name of the extension.
     model: Option<Arc<Model>>,
     // // This maintains the read-write records accessed by the extension.
-    // commit_payload: RefCell<Vec<u8>>,
+    kv_buffer: RefCell<Vec<u8>>,
+    /// number of responses to wait for
+    pub pending_resps: Cell<usize>,
 
     // the key_len for each table
     // TODO: make this a hashmap indexed by table_id
@@ -116,7 +118,7 @@ pub struct ProxyDB {
 }
 
 impl ProxyDB {
-    pub fn get_keylen(&self, _table_id: usize) -> usize {
+    pub fn get_keylen(&self) -> usize {
         self.key_len.get()
     }
     /// This method creates and returns the `ProxyDB` object. This DB issues the remote RPC calls
@@ -158,6 +160,8 @@ impl ProxyDB {
             model: model,
             // commit_payload: RefCell::new(Vec::new()),
             key_len: Cell::new(0),
+            kv_buffer: RefCell::new(Vec::with_capacity(1024)),
+            pending_resps: Cell::new(0),
         }
     }
 
@@ -176,7 +180,7 @@ impl ProxyDB {
     pub fn get_waiting(&self) -> bool {
         self.waiting.borrow().clone()
     }
-
+    /*
     /// This method is used to add a record to the read set. The return value of get()/multiget()
     /// goes the read set.
     ///
@@ -195,6 +199,40 @@ impl ProxyDB {
             Bytes::from(key),
             Bytes::from(value),
         ));
+    }
+    */
+
+    /// the get resp is scattered in multiple packets
+    pub fn collect_resp(
+        &self,
+        record: &[u8],
+        key_len: usize,
+        segment_id: usize,
+        num_segments: usize,
+    ) -> bool {
+        let (version, entry) = record.split_at(8);
+        let (key, value) = entry.split_at(key_len);
+        let value_len = value.len();
+        if self.pending_resps.get() == 0 {
+            let capacity = value_len * num_segments;
+            self.kv_buffer.borrow_mut().resize(capacity, 0);
+            self.pending_resps.set(num_segments);
+        }
+        let mut kv_buffer = self.kv_buffer.borrow_mut();
+        kv_buffer[segment_id * value_len..(segment_id + 1) * value_len].copy_from_slice(value);
+        let mut pending_resps = self.pending_resps.get();
+        pending_resps -= 1;
+        self.pending_resps.set(pending_resps);
+        if pending_resps == 0 {
+            self.readset.borrow_mut().push(KV::new(
+                Bytes::from(version),
+                Bytes::from(key),
+                Bytes::from(value),
+            ));
+            true
+        } else {
+            false
+        }
     }
 
     /// This method is used to add a record to the write set. The return value of put()

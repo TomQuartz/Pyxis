@@ -66,6 +66,7 @@ impl PortQueue {
     #[inline]
     fn send_queue(&self, queue: i32, pkts: *mut *mut MBuf, to_send: i32) -> Result<u32> {
         unsafe {
+            // the call to rte_eth_tx_burst will transparently free the packet after transmission
             let sent = send_pkts(self.port_id, queue, pkts, to_send);
             // let update = self.stats_tx.stats.load(Ordering::Relaxed) + sent as usize;
             // self.stats_tx.stats.store(update, Ordering::Relaxed);

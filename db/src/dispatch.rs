@@ -31,7 +31,7 @@ use super::rpc::*;
 use super::sched::RoundRobin;
 use super::service::Service;
 use super::task::{Task, TaskPriority, TaskState};
-use super::wireformat;
+use super::wireformat::{self, OpCode};
 
 use super::e2d2::common::EmptyMetadata;
 use super::e2d2::headers::*;
@@ -277,7 +277,7 @@ where
                         // No packets were available for receive.
                         return None;
                     }
-                    if num_received==self.max_rx_packets as u32{
+                    if num_received == self.max_rx_packets as u32 {
                         warn!("some recvd packets may still be in the rx ring");
                     }
                     trace!("port {} recv {} raw pkts", self.id, num_received);
@@ -337,7 +337,11 @@ where
                         // No packets were available for receive.
                         return None;
                     }
-                    trace!("port {} steal {} raw pkts from sibling port", self.id, num_received);
+                    trace!(
+                        "port {} steal {} raw pkts from sibling port",
+                        self.id,
+                        num_received
+                    );
                     // Allocate a vector for the received packets.
                     let mut recvd_packets = Vec::<Packet<NullHeader, EmptyMetadata>>::with_capacity(
                         self.max_rx_packets as usize,
@@ -542,9 +546,14 @@ where
                     && (ip_header.length() >= MIN_LENGTH_IP)
                     && (ip_header.dst() == self.network_ip_addr);
                 if !valid {
-                    trace!("port {} ip {} drop invalid req: ip hdr {:?}",self.id,self.network_ip_addr,ip_header);
-                }else{
-                    trace!("port {} recv from ip {}",self.id,ip_header.src());
+                    trace!(
+                        "port {} ip {} drop invalid req: ip hdr {:?}",
+                        self.id,
+                        self.network_ip_addr,
+                        ip_header
+                    );
+                } else {
+                    trace!("port {} recv from ip {}", self.id, ip_header.src());
                 }
             }
 
@@ -622,6 +631,33 @@ where
         return parsed_packets;
     }
 
+    fn create_response(
+        &self,
+        request: &Packet<UdpHeader, EmptyMetadata>,
+    ) -> Option<Packet<UdpHeader, EmptyMetadata>> {
+        if let Some(response) = new_packet() {
+            let mut response = response
+                .push_header(&self.resp_mac_header)
+                .expect("ERROR: Failed to add response MAC header")
+                .push_header(&self.resp_ip_header)
+                .expect("ERROR: Failed to add response IP header")
+                .push_header(&self.resp_udp_header)
+                .expect("ERROR: Failed to add response UDP header");
+
+            // Set the destination port on the response UDP header.
+            response
+                .get_mut_header()
+                .set_src_port(request.get_header().dst_port());
+            response
+                .get_mut_header()
+                .set_dst_port(request.get_header().src_port());
+            Some(response)
+        } else {
+            warn!("Failed to allocate packet for response");
+            None
+        }
+    }
+
     /// This method dispatches requests to the appropriate service. A response
     /// packet is pre-allocated by this method and handed in along with the
     /// request. Once the service returns, this method frees the request packet.
@@ -654,7 +690,58 @@ where
             self.resp_mac_header.set_dst(mac.get_header().src());
 
             let request = mac.parse_header::<IpHeader>().parse_header::<UdpHeader>();
-
+            if parse_rpc_service(&request) == wireformat::Service::MasterService {
+                // The request is for Master, get it's opcode, and call into Master.
+                let opcode = parse_rpc_opcode(&request);
+                trace!(
+                    "port {} dispatch req {:?} from ip {}",
+                    self.id,
+                    opcode,
+                    from
+                );
+                match opcode {
+                    OpCode::SandstormGetRpc => {
+                        let num_responses =
+                            self.master_service.value_len / self.master_service.record_len;
+                        let mut responses = vec![];
+                        for _ in 0..num_responses {
+                            responses.push(self.create_response(&request).unwrap());
+                        }
+                        match self.master_service.get(request, responses) {
+                            Ok(task) => self.scheduler.enqueue(task),
+                            Err((req, resps)) => {
+                                // Master returned an error. The allocated request and response packets
+                                // need to be freed up.
+                                warn!("failed to dispatch req");
+                                req.free_packet();
+                                for resp in resps.into_iter() {
+                                    resp.free_packet();
+                                }
+                            }
+                        }
+                    }
+                    OpCode::SandstormInvokeRpc => {
+                        let response = self.create_response(&request).unwrap();
+                        match self.master_service.dispatch_invoke(request, response) {
+                            Ok(task) => self.scheduler.enqueue(task),
+                            Err((req, res)) => {
+                                // Master returned an error. The allocated request and response packets
+                                // need to be freed up.
+                                req.free_packet();
+                                res.free_packet();
+                            }
+                        }
+                    }
+                    _ => request.free_packet(),
+                }
+            } else {
+                // The request is not for Master. The allocated request and response packets need
+                // to be freed up.
+                trace!("drop req from ip {}", from);
+                ignore_packets.push(request);
+                // ignore_packets.push(response);
+            }
+            /*
             // Allocate a packet for the response upfront, and add in MAC, IP, and UDP headers.
             if let Some(response) = new_packet() {
                 let mut response = response
@@ -676,7 +763,12 @@ where
                 if parse_rpc_service(&request) == wireformat::Service::MasterService {
                     // The request is for Master, get it's opcode, and call into Master.
                     let opcode = parse_rpc_opcode(&request);
-                    trace!("port {} dispatch req {:?} from ip {}", self.id, opcode, from);
+                    trace!(
+                        "port {} dispatch req {:?} from ip {}",
+                        self.id,
+                        opcode,
+                        from
+                    );
                     if !FAST_PATH {
                         match self.master_service.dispatch(opcode, request, response) {
                             Ok(task) => {
@@ -758,6 +850,7 @@ where
             } else {
                 println!("ERROR: Failed to allocate packet for response");
             }
+            */
         }
 
         // Enqueue completed native resps on to scheduler's responses queue
@@ -890,7 +983,7 @@ where
         &mut self,
     ) -> Option<(
         Packet<UdpHeader, EmptyMetadata>,
-        Packet<UdpHeader, EmptyMetadata>,
+        Vec<Packet<UdpHeader, EmptyMetadata>>,
     )> {
         // The Dispatch task does not return any packets.
         None
@@ -902,7 +995,9 @@ where
     }
 
     /// Refer to the `Task` trait for Documentation.
-    fn update_cache(&mut self, _record: &[u8], _keylen: usize) {}
+    fn update_cache(&mut self, _record: &[u8], _seg_id: usize, _num_segs: usize) -> bool {
+        true
+    }
 
     /// Refer to the `Task` trait for Documentation.
     fn get_id(&self) -> u64 {

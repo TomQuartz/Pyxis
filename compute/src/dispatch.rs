@@ -778,12 +778,16 @@ impl ComputeNodeDispatcher {
         let p = response.parse_header::<GetResponse>();
         let hdr = p.get_header();
         let timestamp = hdr.common_header.stamp; // this is the timestamp when this ext is inserted in taskmanager
-        let table_id = hdr.table_id as usize;
+        let num_segments = hdr.num_segments as usize;
+        let segment_id = hdr.segment_id as usize;
+        // let table_id = hdr.table_id as usize;
         let records = p.get_payload();
         let recordlen = records.len();
         if p.get_header().common_header.status == RpcStatus::StatusOk {
+            // self.manager
+            //     .update_rwset(timestamp, table_id, records, recordlen);
             self.manager
-                .update_rwset(timestamp, table_id, records, recordlen);
+                .update_rwset(timestamp, records, recordlen, segment_id, num_segments);
             // self.sender.return_credit();
         } else {
             warn!(

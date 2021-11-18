@@ -286,12 +286,17 @@ impl RoundRobin {
                 if task.run().0 == COMPLETED {
                     // The task finished execution, check for request and response packets. If they
                     // exist, then free the request packet, and enqueue the response packet.
-                    if let Some((req, res)) = unsafe { task.tear() } {
+                    if let Some((req, resps)) = unsafe { task.tear() } {
                         trace!("task complete");
                         req.free_packet();
-                        self.responses
-                            .write()
-                            .push(rpc::fixup_header_length_fields(res));
+                        for resp in resps.into_iter() {
+                            self.responses
+                                .write()
+                                .push(rpc::fixup_header_length_fields(resp));
+                        }
+                        // self.responses
+                        //     .write()
+                        //     .push(rpc::fixup_header_length_fields(res));
                     }
                     if cfg!(feature = "execution") {
                         total_time += task.time();
@@ -328,11 +333,16 @@ impl RoundRobin {
                                 && ((yeilded_task.time() - yeilded_task.db_time()) > credit as u64)
                             {
                                 yeilded_task.set_state(STOPPED);
-                                if let Some((req, res)) = unsafe { yeilded_task.tear() } {
+                                if let Some((req, resps)) = unsafe { yeilded_task.tear() } {
                                     req.free_packet();
-                                    self.responses
-                                        .write()
-                                        .push(rpc::fixup_header_length_fields(res));
+                                    for resp in resps.into_iter() {
+                                        self.responses
+                                            .write()
+                                            .push(rpc::fixup_header_length_fields(resp));
+                                    }
+                                    // self.responses
+                                    //     .write()
+                                    //     .push(rpc::fixup_header_length_fields(res));
                                 }
                             } else {
                                 self.waiting.write().push_front(yeilded_task);

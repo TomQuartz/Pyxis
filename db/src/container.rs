@@ -175,7 +175,7 @@ impl<'a> Task for Container<'a> {
         &mut self,
     ) -> Option<(
         Packet<UdpHeader, EmptyMetadata>,
-        Packet<UdpHeader, EmptyMetadata>,
+        Vec<Packet<UdpHeader, EmptyMetadata>>,
     )> {
         // First, drop the generator. Doing so ensures that self.db is the
         // only reference to the extension's execution context.
@@ -193,7 +193,7 @@ impl<'a> Task for Container<'a> {
                     let req = req.deparse_header(PACKET_UDP_LEN as usize);
                     let res = res.deparse_header(PACKET_UDP_LEN as usize);
 
-                    return Some((req, res));
+                    return Some((req, vec![res]));
                 } else {
                     let (req, mut res) = db.commit();
                     // add task duration to resp
@@ -205,7 +205,7 @@ impl<'a> Task for Container<'a> {
                     let req = req.deparse_header(PACKET_UDP_LEN as usize);
                     let res = res.deparse_header(PACKET_UDP_LEN as usize);
 
-                    return Some((req, res));
+                    return Some((req, vec![res]));
                 }
             }
 
@@ -221,7 +221,9 @@ impl<'a> Task for Container<'a> {
     }
 
     /// Refer to the `Task` trait for Documentation.
-    fn update_cache(&mut self, _record: &[u8], _table_id: usize) {}
+    fn update_cache(&mut self, _record: &[u8], _seg_id: usize, _num_segs: usize) -> bool {
+        true
+    }
 
     /// Refer to the `Task` trait for Documentation.
     fn get_id(&self) -> u64 {

@@ -114,6 +114,9 @@ pub struct ServerConfig {
     pub num_cores: i32,
     /// rx batch size
     pub max_rx_packets: usize,
+    pub key_len: usize,
+    pub value_len: usize,
+    pub record_len: usize,
 }
 
 impl ServerConfig {

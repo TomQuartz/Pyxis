@@ -77,6 +77,12 @@ pub struct Master {
 
     /// Manager of the table heap. Required to allow writes to the database.
     heap: Allocator,
+
+    key_len: usize,
+    /// value len
+    pub value_len: usize,
+    /// the payload len of get resp packet
+    pub record_len: usize,
 }
 
 // Implementation of methods on Master.
@@ -86,7 +92,7 @@ impl Master {
     /// # Return
     ///
     /// A Master service capable of creating schedulable tasks out of RPC requests.
-    pub fn new() -> Master {
+    pub fn new(key_len: usize, value_len: usize, record_len: usize) -> Master {
         Master {
             // Cannot use copy constructor because of the Arc<Tenant>.
             tenants: [
@@ -126,6 +132,9 @@ impl Master {
             ],
             extensions: ExtensionManager::new(),
             heap: Allocator::new(),
+            key_len: key_len,
+            value_len: value_len,
+            record_len: record_len,
         }
     }
 
@@ -147,8 +156,8 @@ impl Master {
             .get_table(table_id)
             .expect("Failed to init test table.");
 
-        let mut key = vec![0; 30];
-        let mut val = vec![0; 100];
+        let mut key = vec![0; self.key_len];
+        let mut val = vec![0; self.value_len];
 
         // Allocate objects, and fill up the above table. Each object consists of a 30 Byte key
         // and a 100 Byte value.
@@ -753,15 +762,15 @@ impl Master {
     /// in request and response packets are returned with the response status appropriately set.
     #[allow(unreachable_code)]
     #[allow(unused_assignments)]
-    fn get(
+    pub fn get(
         &self,
         req: Packet<UdpHeader, EmptyMetadata>,
-        res: Packet<UdpHeader, EmptyMetadata>,
+        mut resps: Vec<Packet<UdpHeader, EmptyMetadata>>,
     ) -> Result<
         Box<Task>,
         (
             Packet<UdpHeader, EmptyMetadata>,
-            Packet<UdpHeader, EmptyMetadata>,
+            Vec<Packet<UdpHeader, EmptyMetadata>>,
         ),
     > {
         // First, parse the request packet.
@@ -782,28 +791,44 @@ impl Master {
         }
 
         // Next, add a header to the response packet.
-        let mut res = res
-            .push_header(&GetResponse::new(
-                rpc_stamp,
-                OpCode::SandstormGetRpc,
-                tenant_id,
-                table_id as u32,
-            ))
-            .expect("Failed to setup GetResponse");
+        let num_segments = resps.len() as u32;
+        let mut segment_id: u32 = 0;
+        let mut get_resps: Vec<Packet<GetResponse, EmptyMetadata>> = resps
+            .into_iter()
+            .map(|p| {
+                let get_resp = p
+                    .push_header(&GetResponse::new(
+                        rpc_stamp,
+                        OpCode::SandstormGetRpc,
+                        tenant_id,
+                        num_segments,
+                        segment_id,
+                    ))
+                    .expect("Failed to setup GetResponse");
+                segment_id += 1;
+                get_resp
+            })
+            .collect();
 
         // If the payload size is less than the key length, return an error.
         if req.get_payload().len() < key_length as usize {
-            res.get_mut_header().common_header.status = RpcStatus::StatusMalformedRequest;
-            return Err((
-                req.deparse_header(PACKET_UDP_LEN as usize),
-                res.deparse_header(PACKET_UDP_LEN as usize),
-            ));
+            let get_resps = get_resps
+                .into_iter()
+                .map(|mut p| {
+                    p.get_mut_header().common_header.status = RpcStatus::StatusMalformedRequest;
+                    p.deparse_header(PACKET_UDP_LEN as usize)
+                })
+                .collect();
+            // res.get_mut_header().common_header.status = RpcStatus::StatusMalformedRequest;
+            return Err((req.deparse_header(PACKET_UDP_LEN as usize), get_resps));
         }
 
         // Lookup the tenant, and get a handle to the allocator. Required to avoid capturing a
         // reference to Master in the generator below.
         let tenant = self.get_tenant(tenant_id);
         let alloc: *const Allocator = &self.heap;
+
+        let record_len = self.record_len;
 
         // Create a generator for this request.
         let gen = Box::pin(move || {
@@ -837,18 +862,25 @@ impl Master {
                     if let Some(opt) = opt {
                                 let (k, value) = &opt;
                                 status = RpcStatus::StatusInternalError;
-                                let _result = res.add_to_payload_tail(1, pack(&optype));
-                                let _ = res.add_to_payload_tail(size_of::<Version>(), &unsafe { transmute::<Version, [u8; 8]>(version) });
-                                let result = res.add_to_payload_tail(k.len(), &k[..]);
-                                match result {
-                                    Ok(()) => {
-                                        res.add_to_payload_tail(value.len(), &value[..]).ok()
-                                    }
-
-                                    Err(_) => {
-                                        Some(())
-                                    }
+                                for (segment,resp) in get_resps.iter_mut().enumerate() {
+                                    resp.add_to_payload_tail(1, pack(&optype)).expect("failed to add optype");
+                                    resp.add_to_payload_tail(size_of::<Version>(), &unsafe { transmute::<Version, [u8; 8]>(version) }).expect("failed to add version number");
+                                    resp.add_to_payload_tail(k.len(), &k[..]).expect("failed to add key");
+                                    resp.add_to_payload_tail(record_len, &value[segment*record_len..(segment+1)*record_len]).expect("failed to add payload");
                                 }
+                                Some(())
+                                // let _result = res.add_to_payload_tail(1, pack(&optype));
+                                // let _ = res.add_to_payload_tail(size_of::<Version>(), &unsafe { transmute::<Version, [u8; 8]>(version) });
+                                // let result = res.add_to_payload_tail(k.len(), &k[..]);
+                                // match result {
+                                //     Ok(()) => {
+                                //         res.add_to_payload_tail(value.len(), &value[..]).ok()
+                                //     }
+
+                                //     Err(_) => {
+                                //         Some(())
+                                //     }
+                                // }
                             } else {
                                 None
                             }
@@ -859,28 +891,38 @@ impl Master {
                                 status = RpcStatus::StatusOk;
                                 Some(())
                             });
-
-            match outcome {
-                // The RPC completed successfully. Update the response header with
-                // the status and value length.
-                Some(()) => {
-                    let val_len = res.get_payload().len() as u32;
-
-                    let hdr: &mut GetResponse = res.get_mut_header();
-                    // hdr.value_length = val_len;
-                    hdr.common_header.status = status;
-                }
-
-                // The RPC failed. Update the response header with the status.
-                None => {
-                    res.get_mut_header().common_header.status = status;
-                }
+            for resp in get_resps.iter_mut() {
+                resp.get_mut_header().common_header.status = status.clone();
             }
+            // match outcome {
+            //     // The RPC completed successfully. Update the response header with
+            //     // the status and value length.
+            //     Some(()) => {
+            //         // let val_len = res.get_payload().len() as u32;
+
+            //         let hdr: &mut GetResponse = res.get_mut_header();
+            //         // hdr.value_length = val_len;
+            //         hdr.common_header.status = status;
+            //     }
+
+            //     // The RPC failed. Update the response header with the status.
+            //     None => {
+            //         res.get_mut_header().common_header.status = status;
+            //     }
+            // }
 
             // Deparse request and response packets down to UDP, and return from the generator.
+            let get_resps = get_resps
+                .into_iter()
+                .map(|mut p| {
+                    p.get_mut_header().common_header.status = status.clone();
+                    p.deparse_header(PACKET_UDP_LEN as usize)
+                })
+                .collect();
             return Some((
                 req.deparse_header(PACKET_UDP_LEN as usize),
-                res.deparse_header(PACKET_UDP_LEN as usize),
+                get_resps,
+                // res.deparse_header(PACKET_UDP_LEN as usize),
             ));
 
             // XXX: This yield is required to get the compiler to compile this closure into a
@@ -891,7 +933,7 @@ impl Master {
         // Return a native task.
         return Ok(Box::new(Native::new(TaskPriority::REQUEST, gen)));
     }
-
+    /*
     /// Handed native get() RPC request.
     #[allow(unreachable_code)]
     #[allow(unused_assignments)]
@@ -1046,6 +1088,7 @@ impl Master {
         // Return a native task.
         // return Ok(Box::new(Native::new(TaskPriority::REQUEST, gen)));
     }
+    */
     /* original implementation of get_native, missing optype(len=1) and version(len=8)
     #[allow(unreachable_code)]
     #[allow(unused_assignments)]
@@ -1175,7 +1218,7 @@ impl Master {
         ));
     }
     */
-
+    /*
     /// Handles the put() RPC request.
     ///
     /// If the issuing tenant is valid, a new key-value pair is allocated, and inserted into a
@@ -1295,6 +1338,7 @@ impl Master {
         // Create and return a native task.
         return Ok(Box::new(Native::new(TaskPriority::REQUEST, gen)));
     }
+    */
 
     // This functions processes native put requests without creating a generator.
     #[allow(unreachable_code)]
@@ -1394,7 +1438,7 @@ impl Master {
             res.deparse_header(PACKET_UDP_LEN as usize),
         ));
     }
-
+    /*
     /// Handles the multiget() RPC request.
     ///
     /// If issued by a valid tenant for a valid table, lookups up a list of keys and returns
@@ -1551,6 +1595,7 @@ impl Master {
         // Create and return a native task.
         return Ok(Box::new(Native::new(TaskPriority::REQUEST, gen)));
     }
+    */
 
     // This functions processes native multiget requests without creating a generator.
     #[allow(unreachable_code)]
@@ -1784,7 +1829,7 @@ impl Master {
             res.deparse_header(PACKET_UDP_LEN as usize),
         ));
     }
-
+    /*
     /// Handles the Commit() RPC request.
     ///
     /// The read-write set is added to
@@ -1932,6 +1977,8 @@ impl Master {
         // Return a native task.
         return Ok(Box::new(Native::new(TaskPriority::REQUEST, gen)));
     }
+    */
+
     /// Handles the install() RPC request.
     ///
     /// If issued by a valid tenant, installs (loads) an extension into the database.
@@ -2022,26 +2069,23 @@ impl Service for Master {
     > {
         // Based on the opcode, call the relevant RPC handler.
         match op {
-            OpCode::SandstormGetRpc => {
-                return self.get(req, res);
-            }
+            // OpCode::SandstormGetRpc => {
+            //     return self.get(req, res);
+            // }
+            // OpCode::SandstormPutRpc => {
+            //     return self.put(req, res);
+            // }
 
-            OpCode::SandstormPutRpc => {
-                return self.put(req, res);
-            }
-
-            OpCode::SandstormMultiGetRpc => {
-                return self.multiget(req, res);
-            }
-
+            // OpCode::SandstormMultiGetRpc => {
+            //     return self.multiget(req, res);
+            // }
             OpCode::SandstormInvokeRpc => {
                 return self.invoke(req, res);
             }
 
-            OpCode::SandstormCommitRpc => {
-                return self.commit(req, res);
-            }
-
+            // OpCode::SandstormCommitRpc => {
+            //     return self.commit(req, res);
+            // }
             _ => {
                 return Err((req, res));
             }
@@ -2080,10 +2124,9 @@ impl Service for Master {
     > {
         // Based on the opcode, call the relevant RPC handler.
         match op {
-            OpCode::SandstormGetRpc => {
-                return self.get_native(req, res);
-            }
-
+            // OpCode::SandstormGetRpc => {
+            //     return self.get_native(req, res);
+            // }
             OpCode::SandstormPutRpc => {
                 return self.put_native(req, res);
             }

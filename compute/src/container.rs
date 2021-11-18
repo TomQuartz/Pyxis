@@ -199,7 +199,7 @@ impl Task for Container {
         &mut self,
     ) -> Option<(
         Packet<UdpHeader, EmptyMetadata>,
-        Packet<UdpHeader, EmptyMetadata>,
+        Vec<Packet<UdpHeader, EmptyMetadata>>,
     )> {
         // if let Some(proxydb) = self.db.get_mut() {
         //     proxydb.commit();
@@ -215,7 +215,7 @@ impl Task for Container {
             let (req, res) = proxydb.commit();
             let req = req.deparse_header(PACKET_UDP_LEN as usize);
             let res = res.deparse_header(PACKET_UDP_LEN as usize);
-            Some((req, res))
+            Some((req, vec![res]))
         } else {
             panic!("Failed to unwrap proxydb!");
         }
@@ -227,19 +227,24 @@ impl Task for Container {
     }
 
     /// Refer to the `Task` trait for Documentation.
-    // TODO: move table_id to record payload
-    fn update_cache(&mut self, record: &[u8], table_id: usize) {
+    fn update_cache(&mut self, record: &[u8], segment_id: usize, num_segments: usize) -> bool {
         if let Some(proxydb) = self.db.get_mut() {
-            let keylen = proxydb.get_keylen(table_id);
+            let keylen = proxydb.get_keylen();
             match parse_record_optype(record) {
                 OpType::SandstormRead => {
-                    proxydb.set_read_record(record.split_at(1).1, keylen);
+                    // proxydb.set_read_record(record.split_at(1).1, keylen, segment_id);
+                    proxydb.collect_resp(record.split_at(1).1, keylen, segment_id, num_segments)
                 }
 
-                OpType::SandstormWrite => proxydb.set_write_record(record.split_at(1).1, keylen),
+                OpType::SandstormWrite => {
+                    proxydb.set_write_record(record.split_at(1).1, keylen);
+                    true
+                }
 
-                _ => {}
+                _ => false,
             }
+        } else {
+            false
         }
     }
 
@@ -249,6 +254,6 @@ impl Task for Container {
     }
 
     fn set_time(&mut self, overhead: u64) {
-        self.storage_overhead+=overhead;
+        self.storage_overhead += overhead;
     }
 }

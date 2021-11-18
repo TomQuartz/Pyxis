@@ -97,7 +97,7 @@ fn main() {
     let config: config::ComputeConfig = config::load("compute.toml");
     warn!("Starting up compute node with config {:?}", config);
 
-    let mut master = Master::new();
+    let mut master = Master::new(0, 0, 0);
     // Create tenants with extensions.
     let num_tenants: u32 = 1;
     info!("Populating extension for {} tenants", num_tenants);

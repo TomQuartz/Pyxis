@@ -154,7 +154,15 @@ impl TaskManager {
     /// # Arguments
     /// * `records`: A reference to the RWset sent back by the server when the extension is
     ///             pushed back.
-    pub fn update_rwset(&mut self, id: u64, table_id: usize, records: &[u8], recordlen: usize) {
+    pub fn update_rwset(
+        &mut self,
+        id: u64,
+        // table_id: usize,
+        records: &[u8],
+        recordlen: usize,
+        segment_id: usize,
+        num_segments: usize,
+    ) {
         if let Some(mut task) = self.waiting.remove(&id) {
             if cfg!(feature = "checksum") {
                 // let (keys, records) = records.split_at(377);
@@ -162,12 +170,22 @@ impl TaskManager {
                 // for record in records.chunks(recordlen) {
                 //     task.update_cache(record, keylen);
                 // }
+                self.ready.push_back(task);
             } else {
+                let mut ready = false;
                 for record in records.chunks(recordlen) {
-                    task.update_cache(record, table_id);
+                    // task.update_cache(record, table_id);
+                    if task.update_cache(record, segment_id, num_segments) {
+                        ready = true;
+                    }
+                }
+                if ready {
+                    self.ready.push_back(task);
+                } else {
+                    self.waiting.insert(id, task);
                 }
             }
-            self.ready.push_back(task);
+            // self.ready.push_back(task);
         } else {
             info!("No waiting task with id {}", id);
         }
@@ -216,10 +234,12 @@ impl TaskManager {
                 //     task.tear();
                 //     // Do something for commit(Transaction commit?)
                 // }
-                if let Some((req, res)) = unsafe { task.tear() } {
+                if let Some((req, resps)) = unsafe { task.tear() } {
                     req.free_packet();
                     trace!("push resps");
-                    self.responses.push(rpc::fixup_header_length_fields(res))
+                    for resp in resps.into_iter() {
+                        self.responses.push(rpc::fixup_header_length_fields(resp));
+                    }
                 }
             } else {
                 taskstate = task.state();

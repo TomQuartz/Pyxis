@@ -320,7 +320,7 @@ fn main() {
     info!("Starting up Sandstorm server with config {:?}", config);
 
     // let master = Arc::new(Master::new());
-    let mut master = Master::new();
+    let mut master = Master::new(config.key_len,config.value_len,config.record_len);
 
     // Create tenants with data and extensions.
     match config.workload.as_str() {

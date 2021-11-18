@@ -112,7 +112,7 @@ pub trait Task {
         &mut self,
     ) -> Option<(
         Packet<UdpHeader, EmptyMetadata>,
-        Packet<UdpHeader, EmptyMetadata>,
+        Vec<Packet<UdpHeader, EmptyMetadata>>,
     )>;
 
     /// When called, this method will change the task state to `state` and will return.
@@ -128,7 +128,7 @@ pub trait Task {
     /// # Arguments
     ///
     /// * `record`: The record, which will be added to the RW set.
-    fn update_cache(&mut self, record: &[u8], table_id: usize);
+    fn update_cache(&mut self, record: &[u8], segment_id: usize, num_segments: usize) -> bool;
 
     /// This method returns the unique task identifier.
     ///
