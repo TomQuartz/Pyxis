@@ -93,6 +93,7 @@ pub fn init(db: Rc<DB>) -> Pin<Box<Generator<Yield = u64, Return = u64>>> {
         let mut mul: u64 = 0;
 
         for i in 0..num {
+            // println!("round {} key {:?}", i, keys);
             GET!(db, t_table, keys, obj);
 
             if i == num - 1 {
