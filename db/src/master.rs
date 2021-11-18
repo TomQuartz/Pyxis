@@ -894,6 +894,14 @@ impl Master {
             for resp in get_resps.iter_mut() {
                 resp.get_mut_header().common_header.status = status.clone();
             }
+            if outcome == None {
+                warn!(
+                    "kv req with id {} key {:?} failed with status {:?}",
+                    rpc_stamp,
+                    req.get_payload().split_at(key_length as usize).0,
+                    status
+                );
+            }
             // match outcome {
             //     // The RPC completed successfully. Update the response header with
             //     // the status and value length.
