@@ -153,6 +153,7 @@ impl Task for Native {
     /// Refer to the Task trait for documentation.
     unsafe fn tear(
         &mut self,
+        _server_load: &mut u64
     ) -> Option<(
         Packet<UdpHeader, EmptyMetadata>,
         Vec<Packet<UdpHeader, EmptyMetadata>>,

@@ -221,6 +221,9 @@ pub struct RpcResponseHeader {
 
     /// duration
     pub duration: u64,
+
+    /// server load
+    pub server_load: u64,
 }
 
 impl RpcResponseHeader {
@@ -240,6 +243,7 @@ impl RpcResponseHeader {
             tenant: tenant,
             stamp: req_stamp,
             duration: 0,
+            server_load: 0,
         }
     }
 }
@@ -610,6 +614,7 @@ pub struct InvokeResponse {
     /// A common RPC response header containing the status of the RPC.
     pub common_header: RpcResponseHeader,
     pub overhead: u64,
+    pub server_load: u64,
 }
 
 impl InvokeResponse {
@@ -625,6 +630,7 @@ impl InvokeResponse {
         InvokeResponse {
             common_header: RpcResponseHeader::new(req_stamp, opcode, tenant),
             overhead: 0,
+            server_load: 0,
         }
     }
 }

@@ -171,8 +171,11 @@ impl<'a> Task for Container<'a> {
     }
 
     /// Refer to the Task trait for Documentation.
+    // NOTE: pass arg server_load here instead of maintaining a field for each task
+    // because server_load is a property of the server
     unsafe fn tear(
         &mut self,
+        server_load: &mut u64,
     ) -> Option<(
         Packet<UdpHeader, EmptyMetadata>,
         Vec<Packet<UdpHeader, EmptyMetadata>>,
@@ -196,8 +199,16 @@ impl<'a> Task for Container<'a> {
                     return Some((req, vec![res]));
                 } else {
                     let (req, mut res) = db.commit();
-                    // add task duration to resp
-                    res.get_mut_header().common_header.duration = self.time;
+                    let mut invoke_resp_hdr = res.get_mut_header();
+                    // add task duration to COMMON resp hdr
+                    invoke_resp_hdr.common_header.duration = self.time;
+                    // add server load to INVOKE resp hdr
+                    // NOTE: this field is for INVOKE resp only, used by LB
+                    // for GET resp, the arg server_load is ignored by native::tear
+                    if *server_load > 0 {
+                        invoke_resp_hdr.server_load = *server_load;
+                        *server_load = 0;
+                    }
                     // let time_ptr = &self.time as *const _ as *const u8;
                     // let time_u8 = unsafe { slice::from_raw_parts(time_ptr, mem::size_of::<u64>()) };
                     // res.add_to_payload_tail(time_u8.len(),time_u8).unwrap();

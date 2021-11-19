@@ -197,6 +197,7 @@ impl Task for Container {
     /// Refer to the Task trait for Documentation.
     unsafe fn tear(
         &mut self,
+        server_load: &mut u64,
     ) -> Option<(
         Packet<UdpHeader, EmptyMetadata>,
         Vec<Packet<UdpHeader, EmptyMetadata>>,
@@ -212,7 +213,15 @@ impl Task for Container {
         });
         let context = self.db.replace(None).unwrap();
         if let Ok(proxydb) = Rc::try_unwrap(context) {
-            let (req, res) = proxydb.commit();
+            let (req, mut res) = proxydb.commit();
+            // set profile
+            let mut invoke_resp_hdr = res.get_mut_header();
+            invoke_resp_hdr.common_header.duration = self.time;
+            invoke_resp_hdr.overhead = self.storage_overhead;
+            if *server_load > 0 {
+                invoke_resp_hdr.server_load = *server_load;
+                *server_load = 0;
+            }
             let req = req.deparse_header(PACKET_UDP_LEN as usize);
             let res = res.deparse_header(PACKET_UDP_LEN as usize);
             Some((req, vec![res]))

@@ -33,6 +33,7 @@ use spin::RwLock;
 
 use e2d2::allocators::CacheAligned;
 use e2d2::interface::{PacketTx, PortQueue};
+use std::rc::Rc;
 
 // /// The number of resp packets to send in one go
 // const TX_PACKETS_THRESH: usize = 8;
@@ -241,7 +242,8 @@ impl RoundRobin {
 
         // XXX: Trigger Pushback if the two dispatcher invocation is 20 us apart.
         let time_trigger: u64 = 2000 * credit as u64;
-        let mut previous: u64 = 0;
+        let mut previous: u64 = cycles::rdtsc();
+        let mut interval: u64 = 0;
         loop {
             // Set the time-stamp of the latest scheduling decision.
             let current = cycles::rdtsc();
@@ -268,6 +270,7 @@ impl RoundRobin {
                         // The time difference include the dispatcher time to account the native
                         // operations.
                         difference = current - previous;
+                        interval = difference;
                         previous = current;
                     }
 
@@ -286,7 +289,7 @@ impl RoundRobin {
                 if task.run().0 == COMPLETED {
                     // The task finished execution, check for request and response packets. If they
                     // exist, then free the request packet, and enqueue the response packet.
-                    if let Some((req, resps)) = unsafe { task.tear() } {
+                    if let Some((req, resps)) = unsafe { task.tear(&mut interval) } {
                         trace!("task complete");
                         req.free_packet();
                         for resp in resps.into_iter() {
@@ -319,6 +322,7 @@ impl RoundRobin {
                     // if there are MAX_RX_PACKETS /4 yeilded tasks in the queue, OR
                     // if two dispatcher invocations are 2000 us apart, AND
                     // if the current dispatcher invocation received MAX_RX_PACKETS /4 new tasks.
+                    /*
                     if cfg!(feature = "pushback")
                         && is_dispatcher == true
                         && (queue_length >= MAX_RX_PACKETS / 8 || difference > time_trigger)
@@ -349,6 +353,7 @@ impl RoundRobin {
                             }
                         }
                     }
+                    */
                     self.waiting.write().push_back(task);
                 }
             }

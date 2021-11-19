@@ -190,7 +190,7 @@ impl TaskManager {
             info!("No waiting task with id {}", id);
         }
     }
-
+    /*
     /// This method run the task associated with an extension. And on the completion
     /// of the task, it tear downs the task.
     ///
@@ -221,8 +221,9 @@ impl TaskManager {
         }
         (taskstate, time)
     }
+    */
 
-    pub fn execute_tasks(&mut self) {
+    pub fn execute_tasks(&mut self, mut server_load: u64) {
         let mut taskstate: TaskState;
         let mut time: u64;
         while let Some(mut task) = self.ready.pop_front() {
@@ -234,7 +235,8 @@ impl TaskManager {
                 //     task.tear();
                 //     // Do something for commit(Transaction commit?)
                 // }
-                if let Some((req, resps)) = unsafe { task.tear() } {
+                if let Some((req, resps)) = unsafe { task.tear(&mut server_load) } {
+                    assert_eq!(server_load, 0);
                     req.free_packet();
                     trace!("push resps");
                     for resp in resps.into_iter() {

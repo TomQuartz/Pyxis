@@ -700,6 +700,7 @@ pub struct ComputeNodeDispatcher {
     manager: TaskManager,
     // this is dynamic, i.e. resp dst is set as req src upon recving new reqs
     resp_hdr: PacketHeaders,
+    last_run: u64,
 }
 
 // TODO: move req_ports& into config?
@@ -729,6 +730,7 @@ impl ComputeNodeDispatcher {
             },
             manager: TaskManager::new(Arc::clone(&masterservice)),
             resp_hdr: PacketHeaders::new(&config.src, &NetConfig::default()),
+            last_run: 0,
         }
     }
 
@@ -741,8 +743,8 @@ impl ComputeNodeDispatcher {
         }
     }
 
-    pub fn run_extensions(&mut self) {
-        self.manager.execute_tasks();
+    pub fn run_extensions(&mut self, eventloop_interval: u64) {
+        self.manager.execute_tasks(eventloop_interval);
     }
 
     pub fn send_resps(&mut self) {
@@ -865,9 +867,15 @@ impl ComputeNodeDispatcher {
 
 impl Executable for ComputeNodeDispatcher {
     fn execute(&mut self) {
+        let mut eventloop_interval = 0;
+        if self.last_run > 0 {
+            let current = cycles::rdtsc();
+            eventloop_interval = current - self.last_run;
+            self.last_run = current;
+        }
         self.poll();
         // self.sender.try_send_packets();
-        self.run_extensions();
+        self.run_extensions(eventloop_interval);
         self.send_resps();
     }
 
