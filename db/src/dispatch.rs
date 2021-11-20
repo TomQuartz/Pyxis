@@ -384,6 +384,7 @@ where
         unsafe {
             let mut mbufs = vec![];
             let num_packets = packets.len();
+            let mut to_send = num_packets;
 
             // Extract Mbuf's from the batch of packets.
             while let Some(packet) = packets.pop() {
@@ -391,19 +392,36 @@ where
             }
 
             // Send out the above MBuf's.
-            match self.network_port.send(&mut mbufs) {
-                Ok(sent) => {
-                    if sent < num_packets as u32 {
-                        warn!("Was able to send only {} of {} packets.", sent, num_packets);
-                    }
-
-                    // self.responses_sent += mbufs.len() as u64;
-                }
-
-                Err(ref err) => {
-                    error!("Error on packet send: {}", err);
+            loop {
+                let sent = self.network_port.send(&mut mbufs).unwrap() as usize;
+                if sent == 0 {
+                    warn!(
+                        "Was able to send only {} of {} packets.",
+                        num_packets - to_send,
+                        num_packets
+                    );
+                    break;
+                } else if sent < to_send {
+                    // warn!("Was able to send only {} of {} packets.", sent, num_packets);
+                    to_send -= sent;
+                    mbufs.drain(0..sent as usize);
+                } else {
+                    break;
                 }
             }
+            // match self.network_port.send(&mut mbufs) {
+            //     Ok(sent) => {
+            //         if sent < num_packets as u32 {
+            //             warn!("Was able to send only {} of {} packets.", sent, num_packets);
+            //         }
+
+            //         // self.responses_sent += mbufs.len() as u64;
+            //     }
+
+            //     Err(ref err) => {
+            //         error!("Error on packet send: {}", err);
+            //     }
+            // }
         }
 
         // For every million packets sent out by the dispatcher, print out the
