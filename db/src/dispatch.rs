@@ -394,14 +394,15 @@ where
             // Send out the above MBuf's.
             loop {
                 let sent = self.network_port.send(&mut mbufs).unwrap() as usize;
-                if sent == 0 {
-                    warn!(
-                        "Was able to send only {} of {} packets.",
-                        num_packets - to_send,
-                        num_packets
-                    );
-                    break;
-                } else if sent < to_send {
+                // if sent == 0 {
+                //     warn!(
+                //         "Was able to send only {} of {} packets.",
+                //         num_packets - to_send,
+                //         num_packets
+                //     );
+                //     break;
+                // }
+                if sent < to_send {
                     // warn!("Was able to send only {} of {} packets.", sent, num_packets);
                     to_send -= sent;
                     mbufs.drain(0..sent as usize);
