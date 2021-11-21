@@ -200,16 +200,16 @@ fn get_default_netbricks_config(config: &config::ServerConfig) -> NetbricksConfi
     let net_primary_core: i32 = 19;
     let net_cores: Vec<i32> = (0i32..config.num_cores).collect();
     let net_strict_cores: bool = true;
-    let net_pool_size: u32 = 8192 - 1;
-    let net_cache_size: u32 = 128;
+    let net_pool_size: u32 = 16384 - 1;
+    let net_cache_size: u32 = 512;
     let net_dpdk_args: Option<String> = None;
 
     // Port configuration. Required to configure the physical network interface.
     let net_port_name = config.nic_pci.clone();
     let net_port_rx_queues: Vec<i32> = net_cores.clone();
     let net_port_tx_queues: Vec<i32> = net_cores.clone();
-    let net_port_rxd: i32 = 256;
-    let net_port_txd: i32 = 256;
+    let net_port_rxd: i32 = 1024;
+    let net_port_txd: i32 = 1024;
     let net_port_loopback: bool = false;
     let net_port_tcp_tso: bool = false;
     let net_port_csum_offload: bool = false;
@@ -320,7 +320,7 @@ fn main() {
     info!("Starting up Sandstorm server with config {:?}", config);
 
     // let master = Arc::new(Master::new());
-    let mut master = Master::new(config.key_len,config.value_len,config.record_len);
+    let mut master = Master::new(config.key_len, config.value_len, config.record_len);
 
     // Create tenants with data and extensions.
     match config.workload.as_str() {

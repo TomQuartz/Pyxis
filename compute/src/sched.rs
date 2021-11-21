@@ -180,8 +180,10 @@ impl TaskManager {
                     }
                 }
                 if ready {
+                    trace!("ext id {} all segments recvd", id);
                     self.ready.push_back(task);
                 } else {
+                    trace!("ext id {} still waiting for kv resps", id);
                     self.waiting.insert(id, task);
                 }
             }

@@ -188,10 +188,11 @@ impl Sender {
             GetGenerator::SandstormExtension,
         );
         trace!(
-            "ext id: {} send kv req, from {}, to {}",
+            "ext id: {} send key {:?}, from {}, to {}",
             id,
+            key,
             self.req_hdrs[endpoint].ip_header.src(),
-            self.req_hdrs[endpoint].ip_header.dst()
+            self.req_hdrs[endpoint].ip_header.dst(),
         );
         self.send_pkt(request);
         // let mut buffer = self.buffer.borrow_mut();
