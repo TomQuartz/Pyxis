@@ -28,6 +28,8 @@ pub extern crate log;
 
 mod container;
 
+pub mod xloop;
+
 // Public modules for binaries.
 #[allow(unused_imports)]
 /// Needed to send and receive the packets on the client side.

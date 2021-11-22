@@ -11,14 +11,14 @@ num_reqs = 640000
 multi_kv = [0]
 multi_ord = [2000]
 multi_ratio = [100]
-multi_rpc = false
+# multi_rpc = false
 
 learnable = false
 invoke_p = 100
-partition = -1
+partition = 50
 max_out = 8
 
-kayak_xloop_factor = 40000
+xloop_factor = 40000
 bimodal = false
 output_factor = 0
 

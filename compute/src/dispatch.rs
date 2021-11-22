@@ -456,7 +456,9 @@ pub struct Receiver {
 
 // Implementation of methods on Receiver.
 impl Receiver {
-    pub fn recv(&self) -> Option<Vec<Packet<UdpHeader, EmptyMetadata>>> {
+    // TODO: makesure src ip is properly set
+    // return pkt and (src ip, src udp port)
+    pub fn recv(&self) -> Option<Vec<(Packet<UdpHeader, EmptyMetadata>, (u32, u16))>> {
         // Allocate a vector of mutable MBuf pointers into which raw packets will be received.
         let mut mbuf_vector = Vec::with_capacity(self.max_rx_packets);
 
@@ -504,9 +506,9 @@ impl Receiver {
             for mbuf in mbuf_vector.iter_mut() {
                 let packet = packet_from_mbuf_no_increment(*mbuf, 0);
                 if let Some(packet) = self.check_mac(packet) {
-                    if let Some(packet) = self.check_ip(packet) {
-                        if let Some(packet) = self.check_udp(packet) {
-                            packets.push(packet);
+                    if let Some((packet, src_ip)) = self.check_ip(packet) {
+                        if let Some((packet, src_port)) = self.check_udp(packet) {
+                            packets.push((packet, (src_ip, src_port)));
                             continue;
                         }
                     }
@@ -539,7 +541,7 @@ impl Receiver {
     fn check_ip(
         &self,
         packet: Packet<MacHeader, EmptyMetadata>,
-    ) -> Option<Packet<IpHeader, EmptyMetadata>> {
+    ) -> Option<(Packet<IpHeader, EmptyMetadata>, u32)> {
         let packet = packet.parse_header::<IpHeader>();
         // The following block borrows the Ip header from the parsed
         // packet, and checks if it is valid. A packet is considered
@@ -555,8 +557,9 @@ impl Receiver {
             && (ip_header.length() >= MIN_LENGTH_IP)
             && (ip_header.dst() == self.ip_addr)
         {
-            trace!("recv from ip {}", ip_header.src());
-            Some(packet)
+            let src_ip = ip_header.src();
+            trace!("recv from ip {}", src_ip);
+            Some((packet, src_ip))
         } else {
             trace!(
                 "ip check failed, dst {} local {}",
@@ -572,14 +575,16 @@ impl Receiver {
     fn check_udp(
         &self,
         packet: Packet<IpHeader, EmptyMetadata>,
-    ) -> Option<Packet<UdpHeader, EmptyMetadata>> {
+    ) -> Option<(Packet<UdpHeader, EmptyMetadata>, u16)> {
         let packet = packet.parse_header::<UdpHeader>();
         // This block borrows the UDP header from the parsed packet, and
         // checks if it is valid. A packet is considered valid if:
         //      - It is not long enough,
         const MIN_LENGTH_UDP: u16 = common::PACKET_UDP_LEN + 2;
-        if packet.get_header().length() >= MIN_LENGTH_UDP {
-            Some(packet)
+        let udp_header: &UdpHeader = packet.get_header();
+        if udp_header.length() >= MIN_LENGTH_UDP {
+            let src_port = udp_header.src_port();
+            Some((packet, src_port))
         } else {
             trace!("udp check failed");
             packet.free_packet();
@@ -738,7 +743,7 @@ impl ComputeNodeDispatcher {
     pub fn poll(&mut self) {
         if let Some(mut packets) = self.receiver.recv() {
             trace!("recv {} packets", packets.len());
-            while let Some(packet) = packets.pop() {
+            while let Some((packet, _)) = packets.pop() {
                 self.dispatch(packet);
             }
         }

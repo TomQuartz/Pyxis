@@ -225,7 +225,7 @@ impl TaskManager {
     }
     */
 
-    pub fn execute_tasks(&mut self, mut server_load: u64) {
+    pub fn execute_tasks(&mut self, mut core_load: u64) {
         let mut taskstate: TaskState;
         let mut time: u64;
         while let Some(mut task) = self.ready.pop_front() {
@@ -237,8 +237,8 @@ impl TaskManager {
                 //     task.tear();
                 //     // Do something for commit(Transaction commit?)
                 // }
-                if let Some((req, resps)) = unsafe { task.tear(&mut server_load) } {
-                    assert_eq!(server_load, 0);
+                if let Some((req, resps)) = unsafe { task.tear(&mut core_load) } {
+                    assert_eq!(core_load, 0);
                     req.free_packet();
                     trace!("push resps");
                     for resp in resps.into_iter() {
