@@ -76,7 +76,7 @@ impl Sender {
         Sender {
             // id: net_port.rxq() as usize,
             num_endpoints: endpoints.len(),
-            req_hdrs: PacketHeaders::get_req_hdrs(src, net_port.txq() as u16, endpoints),
+            req_hdrs: PacketHeaders::create_hdrs(src, net_port.txq() as u16, endpoints),
             net_port: net_port, //.clone()
             // TODO: make this a vector, different number of ports for each storage endpoint
             dst_ports: endpoints.iter().map(|x| x.num_ports).collect(),
@@ -645,21 +645,22 @@ impl PacketHeaders {
             mac_header: mac_header,
         }
     }
-
-    fn get_req_hdrs(
+    fn create_hdr(src: &NetConfig, src_udp_port: u16, dst: &NetConfig) -> PacketHeaders {
+        let mut pkthdr = PacketHeaders::new(src, dst);
+        // we need to fix the src port for req_hdrs, which is used as the dst port in resp_hdr at rpc endpoint
+        pkthdr.udp_header.set_src_port(src_udp_port);
+        pkthdr
+    }
+    fn create_hdrs(
         src: &NetConfig,
         src_udp_port: u16,
         endpoints: &Vec<NetConfig>,
     ) -> Vec<PacketHeaders> {
-        let mut req_hdrs = vec![];
+        let mut pkthdrs = vec![];
         for dst in endpoints.iter() {
-            let mut pkthdr = PacketHeaders::new(src, dst);
-            // we need to fix the src port for req_hdrs, which is used as the dst port in resp_hdr at rpc endpoint
-            pkthdr.udp_header.set_src_port(src_udp_port);
-            // NOTE: for now, sender only use vec[0]
-            req_hdrs.push(pkthdr);
+            pkthdrs.push(Self::create_hdr(src, src_udp_port, dst));
         }
-        req_hdrs
+        pkthdrs
     }
 }
 
@@ -719,6 +720,11 @@ impl ComputeNodeDispatcher {
         // shared_credits: &Arc<RwLock<u32>>,
     ) -> ComputeNodeDispatcher {
         ComputeNodeDispatcher {
+            resp_hdr: PacketHeaders::create_hdr(
+                &config.src,
+                net_port.txq() as u16,
+                &NetConfig::default(),
+            ),
             sender: Rc::new(Sender::new(
                 net_port.clone(),
                 &config.src,
@@ -735,7 +741,6 @@ impl ComputeNodeDispatcher {
                 ),
             },
             manager: TaskManager::new(Arc::clone(&masterservice)),
-            resp_hdr: PacketHeaders::new(&config.src, &NetConfig::default()),
             last_run: 0,
         }
     }
