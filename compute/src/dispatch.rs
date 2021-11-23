@@ -873,12 +873,13 @@ impl ComputeNodeDispatcher {
 
 impl Executable for ComputeNodeDispatcher {
     fn execute(&mut self) {
-        let mut eventloop_interval = 0;
-        if self.last_run > 0 {
-            let current = cycles::rdtsc();
-            eventloop_interval = current - self.last_run;
-            self.last_run = current;
-        }
+        let current = cycles::rdtsc();
+        let eventloop_interval = if self.last_run > 0 {
+            current - self.last_run
+        } else {
+            0
+        };
+        self.last_run = current;
         self.poll();
         // self.sender.try_send_packets();
         self.run_extensions(eventloop_interval);

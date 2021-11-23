@@ -352,15 +352,75 @@ def draw_iso(s):
         plt.savefig(file_path)
 
 
-DATE = '20211027'
-EXPERIMENT = 'isolation'
+def read_multi_data(s, fl):
+    filepath = DATE + '_' + EXPERIMENT + '/' + str(s) + '/' + \
+               '{}.log'.format(fl)
+    with open(filepath, 'r', encoding='utf-8') as f:
+        content = f.readlines()
+    tput = []
+    latency0, latency1 = [], []
+    for line in content:
+        if line.find('type 0 >>>') != -1:
+            lat = line.strip().split()
+            lat = float(lat[-1][6:])
+            latency0.append(lat)
+        elif line.find('type 1 >>>') != -1:
+            lat = line.strip().split()
+            lat = float(lat[-1][6:])
+            latency1.append(lat)
+        elif line.find('Throughput') != -1:
+            tp = line.strip().split()
+            tp = float(tp[-1])
+            tput.append(tp)
+    return tput, latency0, latency1
+
+
+def draw_multi(s):
+    tput_kayak, lat0_kayak, lat1_kayak = read_multi_data(s, 'kayak')
+    tput_ours, lat0_ours, lat1_ours = read_multi_data(s, 'ours_partition0')
+
+    tput_kayak = np.array(tput_kayak) / 1e6
+    lat0_kayak = np.array(lat0_kayak) / 1e3
+    tput_ours = np.array(tput_ours) / 1e6
+    lat0_ours = np.array(lat0_ours) / 1e3
+    lat1_kayak = np.array(lat1_kayak) / 1e3
+    lat1_ours = np.array(lat1_ours) / 1e3
+
+    print(max(tput_ours) / max(tput_kayak))
+
+    # print(tput_ours)
+    # print(tput_kayak)
+    # print(lat0_ours)
+    # print(lat0_kayak)
+    # print(lat1_ours)
+    # print(lat1_kayak)
+
+    plt.cla()
+    plt.title('multi-nodes')
+    plt.ylabel("99% latency/\u03bcs")
+    plt.xlabel("tput/Mops")
+    #plt.plot(tput_kayak, lat0_kayak, label='kayak_0', marker='o')
+    plt.plot(tput_kayak, lat1_kayak, label='kayak_type1', marker='v')
+    #plt.plot(tput_ours, lat0_ours, label='ours_0', marker='^')
+    plt.plot(tput_ours, lat1_ours, label='ours_type1', marker='s')
+    plt.legend(loc='upper right')
+    # plt.show()
+    file_path = os.path.dirname(os.path.realpath(__file__))
+    file_path = os.path.join(file_path, DATE + '_' + EXPERIMENT, str(s),
+                             '{}.png'.format(s))
+    print(file_path)
+    plt.savefig(file_path)
+
+
+DATE = '20211115'
+EXPERIMENT = 'multi_node'
 ratio_list = [34]
 
 
 def main():
-    n = 4
+    n = 3
     for i in range(n, n+1):
-        draw_yield_mix(i)
+        draw_multi(i)
 
 
 if __name__ == '__main__':

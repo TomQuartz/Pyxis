@@ -260,12 +260,10 @@ impl RoundRobin {
             // TODO: run dispatch first, profile dispatch time, and evenly distribute to all tasks with state=INITIALIZED
             if let Some(mut task) = task {
                 let mut is_dispatcher: bool = false;
-                let mut queue_length: usize = 0;
                 let mut difference: u64 = 0;
                 match task.priority() {
                     TaskPriority::DISPATCH => {
                         is_dispatcher = true;
-                        queue_length = self.waiting.read().len();
 
                         // The time difference include the dispatcher time to account the native
                         // operations.

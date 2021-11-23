@@ -236,11 +236,15 @@ impl Avg {
 #[cfg(feature = "queue_len")]
 impl fmt::Display for Avg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let std = (self.E_x2 - self.E_x * self.E_x) * (self.counter / (self.counter - 1.0)).sqrt();
+        let std =
+            ((self.E_x2 - self.E_x * self.E_x) * (self.counter / (self.counter - 1.0))).sqrt();
         write!(
             f,
             "mean {} std {} latest {} counter {}",
-            self.E_x, std, self.lastest, self.counter
+            self.E_x.round(),
+            std.round(),
+            self.lastest,
+            self.counter
         )
     }
 }
@@ -276,7 +280,7 @@ impl MovingAvg {
 #[cfg(feature = "queue_len")]
 impl fmt::Display for MovingAvg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "moving {}", self.moving_avg)?;
+        write!(f, "moving {} ", self.moving_avg)?;
         write!(f, "{}", self.avg)
     }
 }
@@ -751,17 +755,11 @@ impl LoadBalancer {
                 if self.id == 0 {
                     let curr_rdtsc = cycles::rdtsc();
                     // let global_recvd = self.global_recvd.load(Ordering::Relaxed);
-                    if self.learnable {
-                        if self.xloop.ready(curr_rdtsc) {
-                            let ql_storage = self.storage_load.avg_all();
-                            let ql_compute = self.compute_load.avg_all();
-                            self.xloop.update_x(
-                                &self.partition,
-                                curr_rdtsc,
-                                ql_storage,
-                                ql_compute,
-                            );
-                        }
+                    if self.learnable && self.xloop.ready(curr_rdtsc) {
+                        let ql_storage = self.storage_load.avg_all();
+                        let ql_compute = self.compute_load.avg_all();
+                        self.xloop
+                            .update_x(&self.partition, curr_rdtsc, ql_storage, ql_compute);
                         // self.xloop
                         //     .xloop(&self.partition, curr_rdtsc, ql_storage, ql_compute);
                     }
