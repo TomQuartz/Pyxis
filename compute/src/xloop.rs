@@ -235,6 +235,10 @@ impl QueueGrad {
             msg: String::new(),
         }
     }
+    pub fn ready(&mut self, curr_rdtsc: u64) -> bool {
+        curr_rdtsc - self.last_rdtsc > self.interval
+    }
+
     /// xloop
     pub fn xloop(
         &mut self,

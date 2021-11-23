@@ -56,6 +56,7 @@ use self::atomic_float::AtomicF64;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use dispatch::LBDispatcher;
+use std::fmt::{self, Write};
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::RwLock;
@@ -207,38 +208,86 @@ impl XInterface for Partition {
     }
 }
 
+#[cfg(feature = "queue_len")]
+struct Avg {
+    counter: f64,
+    lastest: f64,
+    E_x: f64,
+    E_x2: f64,
+}
+#[cfg(feature = "queue_len")]
+impl Avg {
+    fn new() -> Avg {
+        Avg {
+            counter: 0.0,
+            lastest: 0.0,
+            E_x: 0.0,
+            E_x2: 0.0,
+        }
+    }
+    fn update(&mut self, delta: f64) {
+        self.counter += 1.0;
+        self.lastest = delta;
+        self.E_x = self.E_x * ((self.counter - 1.0) / self.counter) + delta / self.counter;
+        self.E_x2 =
+            self.E_x2 * ((self.counter - 1.0) / self.counter) + delta * delta / self.counter;
+    }
+}
+#[cfg(feature = "queue_len")]
+impl fmt::Display for Avg {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let std = (self.E_x2 - self.E_x * self.E_x) * (self.counter / (self.counter - 1.0)).sqrt();
+        write!(
+            f,
+            "mean {} std {} latest {} counter {}",
+            self.E_x, std, self.lastest, self.counter
+        )
+    }
+}
+
 struct MovingAvg {
-    counter: i32,
     moving_avg: f64,
     exp_decay: f64,
     denominator: f64,
+    #[cfg(feature = "queue_len")]
+    avg: Avg,
 }
 impl MovingAvg {
     fn new(exp_decay: f64) -> MovingAvg {
         MovingAvg {
-            counter: 0,
             moving_avg: 0.0,
             exp_decay: exp_decay,
             denominator: 0.0,
+            #[cfg(feature = "queue_len")]
+            avg: Avg::new(),
         }
     }
     fn update(&mut self, delta: f64) {
-        self.counter += 1;
         self.denominator = self.denominator * self.exp_decay + (1.0 - self.exp_decay);
         self.moving_avg =
             (self.moving_avg * self.exp_decay + delta * (1.0 - self.exp_decay)) / self.denominator;
+        #[cfg(feature = "queue_len")]
+        self.avg.update(delta);
     }
     fn avg(&self) -> f64 {
         self.moving_avg
     }
 }
+#[cfg(feature = "queue_len")]
+impl fmt::Display for MovingAvg {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "moving {}", self.moving_avg)?;
+        write!(f, "{}", self.avg)
+    }
+}
 
 struct ServerLoad {
+    cluster_name: String,
     ip2load: HashMap<u32, Vec<RwLock<MovingAvg>>>,
 }
 
 impl ServerLoad {
-    fn new(ip_and_ports: Vec<(&String, u16)>, exp_decay: f64) -> ServerLoad {
+    fn new(cluster_name: &str, ip_and_ports: Vec<(&String, u16)>, exp_decay: f64) -> ServerLoad {
         let mut ip2load = HashMap::new();
         for (ip, num_ports) in ip_and_ports {
             let mut server_load = vec![];
@@ -248,7 +297,10 @@ impl ServerLoad {
             let ip = u32::from(Ipv4Addr::from_str(ip).unwrap());
             ip2load.insert(ip, server_load);
         }
-        ServerLoad { ip2load }
+        ServerLoad {
+            cluster_name: cluster_name.to_string(),
+            ip2load: ip2load,
+        }
     }
     fn update(&self, src_ip: u32, src_port: u16, delta: f64) -> Result<(), ()> {
         if let Some(server_load) = self.ip2load.get(&src_ip) {
@@ -277,6 +329,27 @@ impl ServerLoad {
             total += self.avg_server(ip);
         }
         total / num_servers
+    }
+}
+#[cfg(feature = "queue_len")]
+impl fmt::Display for ServerLoad {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "#######{}#######", self.cluster_name)?;
+        for &ip in self.ip2load.keys() {
+            writeln!(f, "ip {}", ip)?;
+            let server_load = self.ip2load.get(&ip).unwrap();
+            // let mut server_total = 0f64;
+            // let mut server_total_moving = 0f64;
+            // let num_cores = server_load.len() as f64;
+            for (i, core_load) in server_load.iter().enumerate() {
+                let core_load = core_load.read().unwrap();
+                // server_total += core_load.avg.E_x;
+                // server_total_moving += core_load.avg();
+                writeln!(f, "    core {} {}", i, *core_load)?;
+            }
+            // writeln!(f,"    ip {} avg {} moving {}", ip,server_total/num_cores,server_total_moving/num_cores)?;
+        }
+        Ok(())
     }
 }
 
@@ -678,11 +751,19 @@ impl LoadBalancer {
                 if self.id == 0 {
                     let curr_rdtsc = cycles::rdtsc();
                     // let global_recvd = self.global_recvd.load(Ordering::Relaxed);
-                    let ql_storage = self.storage_load.avg_all();
-                    let ql_compute = self.compute_load.avg_all();
                     if self.learnable {
-                        self.xloop
-                            .xloop(&self.partition, curr_rdtsc, ql_storage, ql_compute);
+                        if self.xloop.ready(curr_rdtsc) {
+                            let ql_storage = self.storage_load.avg_all();
+                            let ql_compute = self.compute_load.avg_all();
+                            self.xloop.update_x(
+                                &self.partition,
+                                curr_rdtsc,
+                                ql_storage,
+                                ql_compute,
+                            );
+                        }
+                        // self.xloop
+                        //     .xloop(&self.partition, curr_rdtsc, ql_storage, ql_compute);
                     }
                     // let xloop_rate = 2.4e6 * (global_recvd - self.xloop_last_recvd) as f32
                     //     / (xloop_rdtsc - self.xloop_last_rdtsc) as f32;
@@ -708,6 +789,10 @@ impl LoadBalancer {
                             "rdtsc {} tail {:?} tput {} {}",
                             curr_rdtsc, self.avg_lat, output_rate, self.xloop,
                         );
+                        #[cfg(feature = "queue_len")]
+                        print!("{}", self.storage_load);
+                        #[cfg(feature = "queue_len")]
+                        print!("{}", self.compute_load);
                         self.output_last_rdtsc = curr_rdtsc;
                         self.output_last_recvd = global_recvd;
                     }
@@ -851,8 +936,16 @@ fn main() {
         .iter()
         .map(|x| (&x.ip_addr, x.num_ports))
         .collect();
-    let storage_load = Arc::new(ServerLoad::new(storage_servers, config.moving_avg));
-    let compute_load = Arc::new(ServerLoad::new(compute_servers, config.moving_avg));
+    let storage_load = Arc::new(ServerLoad::new(
+        "storage",
+        storage_servers,
+        config.moving_avg,
+    ));
+    let compute_load = Arc::new(ServerLoad::new(
+        "compute",
+        compute_servers,
+        config.moving_avg,
+    ));
     let num_types = config.multi_kv.len();
     let mut kth = vec![];
     for _ in 0..num_types {
