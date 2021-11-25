@@ -69,11 +69,11 @@ pub enum OpCode {
     /// This operation commits an invoke procedure run on the client-side.
     SandstormCommitRpc = 0x6,
 
-    /// Any value beyond this represents an invalid rpc.
-    InvalidOperation = 0x07,
-
     #[cfg(feature = "queue_len")]
-    TerminateRpc = 0x08,
+    TerminateRpc = 0x07,
+
+    /// Any value beyond this represents an invalid rpc.
+    InvalidOperation = 0x08,
 }
 
 /// This enum represents the status of a completed RPC. A status of 'StatusOk'
