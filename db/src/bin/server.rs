@@ -482,10 +482,17 @@ fn main() {
         // Scan schedulers every few milliseconds.
         sleep(Duration::from_millis(SCAN_INTERVAL_MS));
         #[cfg(feature = "queue_len")]
+        let mut finished = false;
+        #[cfg(feature = "queue_len")]
         for sched in handles.write().iter_mut() {
             if sched.terminate.load(Ordering::Relaxed) {
+                finished = true;
                 break;
             }
+        }
+        #[cfg(feature = "queue_len")]
+        if finished {
+            break;
         }
         /*
         for sched in handles.write().iter_mut() {
@@ -577,7 +584,7 @@ fn main() {
     sleep(Duration::from_millis(1000));
     #[cfg(feature = "queue_len")]
     for (i, sched) in handles.write().iter_mut().enumerate() {
-        let f = File::create(format!("core{}.txt", i)).unwrap();
+        let mut f = File::create(format!("core{}.log", i)).unwrap();
         for &t in sched.timestamp.borrow().iter() {
             write!(f, "{} ", t);
         }
