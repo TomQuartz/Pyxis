@@ -819,6 +819,7 @@ impl ComputeNodeDispatcher {
             OpCode::TerminateRpc => {
                 self.terminate.store(true, Ordering::Relaxed);
                 packet.free_packet();
+                println!("core {} terminate", self.sender.net_port.rxq());
                 Ok(())
             }
             _ => {

@@ -196,10 +196,18 @@ fn main() {
 
     loop {
         std::thread::sleep(std::time::Duration::from_millis(1000));
-        #[cfg(feature = "queue_len")]
-        for terminate in terminates.iter() {
-            if terminate.load(Ordering::Relaxed) {
-                break;
+        cfg_if! {
+            if #[cfg(feature = "queue_len")]{
+                let mut finished = false;
+                for terminate in terminates.iter() {
+                    if terminate.load(Ordering::Relaxed) {
+                        finished = true;
+                        break;
+                    }
+                }
+                if finished{
+                    break;
+                }
             }
         }
     }
@@ -211,7 +219,7 @@ fn main() {
     std::thread::sleep(std::time::Duration::from_millis(1000));
     #[cfg(feature = "queue_len")]
     for (i, (time_vec, ql_vec)) in timestamps.iter().zip(raw_lengths.iter()).enumerate() {
-        let f = File::create(format!("core{}.txt", i)).unwrap();
+        let mut f = File::create(format!("core{}.txt", i)).unwrap();
         for &t in time_vec.read().unwrap().iter() {
             write!(f, "{} ", t);
         }
