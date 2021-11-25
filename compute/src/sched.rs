@@ -40,7 +40,7 @@ pub struct TaskManager {
     master: Arc<Master>,
 
     // The reference to the task generator, which is used to suspend/resume the generator.
-    ready: VecDeque<Box<Task>>,
+    pub ready: VecDeque<Box<Task>>,
 
     ///  The HashMap containing the waiting tasks.
     pub waiting: HashMap<u64, Box<Task>>,
@@ -225,7 +225,7 @@ impl TaskManager {
     }
     */
 
-    pub fn execute_tasks(&mut self, mut core_load: u64) {
+    pub fn execute_tasks(&mut self, mut queue_len: f64) {
         let mut taskstate: TaskState;
         let mut time: u64;
         while let Some(mut task) = self.ready.pop_front() {
@@ -237,8 +237,7 @@ impl TaskManager {
                 //     task.tear();
                 //     // Do something for commit(Transaction commit?)
                 // }
-                if let Some((req, resps)) = unsafe { task.tear(&mut core_load) } {
-                    assert_eq!(core_load, 0);
+                if let Some((req, resps)) = unsafe { task.tear(&mut queue_len) } {
                     req.free_packet();
                     trace!("push resps");
                     for resp in resps.into_iter() {

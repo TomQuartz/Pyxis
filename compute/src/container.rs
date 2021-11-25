@@ -197,7 +197,7 @@ impl Task for Container {
     /// Refer to the Task trait for Documentation.
     unsafe fn tear(
         &mut self,
-        core_load: &mut u64,
+        core_load: &mut f64,
     ) -> Option<(
         Packet<UdpHeader, EmptyMetadata>,
         Vec<Packet<UdpHeader, EmptyMetadata>>,
@@ -218,9 +218,9 @@ impl Task for Container {
             let mut invoke_resp_hdr = res.get_mut_header();
             invoke_resp_hdr.common_header.duration = self.time;
             invoke_resp_hdr.overhead = self.storage_overhead;
-            if *core_load > 0 {
+            if *core_load >= 0.0 {
                 invoke_resp_hdr.core_load = *core_load;
-                *core_load = 0;
+                *core_load = -1.0;
             }
             let req = req.deparse_header(PACKET_UDP_LEN as usize);
             let res = res.deparse_header(PACKET_UDP_LEN as usize);

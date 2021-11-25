@@ -208,14 +208,14 @@ impl XInterface for Partition {
     }
 }
 
-#[cfg(feature = "queue_len")]
+#[cfg(feature = "server_stats")]
 struct Avg {
     counter: f64,
     lastest: f64,
     E_x: f64,
     E_x2: f64,
 }
-#[cfg(feature = "queue_len")]
+#[cfg(feature = "server_stats")]
 impl Avg {
     fn new() -> Avg {
         Avg {
@@ -233,7 +233,7 @@ impl Avg {
             self.E_x2 * ((self.counter - 1.0) / self.counter) + delta * delta / self.counter;
     }
 }
-#[cfg(feature = "queue_len")]
+#[cfg(feature = "server_stats")]
 impl fmt::Display for Avg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let std =
@@ -250,37 +250,36 @@ impl fmt::Display for Avg {
 }
 
 struct MovingAvg {
-    moving_avg: f64,
+    moving: f64,
     exp_decay: f64,
-    denominator: f64,
-    #[cfg(feature = "queue_len")]
+    norm: f64,
+    #[cfg(feature = "server_stats")]
     avg: Avg,
 }
 impl MovingAvg {
     fn new(exp_decay: f64) -> MovingAvg {
         MovingAvg {
-            moving_avg: 0.0,
+            moving: 0.0,
             exp_decay: exp_decay,
-            denominator: 0.0,
-            #[cfg(feature = "queue_len")]
+            norm: 0.0,
+            #[cfg(feature = "server_stats")]
             avg: Avg::new(),
         }
     }
     fn update(&mut self, delta: f64) {
-        self.denominator = self.denominator * self.exp_decay + (1.0 - self.exp_decay);
-        self.moving_avg =
-            (self.moving_avg * self.exp_decay + delta * (1.0 - self.exp_decay)) / self.denominator;
-        #[cfg(feature = "queue_len")]
+        self.norm = self.norm * self.exp_decay + (1.0 - self.exp_decay);
+        self.moving = self.moving * self.exp_decay + delta * (1.0 - self.exp_decay);
+        #[cfg(feature = "server_stats")]
         self.avg.update(delta);
     }
     fn avg(&self) -> f64 {
-        self.moving_avg
+        self.moving / self.norm
     }
 }
-#[cfg(feature = "queue_len")]
+#[cfg(feature = "server_stats")]
 impl fmt::Display for MovingAvg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "moving {} ", self.moving_avg)?;
+        write!(f, "moving {} ", self.avg().round())?;
         write!(f, "{}", self.avg)
     }
 }
@@ -335,7 +334,7 @@ impl ServerLoad {
         total / num_servers
     }
 }
-#[cfg(feature = "queue_len")]
+#[cfg(feature = "server_stats")]
 impl fmt::Display for ServerLoad {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "#######{}#######", self.cluster_name)?;
@@ -553,7 +552,7 @@ impl LoadBalancer {
         let type_idx = self.cum_prob.iter().position(|&p| p > x).unwrap();
         // let partition = self.partition.load(Ordering::Relaxed);
         let partition = self.partition.get();
-        let native = x as f64 > partition;
+        let native = x as f64 >= partition;
         (type_idx, native)
     }
     /*
@@ -683,13 +682,14 @@ impl LoadBalancer {
         }
     }
 
-    fn update_load(&self, src_ip: u32, src_port: u16, core_load: u64) {
-        if core_load == 0 {
+    fn update_load(&self, src_ip: u32, src_port: u16, core_load: f64) {
+        // set to -1 after the first rpc resp packet in that round
+        if core_load < 0.0 {
             return;
         }
-        if let Ok(_) = self.storage_load.update(src_ip, src_port, core_load as f64) {
+        if let Ok(_) = self.storage_load.update(src_ip, src_port, core_load) {
         } else {
-            self.compute_load.update(src_ip, src_port, core_load as f64);
+            self.compute_load.update(src_ip, src_port, core_load);
         }
     }
 
@@ -723,7 +723,8 @@ impl LoadBalancer {
                                     packet_recvd_signal = true;
                                     self.recvd += 1;
                                     self.global_recvd.fetch_add(1, Ordering::Relaxed);
-                                    self.update_load(src_ip, src_port, hdr.core_load);
+                                    // TODO: reimpl update, server will do smoothing and return avg
+                                    // self.update_load(src_ip, src_port, hdr.core_load);
                                     self.latencies[*type_idx].push(curr - timestamp);
                                     self.outstanding_reqs.remove(&timestamp);
                                     self.send_once();
@@ -787,9 +788,9 @@ impl LoadBalancer {
                             "rdtsc {} tail {:?} tput {} {}",
                             curr_rdtsc, self.avg_lat, output_rate, self.xloop,
                         );
-                        #[cfg(feature = "queue_len")]
+                        #[cfg(feature = "server_stats")]
                         print!("{}", self.storage_load);
-                        #[cfg(feature = "queue_len")]
+                        #[cfg(feature = "server_stats")]
                         print!("{}", self.compute_load);
                         self.output_last_rdtsc = curr_rdtsc;
                         self.output_last_recvd = global_recvd;
@@ -803,6 +804,10 @@ impl LoadBalancer {
         if self.requests <= self.recvd {
             self.stop = cycles::rdtsc();
             self.finished = true;
+            #[cfg(feature = "queue_len")]
+            self.dispatcher.sender2compute.send_terminate();
+            #[cfg(feature = "queue_len")]
+            self.dispatcher.sender2storage.send_terminate();
         }
     }
 }
@@ -956,7 +961,8 @@ fn main() {
     let recvd = Arc::new(AtomicUsize::new(0));
     let init_rdtsc = cycles::rdtsc();
     // Setup the client pipeline.
-    for core_id in 0..config.src.num_ports {
+    let cores: Vec<i32> = [(0..8).collect::<Vec<_>>(), (10..18).collect::<Vec<_>>()].concat();
+    for &core_id in cores[..config.src.num_ports as usize].iter() {
         let kth_copy = kth.clone();
         let partition_copy = partition.clone();
         let recvd_copy = recvd.clone();

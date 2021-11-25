@@ -41,7 +41,7 @@ use std::sync::Arc;
 
 use db::e2d2::scheduler::Executable;
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::RwLock;
 
 /// A simple RPC request generator for Sandstorm.
@@ -330,6 +330,24 @@ impl Sender {
             self.req_hdrs[endpoint].ip_header.dst()
         );
         self.send_pkt(request);
+    }
+    #[cfg(feature = "queue_len")]
+    pub fn send_terminate(&self) {
+        for endpoint in 0..self.num_endpoints{
+            let mut request = rpc::create_terminate_rpc(
+                &self.req_hdrs[endpoint].mac_header,
+                &self.req_hdrs[endpoint].ip_header,
+                &self.req_hdrs[endpoint].udp_header,
+                0,
+                0,
+                &[],
+                0,
+                self.get_dst_port(endpoint),
+                // self.get_dst_port_by_type(type_idx),
+                // (id & 0xffff) as u16 & (self.dst_ports - 1),
+            );
+            self.send_pkt(request);
+        }
     }
 
     /// Computes the destination UDP port given a tenant identifier.
@@ -708,6 +726,12 @@ pub struct ComputeNodeDispatcher {
     // this is dynamic, i.e. resp dst is set as req src upon recving new reqs
     resp_hdr: PacketHeaders,
     last_run: u64,
+    #[cfg(feature = "queue_len")]
+    timestamp: Arc<RwLock<Vec<u64>>>,
+    #[cfg(feature = "queue_len")]
+    raw_length: Arc<RwLock<Vec<usize>>>,
+    #[cfg(feature = "queue_len")]
+    terminate: Arc<AtomicBool>,
 }
 
 // TODO: move req_ports& into config?
@@ -717,7 +741,9 @@ impl ComputeNodeDispatcher {
         masterservice: Arc<Master>,
         net_port: CacheAligned<PortQueue>,
         sib_port: Option<CacheAligned<PortQueue>>,
-        // shared_credits: &Arc<RwLock<u32>>,
+        #[cfg(feature = "queue_len")] timestamp: Arc<RwLock<Vec<u64>>>,
+        #[cfg(feature = "queue_len")] raw_length: Arc<RwLock<Vec<usize>>>,
+        #[cfg(feature = "queue_len")] terminate: Arc<AtomicBool>,
     ) -> ComputeNodeDispatcher {
         ComputeNodeDispatcher {
             resp_hdr: PacketHeaders::create_hdr(
@@ -742,6 +768,12 @@ impl ComputeNodeDispatcher {
             },
             manager: TaskManager::new(Arc::clone(&masterservice)),
             last_run: 0,
+            #[cfg(feature = "queue_len")]
+            timestamp: timestamp,
+            #[cfg(feature = "queue_len")]
+            raw_length: raw_length,
+            #[cfg(feature = "queue_len")]
+            terminate: terminate,
         }
     }
 
@@ -754,8 +786,8 @@ impl ComputeNodeDispatcher {
         }
     }
 
-    pub fn run_extensions(&mut self, eventloop_interval: u64) {
-        self.manager.execute_tasks(eventloop_interval);
+    pub fn run_extensions(&mut self, queue_len: f64) {
+        self.manager.execute_tasks(queue_len);
     }
 
     pub fn send_resps(&mut self) {
@@ -779,6 +811,11 @@ impl ComputeNodeDispatcher {
             }
             OpCode::SandstormGetRpc => {
                 self.process_get_resp(packet);
+            }
+            #[cfg(feature = "queue_len")]
+            OpCode::TerminateRpc => {
+                self.terminate.store(true, Ordering::Relaxed);
+                packet.free_packet();
             }
             _ => {
                 trace!("pkt is not for compute node, ignore");
@@ -878,6 +915,10 @@ impl ComputeNodeDispatcher {
 
 impl Executable for ComputeNodeDispatcher {
     fn execute(&mut self) {
+        #[cfg(feature = "queue_len")]
+        if self.terminate.load(Ordering::Relaxed) {
+            return;
+        }
         let current = cycles::rdtsc();
         let eventloop_interval = if self.last_run > 0 {
             current - self.last_run
@@ -886,8 +927,14 @@ impl Executable for ComputeNodeDispatcher {
         };
         self.last_run = current;
         self.poll();
-        // self.sender.try_send_packets();
-        self.run_extensions(eventloop_interval);
+        let current_time = cycles::rdtsc();
+        let queue_length = self.manager.ready.len();
+        #[cfg(feature = "queue_len")]
+        self.timestamp.write().unwrap().push(current_time);
+        #[cfg(feature = "queue_len")]
+        self.raw_length.write().unwrap().push(queue_length);
+        // TODO: smooth this queue_length
+        self.run_extensions(queue_length as f64);
         self.send_resps();
     }
 

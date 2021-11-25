@@ -48,6 +48,10 @@ use nix::sys::signal;
 use util::model::{insert_model, MODEL};
 
 use std::cell::RefCell;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use std::fs::File;
+use std::io::Write;
 
 /// Interval in milliseconds at which all schedulers in the system will be scanned for misbehaving
 /// tasks.
@@ -454,17 +458,17 @@ fn main() {
         },
     ));
 
-    // Create a thread to handle the install() RPC request.
-    let imaster = Arc::clone(&master);
-    let _install = spawn(move || {
-        // Pin to the ghetto core.
-        let tid = unsafe { zcsi::get_thread_id() };
-        unsafe { zcsi::set_affinity(tid, GHETTO) };
+    // // Create a thread to handle the install() RPC request.
+    // let imaster = Arc::clone(&master);
+    // let _install = spawn(move || {
+    //     // Pin to the ghetto core.
+    //     let tid = unsafe { zcsi::get_thread_id() };
+    //     unsafe { zcsi::set_affinity(tid, GHETTO) };
 
-        // Run the installer.
-        let mut installer = Installer::new(imaster, install_addr);
-        installer.execute();
-    });
+    //     // Run the installer.
+    //     let mut installer = Installer::new(imaster, install_addr);
+    //     installer.execute();
+    // });
 
     // Run the server, and give it some time to bootup.
     net_context.execute();
@@ -477,6 +481,12 @@ fn main() {
     loop {
         // Scan schedulers every few milliseconds.
         sleep(Duration::from_millis(SCAN_INTERVAL_MS));
+        #[cfg(feature = "queue_len")]
+        for sched in handles.write().iter_mut() {
+            if sched.terminate.load(Ordering::Relaxed) {
+                break;
+            }
+        }
         /*
         for sched in handles.write().iter_mut() {
             // Get the current time stamp to compare scheduler time stamps against.
@@ -559,7 +569,24 @@ fn main() {
         }
         */
     }
-
+    #[cfg(feature = "queue_len")]
+    for sched in handles.write().iter_mut() {
+        sched.terminate.store(true, Ordering::Relaxed);
+    }
+    #[cfg(feature = "queue_len")]
+    sleep(Duration::from_millis(1000));
+    #[cfg(feature = "queue_len")]
+    for (i, sched) in handles.write().iter_mut().enumerate() {
+        let f = File::create(format!("core{}.txt", i)).unwrap();
+        for &t in sched.timestamp.borrow().iter() {
+            write!(f, "{} ", t);
+        }
+        writeln!(f, "");
+        for &l in sched.raw_length.borrow().iter() {
+            write!(f, "{} ", l);
+        }
+        println!("write queue length of core {}", i);
+    }
     // Stop the server.
     // net_context.stop();
     // _install.join();

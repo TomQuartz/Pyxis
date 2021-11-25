@@ -53,10 +53,15 @@ use splinter::*;
 use zipf::ZipfDistribution;
 
 use self::atomic_float::AtomicF32;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::RwLock;
 
 use dispatch::ComputeNodeDispatcher;
+use std::fs::File;
+use std::io::Write;
+
+#[macro_use]
+extern crate cfg_if;
 
 fn setup_compute(
     config: &config::ComputeConfig,
@@ -64,7 +69,9 @@ fn setup_compute(
     sibling: Option<CacheAligned<PortQueue>>,
     scheduler: &mut StandaloneScheduler,
     master: Arc<Master>,
-    // shared_credits: &Arc<RwLock<u32>>,
+    #[cfg(feature = "queue_len")] timestamp: Arc<RwLock<Vec<u64>>>,
+    #[cfg(feature = "queue_len")] raw_length: Arc<RwLock<Vec<usize>>>,
+    #[cfg(feature = "queue_len")] terminate: Arc<AtomicBool>,
 ) {
     if ports.len() != 1 {
         error!("Client should be configured with exactly 1 port!");
@@ -75,7 +82,12 @@ fn setup_compute(
         master,
         ports[0].clone(),
         sibling,
-        // shared_credits,
+        #[cfg(feature = "queue_len")]
+        timestamp,
+        #[cfg(feature = "queue_len")]
+        raw_length,
+        #[cfg(feature = "queue_len")]
+        terminate,
     )) {
         Ok(_) => {
             info!(
@@ -83,7 +95,6 @@ fn setup_compute(
                 ports[0].rxq()
             );
         }
-
         Err(ref err) => {
             error!("Error while adding to Netbricks pipeline {}", err);
             std::process::exit(1);
@@ -115,18 +126,67 @@ fn main() {
 
     // Setup the client pipeline.
     net_context.start_schedulers();
-    net_context.add_pipeline_to_run(Arc::new(
-        move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
-            setup_compute(
-                &config,
-                ports,
-                None,
-                scheduler,
-                master.clone(),
-                // &shared_credits,
-            )
-        },
-    ));
+    #[cfg(feature = "queue_len")]
+    let mut timestamps = vec![];
+    #[cfg(feature = "queue_len")]
+    let mut raw_lengths = vec![];
+    #[cfg(feature = "queue_len")]
+    let mut terminates = vec![];
+    cfg_if! {
+        if #[cfg(feature = "queue_len")]{
+            for core_id in 0..config.src.num_ports {
+                let timestamp = Arc::new(RwLock::new(Vec::with_capacity(64000 as usize)));
+                let raw_length = Arc::new(RwLock::new(Vec::with_capacity(64000 as usize)));
+                let terminate = Arc::new(AtomicBool::new(false));
+                timestamps.push(timestamp.clone());
+                raw_lengths.push(raw_length.clone());
+                terminates.push(terminate.clone());
+                let cmaster = master.clone();
+                net_context.add_pipeline_to_core(
+                    core_id as i32,
+                    Arc::new(
+                        move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
+                            setup_compute(
+                                &config::load::<config::ComputeConfig>("compute.toml"),
+                                ports,
+                                None,
+                                scheduler,
+                                cmaster.clone(),
+                                timestamp.clone(),
+                                raw_length.clone(),
+                                terminate.clone(),
+                            )
+                        },
+                    ),
+                );
+            }
+        }else{
+            net_context.add_pipeline_to_run(Arc::new(
+                move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
+                    setup_compute(
+                        &config,
+                        ports,
+                        None,
+                        scheduler,
+                        master.clone(),
+                        // &shared_credits,
+                    )
+                },
+            ));
+        }
+    }
+    // net_context.add_pipeline_to_run(Arc::new(
+    //     move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
+    //         setup_compute(
+    //             &config,
+    //             ports,
+    //             None,
+    //             scheduler,
+    //             master.clone(),
+    //             // &shared_credits,
+    //         )
+    //     },
+    // ));
 
     // Allow the system to bootup fully.
     std::thread::sleep(std::time::Duration::from_secs(2));
@@ -136,8 +196,31 @@ fn main() {
 
     loop {
         std::thread::sleep(std::time::Duration::from_millis(1000));
+        #[cfg(feature = "queue_len")]
+        for terminate in terminates.iter() {
+            if terminate.load(Ordering::Relaxed) {
+                break;
+            }
+        }
     }
-
+    #[cfg(feature = "queue_len")]
+    for terminate in terminates.iter() {
+        terminate.store(true, Ordering::Relaxed);
+    }
+    #[cfg(feature = "queue_len")]
+    std::thread::sleep(std::time::Duration::from_millis(1000));
+    #[cfg(feature = "queue_len")]
+    for (i, (time_vec, ql_vec)) in timestamps.iter().zip(raw_lengths.iter()).enumerate() {
+        let f = File::create(format!("core{}.txt", i)).unwrap();
+        for &t in time_vec.read().unwrap().iter() {
+            write!(f, "{} ", t);
+        }
+        writeln!(f, "");
+        for &l in ql_vec.read().unwrap().iter() {
+            write!(f, "{} ", l);
+        }
+        println!("write queue length of core {}", i);
+    }
     // Stop the client.
     // net_context.stop();
 }

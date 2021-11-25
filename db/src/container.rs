@@ -175,7 +175,7 @@ impl<'a> Task for Container<'a> {
     // because core_load is a property of the server
     unsafe fn tear(
         &mut self,
-        core_load: &mut u64,
+        core_load: &mut f64,
     ) -> Option<(
         Packet<UdpHeader, EmptyMetadata>,
         Vec<Packet<UdpHeader, EmptyMetadata>>,
@@ -205,9 +205,9 @@ impl<'a> Task for Container<'a> {
                     // add server load to INVOKE resp hdr
                     // NOTE: this field is for INVOKE resp only, used by LB
                     // for GET resp, the arg core_load is ignored by native::tear
-                    if *core_load > 0 {
+                    if *core_load >= 0.0 {
                         invoke_resp_hdr.core_load = *core_load;
-                        *core_load = 0;
+                        *core_load = -1.0;
                     }
                     // let time_ptr = &self.time as *const _ as *const u8;
                     // let time_u8 = unsafe { slice::from_raw_parts(time_ptr, mem::size_of::<u64>()) };

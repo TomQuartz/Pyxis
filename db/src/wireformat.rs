@@ -71,6 +71,9 @@ pub enum OpCode {
 
     /// Any value beyond this represents an invalid rpc.
     InvalidOperation = 0x07,
+
+    #[cfg(feature = "queue_len")]
+    TerminateRpc = 0x08,
 }
 
 /// This enum represents the status of a completed RPC. A status of 'StatusOk'
@@ -610,7 +613,7 @@ pub struct InvokeResponse {
     /// A common RPC response header containing the status of the RPC.
     pub common_header: RpcResponseHeader,
     pub overhead: u64,
-    pub core_load: u64,
+    pub core_load: f64,
 }
 
 impl InvokeResponse {
@@ -626,7 +629,7 @@ impl InvokeResponse {
         InvokeResponse {
             common_header: RpcResponseHeader::new(req_stamp, opcode, tenant),
             overhead: 0,
-            core_load: 0,
+            core_load: 0.0,
         }
     }
 }

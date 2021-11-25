@@ -48,6 +48,108 @@ const MAX_RX_PACKETS: usize = 32;
 /// Under load shedding, the task which used more than this credit will be pushed-back.
 const CREDIT_LIMIT_US: f64 = 0.5f64;
 
+// #[cfg(feature = "queue_len")]
+// struct Avg {
+//     counter: f64,
+//     lastest: f64,
+//     E_x: f64,
+//     E_x2: f64,
+// }
+// #[cfg(feature = "queue_len")]
+// impl Avg {
+//     fn new() -> Avg {
+//         Avg {
+//             counter: 0.0,
+//             lastest: 0.0,
+//             E_x: 0.0,
+//             E_x2: 0.0,
+//         }
+//     }
+//     fn update(&mut self, delta: f64) {
+//         self.counter += 1.0;
+//         self.lastest = delta;
+//         self.E_x = self.E_x * ((self.counter - 1.0) / self.counter) + delta / self.counter;
+//         self.E_x2 =
+//             self.E_x2 * ((self.counter - 1.0) / self.counter) + delta * delta / self.counter;
+//     }
+// }
+
+struct TimeAvg {
+    time_avg: f64,
+    elapsed: f64,
+    last_data: f64,
+    last_time: u64,
+    // #[cfg(feature = "queue_len")]
+    // avg: Avg,
+}
+
+impl TimeAvg {
+    fn new() -> TimeAvg {
+        TimeAvg {
+            time_avg: 0.0,
+            elapsed: 0.0,
+            last_data: 0.0,
+            last_time: 0,
+            // #[cfg(feature = "queue_len")]
+            // avg: Avg::new(),
+        }
+    }
+    fn update(&mut self, current_time: u64, delta: f64) {
+        let elapsed = (current_time - self.last_time) as f64;
+        self.last_time = current_time;
+        let delta_avg = (self.last_data + delta) / 2.0;
+        self.last_data = delta;
+        self.elapsed += elapsed;
+        let update_ratio = elapsed / self.elapsed;
+        self.time_avg = self.time_avg * (1.0 - update_ratio) + delta_avg * update_ratio;
+        // #[cfg(feature = "queue_len")]
+        // self.avg.update(delta_avg);
+    }
+    fn avg(&self) -> f64 {
+        self.time_avg
+    }
+}
+
+struct MovingTimeAvg {
+    moving_avg: f64,
+    elapsed: f64,
+    last_data: f64,
+    last_time: u64,
+    norm: f64,
+    moving_exp: f64,
+    // #[cfg(feature = "queue_len")]
+    // avg: Avg,
+}
+impl MovingTimeAvg {
+    fn new(moving_exp: f64) -> MovingTimeAvg {
+        MovingTimeAvg {
+            moving_avg: 0.0,
+            elapsed: 0.0,
+            last_data: 0.0,
+            last_time: 0,
+            norm: 0.0,
+            moving_exp: moving_exp,
+            // #[cfg(feature = "queue_len")]
+            // avg: Avg::new(),
+        }
+    }
+    fn update(&mut self, current_time: u64, delta: f64) {
+        let elapsed = (current_time - self.last_time) as f64;
+        self.last_time = current_time;
+        let delta_avg = (self.last_data + delta) / 2.0;
+        self.last_data = delta;
+        self.elapsed += elapsed;
+        let update_ratio = self.moving_exp * elapsed / self.elapsed;
+        self.moving_avg = self.moving_avg * (1.0 - update_ratio) + delta_avg * update_ratio;
+        self.norm = self.norm * (1.0 - update_ratio) + update_ratio;
+        // #[cfg(feature = "queue_len")]
+        // self.avg.update(delta_avg);
+    }
+    fn avg(&self) -> f64 {
+        self.moving_avg / self.norm
+    }
+}
+
 /// A simple round robin scheduler for Tasks in Sandstorm.
 pub struct RoundRobin {
     // The time-stamp at which the scheduler last ran. Required to identify whether there is an
@@ -80,6 +182,13 @@ pub struct RoundRobin {
     task_completed: RefCell<u64>,
     // // the dispatcher in this roundrobin(FCFS) scheduler
     // dispatcher_port: CacheAligned<PortQueue>,
+    queue_length: RefCell<TimeAvg>,
+    #[cfg(feature = "queue_len")]
+    pub timestamp: RefCell<Vec<u64>>,
+    #[cfg(feature = "queue_len")]
+    pub raw_length: RefCell<Vec<usize>>,
+    #[cfg(feature = "queue_len")]
+    pub terminate: AtomicBool,
 }
 
 // Implementation of methods on RoundRobin.
@@ -102,6 +211,13 @@ impl RoundRobin {
             task_completed: RefCell::new(0),
             // dispatcher_port: portq.clone(),
             // last_tx: Cell::new(cycles::rdtsc()),
+            queue_length: RefCell::new(TimeAvg::new()),
+            #[cfg(feature = "queue_len")]
+            timestamp: RefCell::new(Vec::with_capacity(640000 as usize)),
+            #[cfg(feature = "queue_len")]
+            raw_length: RefCell::new(Vec::with_capacity(640000 as usize)),
+            #[cfg(feature = "queue_len")]
+            terminate: AtomicBool::new(false),
         }
     }
 
@@ -244,6 +360,7 @@ impl RoundRobin {
         let time_trigger: u64 = 2000 * credit as u64;
         let mut previous: u64 = cycles::rdtsc();
         let mut interval: u64 = 0;
+        let mut avg_queue_len: f64 = -1.0;
         loop {
             // Set the time-stamp of the latest scheduling decision.
             let current = cycles::rdtsc();
@@ -251,6 +368,12 @@ impl RoundRobin {
 
             // If the compromised flag was set, then return.
             if self.compromised.load(Ordering::Relaxed) {
+                return;
+            }
+
+            #[cfg(feature = "queue_len")]
+            // set by dispatcher upon recving terminate rpc
+            if self.terminate.load(Ordering::Relaxed) {
                 return;
             }
 
@@ -277,7 +400,18 @@ impl RoundRobin {
 
                 if is_dispatcher {
                     overhead_per_req = task.run().1;
+                    // update queue length
+                    let current_time = cycles::rdtsc();
+                    let queue_length = self.waiting.read().len();
+                    self.queue_length
+                        .borrow_mut()
+                        .update(current_time, queue_length as f64);
+                    avg_queue_len = self.queue_length.borrow().avg();
                     self.waiting.write().push_back(task);
+                    #[cfg(feature = "queue_len")]
+                    self.timestamp.borrow_mut().push(current_time);
+                    #[cfg(feature = "queue_len")]
+                    self.raw_length.borrow_mut().push(queue_length);
                     continue;
                 }
                 // handle requests
@@ -287,7 +421,7 @@ impl RoundRobin {
                 if task.run().0 == COMPLETED {
                     // The task finished execution, check for request and response packets. If they
                     // exist, then free the request packet, and enqueue the response packet.
-                    if let Some((req, resps)) = unsafe { task.tear(&mut interval) } {
+                    if let Some((req, resps)) = unsafe { task.tear(&mut avg_queue_len) } {
                         trace!("task complete");
                         req.free_packet();
                         for resp in resps.into_iter() {

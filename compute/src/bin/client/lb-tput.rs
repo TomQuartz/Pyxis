@@ -396,7 +396,7 @@ impl LoadBalancer {
         let type_idx = self.cum_prob.iter().position(|&p| p > x).unwrap();
         // let partition = self.partition.load(Ordering::Relaxed);
         let partition = self.partition.get();
-        let native = x as f64 > partition;
+        let native = x as f64 >= partition;
         (type_idx, native)
     }
     /*

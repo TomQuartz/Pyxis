@@ -28,9 +28,6 @@ pub extern crate log;
 
 mod container;
 
-// #[macro_use]
-// extern crate cfg_if;
-
 pub mod xloop;
 
 // Public modules for binaries.

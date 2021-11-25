@@ -40,6 +40,7 @@ use super::e2d2::interface::*;
 use sandstorm::common;
 
 use std::rc::Rc;
+use std::sync::atomic::Ordering;
 
 /// This flag enables or disables fast path for native requests.
 /// Later, it will be set from the server.toml file probably.
@@ -751,6 +752,11 @@ where
                             }
                         }
                     }
+                    #[cfg(feature = "queue_len")]
+                    OpCode::TerminateRpc => {
+                        self.scheduler.terminate.store(true, Ordering::Relaxed);
+                        request.free_packet();
+                    }
                     _ => request.free_packet(),
                 }
             } else {
@@ -1000,7 +1006,7 @@ where
     /// Refer to the `Task` trait for Documentation.
     unsafe fn tear(
         &mut self,
-        _core_load: &mut u64,
+        _core_load: &mut f64,
     ) -> Option<(
         Packet<UdpHeader, EmptyMetadata>,
         Vec<Packet<UdpHeader, EmptyMetadata>>,
