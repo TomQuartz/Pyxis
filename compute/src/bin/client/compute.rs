@@ -161,18 +161,34 @@ fn main() {
                 );
             }
         }else{
-            net_context.add_pipeline_to_run(Arc::new(
-                move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
-                    setup_compute(
-                        &config,
-                        ports,
-                        None,
-                        scheduler,
-                        master.clone(),
-                        // &shared_credits,
-                    )
-                },
-            ));
+            for core_id in 0..config.src.num_ports {
+                let cmaster = master.clone();
+                net_context.add_pipeline_to_core(
+                    core_id as i32,
+                    Arc::new(
+                        move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
+                            setup_compute(
+                                &config::load::<config::ComputeConfig>("compute.toml"),
+                                ports,
+                                None,
+                                scheduler,
+                                cmaster.clone(),
+                            )
+                        },
+                    ),
+                );
+            }
+            // net_context.add_pipeline_to_run(Arc::new(
+            //     move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
+            //         setup_compute(
+            //             &config,
+            //             ports,
+            //             None,
+            //             scheduler,
+            //             master.clone(),
+            //         )
+            //     },
+            // ));
         }
     }
     // net_context.add_pipeline_to_run(Arc::new(

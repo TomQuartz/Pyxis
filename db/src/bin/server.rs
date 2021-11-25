@@ -592,7 +592,11 @@ fn main() {
         for &l in sched.raw_length.borrow().iter() {
             write!(f, "{} ", l);
         }
-        println!("write queue length of core {}", i);
+        println!(
+            "write queue length of core {}, total {}",
+            i,
+            sched.timestamp.borrow().len()
+        );
     }
     // Stop the server.
     // net_context.stop();
