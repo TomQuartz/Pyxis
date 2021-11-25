@@ -219,7 +219,7 @@ fn main() {
     std::thread::sleep(std::time::Duration::from_millis(1000));
     #[cfg(feature = "queue_len")]
     for (i, (time_vec, ql_vec)) in timestamps.iter().zip(raw_lengths.iter()).enumerate() {
-        let mut f = File::create(format!("core{}.txt", i)).unwrap();
+        let mut f = File::create(format!("core{}.log", i)).unwrap();
         for &t in time_vec.read().unwrap().iter() {
             write!(f, "{} ", t);
         }
@@ -227,7 +227,11 @@ fn main() {
         for &l in ql_vec.read().unwrap().iter() {
             write!(f, "{} ", l);
         }
-        println!("write queue length of core {}", i);
+        println!(
+            "write queue length of core {}, total {}",
+            i,
+            time_vec.read().unwrap().len(),
+        );
     }
     // Stop the client.
     // net_context.stop();
