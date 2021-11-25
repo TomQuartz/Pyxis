@@ -393,37 +393,15 @@ pub fn create_terminate_rpc(
     mac: &MacHeader,
     ip: &IpHeader,
     udp: &UdpHeader,
-    tenant: u32,
-    name_len: u32,
-    payload: &[u8],
-    id: u64,
     dst: u16,
 ) -> Packet<IpHeader, EmptyMetadata> {
-    // The Arguments to the procedure cannot be more that 4 GB long.
-    if payload.len() - name_len as usize > u32::max_value() as usize {
-        panic!(
-            "Args too long ({} bytes).",
-            payload.len() - name_len as usize
-        );
-    }
-
     // Allocate a packet, write the header and payload into it, and set fields on it's UDP and IP
     // header. Since the payload contains both, the name and arguments in it, args_len can be
     // calculated as payload length - name_len.
     let mut request = create_request(mac, ip, udp, dst)
-        .push_header(&InvokeRequest::new(
-            tenant,
-            name_len,
-            (payload.len() - name_len as usize) as u32,
-            id,
-        ))
+        .push_header(&InvokeRequest::new(0, 0, 0, 0))
         .expect("Failed to push RPC header into request!");
     request.get_mut_header().common_header.opcode = OpCode::TerminateRpc;
-
-    request
-        .add_to_payload_tail(payload.len(), &payload)
-        .expect("Failed to write args into invoke() request!");
-
     fixup_header_length_fields(request.deparse_header(size_of::<UdpHeader>()))
 }
 

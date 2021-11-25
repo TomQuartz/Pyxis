@@ -409,9 +409,11 @@ impl RoundRobin {
                     avg_queue_len = self.queue_length.borrow().avg();
                     self.waiting.write().push_back(task);
                     #[cfg(feature = "queue_len")]
-                    self.timestamp.borrow_mut().push(current_time);
-                    #[cfg(feature = "queue_len")]
-                    self.raw_length.borrow_mut().push(queue_length);
+                    if queue_length > 0 || self.timestamp.borrow().len() > 0 {
+                        self.timestamp.borrow_mut().push(current_time);
+                        // #[cfg(feature = "queue_len")]
+                        self.raw_length.borrow_mut().push(queue_length);
+                    }
                     continue;
                 }
                 // handle requests

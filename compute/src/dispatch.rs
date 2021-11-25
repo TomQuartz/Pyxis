@@ -333,15 +333,11 @@ impl Sender {
     }
     #[cfg(feature = "queue_len")]
     pub fn send_terminate(&self) {
-        for endpoint in 0..self.num_endpoints{
+        for endpoint in 0..self.num_endpoints {
             let mut request = rpc::create_terminate_rpc(
                 &self.req_hdrs[endpoint].mac_header,
                 &self.req_hdrs[endpoint].ip_header,
                 &self.req_hdrs[endpoint].udp_header,
-                0,
-                0,
-                &[],
-                0,
                 self.get_dst_port(endpoint),
                 // self.get_dst_port_by_type(type_idx),
                 // (id & 0xffff) as u16 & (self.dst_ports - 1),
@@ -777,13 +773,17 @@ impl ComputeNodeDispatcher {
         }
     }
 
-    pub fn poll(&mut self) {
+    pub fn poll(&mut self) -> u32 {
+        let mut num_dispatched: u32 = 0;
         if let Some(mut packets) = self.receiver.recv() {
             trace!("recv {} packets", packets.len());
             while let Some((packet, _)) = packets.pop() {
-                self.dispatch(packet);
+                if let Ok(()) = self.dispatch(packet) {
+                    num_dispatched += 1;
+                }
             }
         }
+        num_dispatched
     }
 
     pub fn run_extensions(&mut self, queue_len: f64) {
@@ -799,27 +799,32 @@ impl ComputeNodeDispatcher {
 
     // 1. invoke_req: lb to compute
     // 2. get_resp: storage to compute
-    pub fn dispatch(&mut self, packet: Packet<UdpHeader, EmptyMetadata>) {
+    pub fn dispatch(&mut self, packet: Packet<UdpHeader, EmptyMetadata>) -> Result<(), ()> {
         match parse_rpc_opcode(&packet) {
             OpCode::SandstormInvokeRpc => {
                 if parse_rpc_service(&packet) == Service::MasterService {
                     self.dispatch_invoke(packet);
+                    Ok(())
                 } else {
                     trace!("invalid rpc req, ignore");
                     packet.free_packet();
+                    Err(())
                 }
             }
             OpCode::SandstormGetRpc => {
                 self.process_get_resp(packet);
+                Ok(())
             }
             #[cfg(feature = "queue_len")]
             OpCode::TerminateRpc => {
                 self.terminate.store(true, Ordering::Relaxed);
                 packet.free_packet();
+                Ok(())
             }
             _ => {
                 trace!("pkt is not for compute node, ignore");
                 packet.free_packet();
+                Err(())
             }
         }
     }
@@ -930,9 +935,11 @@ impl Executable for ComputeNodeDispatcher {
         let current_time = cycles::rdtsc();
         let queue_length = self.manager.ready.len();
         #[cfg(feature = "queue_len")]
-        self.timestamp.write().unwrap().push(current_time);
-        #[cfg(feature = "queue_len")]
-        self.raw_length.write().unwrap().push(queue_length);
+        if queue_length > 0 || self.timestamp.read().unwrap().len() > 0 {
+            self.timestamp.write().unwrap().push(current_time);
+            // #[cfg(feature = "queue_len")]
+            self.raw_length.write().unwrap().push(queue_length);
+        }
         // TODO: smooth this queue_length
         self.run_extensions(queue_length as f64);
         self.send_resps();
