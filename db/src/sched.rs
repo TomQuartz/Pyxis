@@ -213,9 +213,9 @@ impl RoundRobin {
             // last_tx: Cell::new(cycles::rdtsc()),
             queue_length: RefCell::new(TimeAvg::new()),
             #[cfg(feature = "queue_len")]
-            timestamp: RefCell::new(Vec::with_capacity(640000 as usize)),
+            timestamp: RefCell::new(Vec::with_capacity(12800000 as usize)),
             #[cfg(feature = "queue_len")]
-            raw_length: RefCell::new(Vec::with_capacity(640000 as usize)),
+            raw_length: RefCell::new(Vec::with_capacity(12800000 as usize)),
             #[cfg(feature = "queue_len")]
             terminate: AtomicBool::new(false),
         }

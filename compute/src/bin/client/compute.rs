@@ -135,8 +135,8 @@ fn main() {
     cfg_if! {
         if #[cfg(feature = "queue_len")]{
             for core_id in 0..config.src.num_ports {
-                let timestamp = Arc::new(RwLock::new(Vec::with_capacity(64000 as usize)));
-                let raw_length = Arc::new(RwLock::new(Vec::with_capacity(64000 as usize)));
+                let timestamp = Arc::new(RwLock::new(Vec::with_capacity(12800000 as usize)));
+                let raw_length = Arc::new(RwLock::new(Vec::with_capacity(12800000 as usize)));
                 let terminate = Arc::new(AtomicBool::new(false));
                 timestamps.push(timestamp.clone());
                 raw_lengths.push(raw_length.clone());
