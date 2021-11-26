@@ -53,7 +53,7 @@ use splinter::*;
 use zipf::ZipfDistribution;
 
 use self::atomic_float::AtomicF64;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use dispatch::LBDispatcher;
 use std::fmt::{self, Write};
@@ -372,7 +372,7 @@ struct LoadBalancer {
     init_rdtsc: u64,
     start: u64,
     stop: u64,
-    finished: bool,
+    // finished: bool,
     requests: usize,
     global_recvd: Arc<AtomicUsize>,
     recvd: usize,
@@ -400,6 +400,8 @@ struct LoadBalancer {
     output_factor: u64,
     output_last_rdtsc: u64,
     output_last_recvd: usize,
+    finished: Arc<AtomicBool>,
+    tput: f64,
 }
 
 // Implementation of methods on LoadBalancer.
@@ -428,6 +430,7 @@ impl LoadBalancer {
         kth: Vec<Vec<Arc<AtomicUsize>>>,
         global_recvd: Arc<AtomicUsize>,
         init_rdtsc: u64,
+        finished: Arc<AtomicBool>,
     ) -> LoadBalancer {
         // The payload on an invoke() based get request consists of the extensions name ("pushback"),
         // the table id to perform the lookup on, number of get(), number of CPU cycles and the key to lookup.
@@ -481,6 +484,8 @@ impl LoadBalancer {
         // }
 
         LoadBalancer {
+            tput: 0.0,
+            finished: finished,
             storage_load: storage_load,
             compute_load: compute_load,
             dispatcher: LBDispatcher::new(config, net_port),
@@ -505,7 +510,7 @@ impl LoadBalancer {
             init_rdtsc: init_rdtsc,
             start: 0,
             stop: 0,
-            finished: false,
+            // finished: false,
             requests: config.num_reqs / 2,
             global_recvd: global_recvd,
             recvd: 0,
@@ -694,10 +699,10 @@ impl LoadBalancer {
     }
 
     fn recv(&mut self) {
-        // Don't do anything after all responses have been received.
-        if self.finished == true && self.stop > 0 {
-            return;
-        }
+        // // Don't do anything after all responses have been received.
+        // if self.finished.load(Ordering::Relaxed) == true && self.stop > 0 {
+        //     return;
+        // }
 
         let mut packet_recvd_signal = false;
 
@@ -803,7 +808,11 @@ impl LoadBalancer {
         // stop timestamp so that throughput can be estimated later.
         if self.requests <= self.recvd {
             self.stop = cycles::rdtsc();
-            self.finished = true;
+            let already_finished = self.finished.swap(true, Ordering::Relaxed);
+            if !already_finished {
+                self.tput = self.global_recvd.load(Ordering::Relaxed) as f64
+                    / cycles::to_seconds(self.stop - self.start);
+            }
             #[cfg(feature = "queue_len")]
             self.dispatcher.sender2compute.send_terminate();
             #[cfg(feature = "queue_len")]
@@ -816,7 +825,7 @@ impl LoadBalancer {
 impl Drop for LoadBalancer {
     fn drop(&mut self) {
         if self.stop == 0 {
-            self.stop = cycles::rdtsc();
+            // self.stop = cycles::rdtsc();
             info!(
                 "The client thread {} received only {} packets",
                 self.id, self.recvd
@@ -826,12 +835,7 @@ impl Drop for LoadBalancer {
         }
 
         // Calculate & print the throughput for all client threads.
-        if self.id == 0 {
-            println!(
-                "PUSHBACK Throughput {}",
-                self.global_recvd.load(Ordering::Relaxed) as f64
-                    / cycles::to_seconds(self.stop - self.start) // self.tput_meter.avg()
-            );
+        if self.tput > 0.0 {
             // Calculate & print median & tail latency only on the master thread.
             for (type_idx, lat) in self.latencies.iter_mut().enumerate() {
                 lat.sort();
@@ -845,7 +849,6 @@ impl Drop for LoadBalancer {
 
                     _ => m = lat[lat.len() / 2],
                 }
-
                 println!(
                     "type {} >>> lat50:{} lat99:{}",
                     type_idx,
@@ -853,6 +856,7 @@ impl Drop for LoadBalancer {
                     cycles::to_seconds(t) * 1e9
                 );
             }
+            println!("PUSHBACK Throughput {}", self.tput);
         }
     }
 }
@@ -861,15 +865,14 @@ impl Drop for LoadBalancer {
 impl Executable for LoadBalancer {
     // Called internally by Netbricks.
     fn execute(&mut self) {
+        if self.requests <= self.recvd {
+            return;
+        }
         if self.start == 0 {
             self.send_all();
         }
         // trace!("{:?}", self.outstanding_reqs.keys());
         self.recv();
-        if self.finished == true {
-            unsafe { FINISHED = true }
-            return;
-        }
     }
 
     fn dependencies(&mut self) -> Vec<usize> {
@@ -889,6 +892,7 @@ fn setup_lb(
     kth: Vec<Vec<Arc<AtomicUsize>>>,
     global_recvd: Arc<AtomicUsize>,
     init_rdtsc: u64,
+    finished: Arc<AtomicBool>,
 ) {
     if ports.len() != 1 {
         error!("LB should be configured with exactly 1 port!");
@@ -905,6 +909,7 @@ fn setup_lb(
         kth,
         global_recvd,
         init_rdtsc,
+        finished,
     )) {
         Ok(_) => {
             info!("Successfully added LB with rx-tx queue {}.", ports[0].rxq());
@@ -960,6 +965,7 @@ fn main() {
     }
     let recvd = Arc::new(AtomicUsize::new(0));
     let init_rdtsc = cycles::rdtsc();
+    let finished = Arc::new(AtomicBool::new(false));
     // Setup the client pipeline.
     let cores: Vec<i32> = [(0..8).collect::<Vec<_>>(), (10..18).collect::<Vec<_>>()].concat();
     for &core_id in cores[..config.src.num_ports as usize].iter() {
@@ -968,6 +974,7 @@ fn main() {
         let recvd_copy = recvd.clone();
         let storage_load_copy = storage_load.clone();
         let compute_load_copy = compute_load.clone();
+        let finished_copy = finished.clone();
         net_context.add_pipeline_to_core(
             core_id as i32,
             Arc::new(
@@ -984,6 +991,7 @@ fn main() {
                         kth_copy.clone(),
                         recvd_copy.clone(),
                         init_rdtsc,
+                        finished_copy.clone(),
                     )
                 },
             ),
@@ -998,10 +1006,13 @@ fn main() {
 
     // Sleep for an amount of time approximately equal to the estimated execution time, and then
     // shutdown the client.
-    unsafe {
-        while !FINISHED {
-            std::thread::sleep(std::time::Duration::from_secs(2));
-        }
+    // unsafe {
+    //     while !FINISHED {
+    //         std::thread::sleep(std::time::Duration::from_secs(2));
+    //     }
+    // }
+    while !finished.load(Ordering::Relaxed) {
+        std::thread::sleep(std::time::Duration::from_secs(2));
     }
     std::thread::sleep(std::time::Duration::from_secs(2));
 
