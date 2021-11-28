@@ -262,7 +262,7 @@ fn get_default_netbricks_config(config: &config::StorageConfig) -> NetbricksConf
     let net_config_name = String::from("storage");
     let dpdk_secondary: bool = false;
     let net_primary_core: i32 = 19;
-    let net_cores: Vec<i32> = (0..16).collect();
+    let net_cores: Vec<i32> = (0..8).collect();
     let net_strict_cores: bool = true;
     let net_pool_size: u32 = 16384 - 1;
     let net_cache_size: u32 = 512;
