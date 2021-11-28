@@ -1,0 +1,20 @@
+# The number of tenants to create on startup.
+num_tenants = 1
+
+# The workload to setup the server for. Supported workloads: SANITY, YCSB,
+# AGGREGATE, TAO.
+workload = "PUSHBACK"
+
+# The number of records to setup per tenant.
+num_records = 1000000
+
+key_len = 30
+value_len = 16384
+record_len = 512
+
+max_rx_packets = 128
+nic_pci = "0000:03:00.1"
+[src]
+num_ports = 1
+ip_addr = "10.10.1.7"
+mac_addr = "9c:dc:71:5d:90:c1"

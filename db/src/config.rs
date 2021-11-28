@@ -396,7 +396,7 @@ pub struct LBConfig {
     pub storage: Vec<NetConfig>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
 pub struct ComputeConfig {
     // pub max_credits: u32,
@@ -405,4 +405,22 @@ pub struct ComputeConfig {
     pub src: NetConfig,
     // lb: NetConfig,
     pub storage: Vec<NetConfig>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(default)]
+pub struct StorageConfig {
+    /// Number of tenants to intialize the tables.
+    pub num_tenants: u32,
+    /// Type of workload; TAO, YCSB, AGGREGATE etc.
+    pub workload: String,
+    /// Number of records in the table for each tenant.
+    pub num_records: u32,
+    /// rx batch size
+    pub key_len: usize,
+    pub value_len: usize,
+    pub record_len: usize,
+    pub max_rx_packets: usize,
+    pub nic_pci: String,
+    pub src: NetConfig,
 }

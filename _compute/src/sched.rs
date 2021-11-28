@@ -224,34 +224,19 @@ impl TaskManager {
         (taskstate, time)
     }
     */
-    pub fn execute_task(&mut self, queue_len: &mut f64) {
-        let mut task = self.ready.pop_front().unwrap();
-        if task.run().0 == COMPLETED {
-            trace!("task complete");
-            if let Some((req, resps)) = unsafe { task.tear(queue_len) } {
-                req.free_packet();
-                trace!("push resps");
-                for resp in resps.into_iter() {
-                    self.responses.push(rpc::fixup_header_length_fields(resp));
-                }
-            }
-        } else {
-            let taskstate = task.state();
-            if taskstate == YIELDED {
-                self.ready.push_back(task);
-            } else if taskstate == WAITING {
-                self.waiting.insert(task.get_id(), task);
-            }
-        }
-    }
+
     pub fn execute_tasks(&mut self, mut queue_len: f64) {
-        // let mut taskstate: TaskState;
-        // let mut time: u64;
+        let mut taskstate: TaskState;
+        let mut time: u64;
         while let Some(mut task) = self.ready.pop_front() {
             if task.run().0 == COMPLETED {
                 trace!("task complete");
-                // taskstate = task.state();
-                // time = task.time();
+                taskstate = task.state();
+                time = task.time();
+                // unsafe {
+                //     task.tear();
+                //     // Do something for commit(Transaction commit?)
+                // }
                 if let Some((req, resps)) = unsafe { task.tear(&mut queue_len) } {
                     req.free_packet();
                     trace!("push resps");
@@ -260,8 +245,8 @@ impl TaskManager {
                     }
                 }
             } else {
-                let taskstate = task.state();
-                // time = task.time();
+                taskstate = task.state();
+                time = task.time();
                 if taskstate == YIELDED {
                     self.ready.push_back(task);
                 } else if taskstate == WAITING {

@@ -470,19 +470,6 @@ pub struct Receiver {
 
 // Implementation of methods on Receiver.
 impl Receiver {
-    pub fn new(
-        net_port: CacheAligned<PortQueue>,
-        max_rx_packets: usize,
-        ip_addr: &str,
-    ) -> Receiver {
-        Receiver {
-            net_port: net_port,
-            sib_port: None,
-            stealing: false,
-            max_rx_packets: max_rx_packets,
-            ip_addr: u32::from(Ipv4Addr::from_str(ip_addr).expect("missing src ip for LB")),
-        }
-    }
     // TODO: makesure src ip is properly set
     // return pkt and (src ip, src udp port)
     pub fn recv(&self) -> Option<Vec<(Packet<UdpHeader, EmptyMetadata>, (u32, u16))>> {
@@ -725,57 +712,12 @@ impl LBDispatcher {
     }
 }
 
-pub struct Dispatcher {
-    receiver: Receiver,
-    queue: Arc<RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
-}
-
-impl Dispatcher {
-    pub fn new(
-        // config: &ComputeConfig,
-        ip_addr: &str,
-        max_rx_packets: usize,
-        net_port: CacheAligned<PortQueue>,
-        queue: Arc<RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
-    ) -> Dispatcher {
-        Dispatcher {
-            receiver: Receiver::new(net_port, max_rx_packets, ip_addr),
-            queue: queue,
-            // queue: RwLock::new(VecDeque::with_capacity(config.max_rx_packets)),
-        }
-    }
-    pub fn recv(&self) {
-        if let Some(mut packets) = self.receiver.recv() {
-            trace!("dispatcher recv {} packets", packets.len());
-            if packets.len() > 0 {
-                let mut queue = self.queue.write().unwrap();
-                while let Some((packet, _)) = packets.pop() {
-                    queue.push_back(packet);
-                }
-            }
-        }
-    }
-    /// get a packet from common queue
-    pub fn poll(&self) -> Option<Packet<UdpHeader, EmptyMetadata>> {
-        self.queue.write().unwrap().pop_front()
-    }
-}
-impl Executable for Dispatcher {
-    fn execute(&mut self) {
-        self.recv();
-    }
-    fn dependencies(&mut self) -> Vec<usize> {
-        vec![]
-    }
-}
-
 /// sender&receiver for compute node
 // 1. does not precompute mac and ip addr for LB and storage
 // 2. repeated parse and reparse header
-pub struct ComputeNodeWorker {
+pub struct ComputeNodeDispatcher {
     sender: Rc<Sender>,
     receiver: Receiver,
-    queue: Arc<RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
     manager: TaskManager,
     // this is dynamic, i.e. resp dst is set as req src upon recving new reqs
     resp_hdr: PacketHeaders,
@@ -789,19 +731,17 @@ pub struct ComputeNodeWorker {
 }
 
 // TODO: move req_ports& into config?
-impl ComputeNodeWorker {
+impl ComputeNodeDispatcher {
     pub fn new(
         config: &ComputeConfig,
-        queue: Arc<RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
         masterservice: Arc<Master>,
         net_port: CacheAligned<PortQueue>,
         sib_port: Option<CacheAligned<PortQueue>>,
         #[cfg(feature = "queue_len")] timestamp: Arc<RwLock<Vec<u64>>>,
         #[cfg(feature = "queue_len")] raw_length: Arc<RwLock<Vec<usize>>>,
         #[cfg(feature = "queue_len")] terminate: Arc<AtomicBool>,
-    ) -> ComputeNodeWorker {
-        ComputeNodeWorker {
-            queue: queue,
+    ) -> ComputeNodeDispatcher {
+        ComputeNodeDispatcher {
             resp_hdr: PacketHeaders::create_hdr(
                 &config.src,
                 net_port.txq() as u16,
@@ -833,52 +773,24 @@ impl ComputeNodeWorker {
         }
     }
 
-    fn poll(&mut self) -> f64 {
+    pub fn poll(&mut self) -> u32 {
+        let mut num_dispatched: u32 = 0;
         if let Some(mut packets) = self.receiver.recv() {
-            trace!("worker recv {} resps", packets.len());
+            trace!("recv {} packets", packets.len());
             while let Some((packet, _)) = packets.pop() {
-                self.dispatch(packet);
-            }
-            if self.manager.ready.len() > 0 {
-                let queue_len = self.queue.read().unwrap().len() as f64;
-                return queue_len + 1.0;
+                if let Ok(()) = self.dispatch(packet) {
+                    num_dispatched += 1;
+                }
             }
         }
-        let (request, queue_len) = {
-            let mut queue = self.queue.write().unwrap();
-            let queue_len = queue.len();
-            let request = queue.pop_front();
-            (request, queue_len)
-        };
-        if let Some(request) = request {
-            self.dispatch(request);
-            return queue_len as f64;
-        }
-        return 0.0;
+        num_dispatched
     }
-
-    // fn poll_response(&mut self) -> usize {
-    //     // let mut num_dispatched: u32 = 0;
-    //     if let Some(mut packets) = self.receiver.recv() {
-    //         trace!("worker recv {} resps", packets.len());
-    //         while let Some((packet, _)) = packets.pop() {
-    //             self.dispatch(packet);
-    //         }
-    //     }
-    // }
-
-    // fn poll_request(&mut self) {
-    //     let packet = self.queue.write().unwrap().pop_front();
-    //     if let Some(packet) = packet {
-    //         self.dispatch(packet);
-    //     }
-    // }
 
     pub fn run_extensions(&mut self, queue_len: f64) {
         self.manager.execute_tasks(queue_len);
     }
 
-    pub fn send_response(&mut self) {
+    pub fn send_resps(&mut self) {
         let resps = &mut self.manager.responses;
         if resps.len() > 0 {
             self.sender.send_pkts(resps);
@@ -1007,12 +919,12 @@ impl ComputeNodeWorker {
     }
 }
 
-impl Executable for ComputeNodeWorker {
+impl Executable for ComputeNodeDispatcher {
     fn execute(&mut self) {
-        // #[cfg(feature = "queue_len")]
-        // if self.terminate.load(Ordering::Relaxed) {
-        //     return;
-        // }
+        #[cfg(feature = "queue_len")]
+        if self.terminate.load(Ordering::Relaxed) {
+            return;
+        }
         let current = cycles::rdtsc();
         let eventloop_interval = if self.last_run > 0 {
             current - self.last_run
@@ -1020,25 +932,18 @@ impl Executable for ComputeNodeWorker {
             0
         };
         self.last_run = current;
-        // event loop
-        // TODO: smooth queue_len
-        let queue_len = self.poll();
-        // TODO: pass in queue_len
-        self.manager.execute_tasks(queue_len);
-        // self.run_extensions(0.0);
-        // let current_time = cycles::rdtsc();
-        // let queue_length = self.manager.ready.len();
-        // #[cfg(feature = "queue_len")]
-        // if (queue_length > 0 || self.timestamp.read().unwrap().len() > 0)
-        //     && !self.terminate.load(Ordering::Relaxed)
-        // {
-        //     self.timestamp.write().unwrap().push(current_time);
-        //     // #[cfg(feature = "queue_len")]
-        //     self.raw_length.write().unwrap().push(queue_length);
-        // }
-        // // TODO: smooth this queue_length
-        // self.run_extensions(queue_length as f64);
-        self.send_response();
+        self.poll();
+        let current_time = cycles::rdtsc();
+        let queue_length = self.manager.ready.len();
+        #[cfg(feature = "queue_len")]
+        if queue_length > 0 || self.timestamp.read().unwrap().len() > 0 {
+            self.timestamp.write().unwrap().push(current_time);
+            // #[cfg(feature = "queue_len")]
+            self.raw_length.write().unwrap().push(queue_length);
+        }
+        // TODO: smooth this queue_length
+        self.run_extensions(queue_length as f64);
+        self.send_resps();
     }
 
     fn dependencies(&mut self) -> Vec<usize> {
@@ -1046,9 +951,9 @@ impl Executable for ComputeNodeWorker {
     }
 }
 
-impl Drop for ComputeNodeWorker {
+impl Drop for ComputeNodeDispatcher {
     fn drop(&mut self) {
-        self.send_response();
+        self.send_resps();
     }
 }
 

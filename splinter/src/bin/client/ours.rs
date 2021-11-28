@@ -525,7 +525,7 @@ where
         }
     }
     // is it the same across all cores?
-    fn get_type_idx(&mut self) -> usize {
+    fn get_type_id(&mut self) -> usize {
         let o = self.workload.borrow_mut().rng.gen::<u32>() % 10000;
         if self.is_bimodal {
             self.modal_idx = if (cycles::rdtsc() - self.init_rdtsc)
@@ -545,13 +545,13 @@ where
         }
     }
 
-    fn native_or_rpc(&mut self, type_idx: usize) -> bool {
+    fn native_or_rpc(&mut self, type_id: usize) -> bool {
         // partition = -1 if not ours
         let o = self.workload.borrow_mut().rng.gen::<u32>() % 10000;
         if self.partition >= 0 {
-            if (type_idx as i32) < self.partition {
+            if (type_id as i32) < self.partition {
                 false
-            } else if self.partition < type_idx as i32 {
+            } else if self.partition < type_id as i32 {
                 true
             } else {
                 let ext_p = if self.is_bimodal {
@@ -563,8 +563,8 @@ where
                 o > ext_p
             }
         } else if self.ext_p.len() > 1 {
-            o > (self.ext_p[type_idx].load(Ordering::Relaxed) * 100.0) as u32
-            // o > self.ext_p[type_idx] as u32
+            o > (self.ext_p[type_id].load(Ordering::Relaxed) * 100.0) as u32
+            // o > self.ext_p[type_id] as u32
         } else {
             o > (self.ext_p[0].load(Ordering::Relaxed) * 100.0) as u32
             // o > self.ext_p[0] as u32
@@ -573,8 +573,8 @@ where
 
     fn send_once(&mut self) {
         let curr = cycles::rdtsc();
-        let type_idx: usize = self.get_type_idx();
-        let o = self.native_or_rpc(type_idx);
+        let type_id: usize = self.get_type_id();
+        let o = self.native_or_rpc(type_id);
         if o == true {
             // Configured to issue native RPCs, issue a regular get()/put() operation.
             self.workload.borrow_mut().abc(
@@ -583,7 +583,7 @@ where
             );
             self.native_state.borrow_mut().insert(
                 curr,
-                PushbackState::new(self.num, self.record_len as usize, type_idx),
+                PushbackState::new(self.num, self.record_len as usize, type_id),
             );
             // self.outstanding += 1;
         } else {
@@ -597,10 +597,10 @@ where
                 |tenant, key, ord| {
                     unsafe {
                         p_get[16..20].copy_from_slice(&{
-                            transmute::<u32, [u8; 4]>(self.multi_types[type_idx].num_kv.to_le())
+                            transmute::<u32, [u8; 4]>(self.multi_types[type_id].num_kv.to_le())
                         });
                         p_get[20..24].copy_from_slice(&{
-                            transmute::<u32, [u8; 4]>(self.multi_types[type_idx].order.to_le())
+                            transmute::<u32, [u8; 4]>(self.multi_types[type_id].order.to_le())
                         });
                     }
                     // First 24 bytes on the payload were already pre-populated with the
@@ -617,8 +617,8 @@ where
                     // );
                     self.native_state
                         .borrow_mut()
-                        .insert(curr, PushbackState::new(0, 0, type_idx));
-                    self.sender.send_invoke(tenant, 8, &p_get, curr, type_idx)
+                        .insert(curr, PushbackState::new(0, 0, type_id));
+                    self.sender.send_invoke(tenant, 8, &p_get, curr, type_id)
                 },
                 |tenant, key, _val, _ord| {
                     // First 18 bytes on the payload were already pre-populated with the
@@ -635,8 +635,8 @@ where
                     // );
                     self.native_state
                         .borrow_mut()
-                        .insert(curr, PushbackState::new(0, 0, type_idx));
-                    self.sender.send_invoke(tenant, 8, &p_put, curr, type_idx)
+                        .insert(curr, PushbackState::new(0, 0, type_id));
+                    self.sender.send_invoke(tenant, 8, &p_put, curr, type_id)
                 },
             );
             // self.outstanding += 1;
@@ -708,12 +708,12 @@ where
                             RpcStatus::StatusOk => {
                                 let timestamp = p.get_header().common_header.stamp;
                                 let mut native_state = self.native_state.borrow_mut();
-                                let type_idx = native_state.get(&timestamp).unwrap().type_idx;
+                                let type_id = native_state.get(&timestamp).unwrap().type_id;
                                 // self.recvd += 1;
                                 self.local_recvd += 1;
                                 self.recvd.fetch_add(1, Ordering::Relaxed);
                                 packet_recvd_signal = true;
-                                self.latencies[type_idx]
+                                self.latencies[type_id]
                                     .push(curr - p.get_header().common_header.stamp);
                                 self.outstanding -= 1;
                                 // self.manager
@@ -765,7 +765,7 @@ where
                                         num_kv: n,
                                         order: o,
                                         // steps: s,
-                                    } = self.multi_types[state.type_idx];
+                                    } = self.multi_types[state.type_id];
                                     if state.op_num == n as u8 {
                                         /*let start = cycles::rdtsc();
                                         while cycles::rdtsc() - start < self.ord as u64 {}*/
@@ -780,7 +780,7 @@ where
                                         //     val_len as u16,
                                         // );
                                         self.outstanding -= 1;
-                                        self.latencies[state.type_idx].push(curr - timestamp);
+                                        self.latencies[state.type_id].push(curr - timestamp);
                                         self.local_recvd += 1;
                                         self.recvd.fetch_add(1, Ordering::Relaxed);
                                         packet_recvd_signal = true;
@@ -842,12 +842,12 @@ where
                 }
 
                 // kth measurement here
-                for (type_idx, lat) in self.latencies.iter().enumerate() {
+                for (type_id, lat) in self.latencies.iter().enumerate() {
                     let len = lat.len();
                     if len > 100 && len % 10 == 0 {
                         let mut tmp = &lat[(len - 100)..len];
                         let mut tmpvec = tmp.to_vec();
-                        self.kth[type_idx][self.idx].store(
+                        self.kth[type_id][self.idx].store(
                             *order_stat::kth(&mut tmpvec, 98) as usize,
                             Ordering::Relaxed,
                         );
@@ -908,12 +908,12 @@ where
                         && (xloop_rdtsc - self.output_last_rdtsc > 2400000000 / self.output_factor)
                     {
                         self.output_last_rdtsc = xloop_rdtsc;
-                        for (type_idx, kth) in self.kth.iter().enumerate() {
-                            self.avg_lat[type_idx] = 0;
+                        for (type_id, kth) in self.kth.iter().enumerate() {
+                            self.avg_lat[type_id] = 0;
                             for lat in kth {
-                                self.avg_lat[type_idx] += lat.load(Ordering::Relaxed);
+                                self.avg_lat[type_id] += lat.load(Ordering::Relaxed);
                             }
-                            self.avg_lat[type_idx] /= kth.len();
+                            self.avg_lat[type_id] /= kth.len();
                         }
                         println!(
                             "rdtsc {} tail {:?} tput {} rpc {:?}",
@@ -1031,7 +1031,7 @@ where
         }
         // Calculate & print median & tail latency only on the master thread.
         if self.master {
-            for (type_idx, lat) in self.latencies.iter_mut().enumerate() {
+            for (type_id, lat) in self.latencies.iter_mut().enumerate() {
                 lat.sort();
                 let m;
                 let t = lat[(lat.len() * 99) / 100];
@@ -1046,7 +1046,7 @@ where
 
                 println!(
                     "type {} >>> lat50:{} lat99:{}",
-                    type_idx,
+                    type_id,
                     cycles::to_seconds(m) * 1e9,
                     cycles::to_seconds(t) * 1e9
                 );

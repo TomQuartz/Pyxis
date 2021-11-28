@@ -300,7 +300,7 @@ impl Sender {
         name_len: u32,
         payload: &[u8],
         id: u64,
-        type_idx: usize,
+        type_id: usize,
     ) {
         let request = rpc::create_invoke_rpc(
             &self.req_mac_header,
@@ -310,7 +310,7 @@ impl Sender {
             name_len,
             payload,
             id,
-            self.get_dst_port_by_type(type_idx),
+            self.get_dst_port_by_type(type_id),
             // (id & 0xffff) as u16 & (self.dst_ports - 1),
         );
 
@@ -327,8 +327,8 @@ impl Sender {
     }
 
     #[inline]
-    fn get_dst_port_by_type(&self, type_idx: usize) -> u16 {
-        let target_cores = &self.type2core[&type_idx];
+    fn get_dst_port_by_type(&self, type_id: usize) -> u16 {
+        let target_cores = &self.type2core[&type_id];
         let target_idx = self.rng.borrow_mut().gen::<u32>() % target_cores.len() as u32;
         target_cores[target_idx as usize]
     }

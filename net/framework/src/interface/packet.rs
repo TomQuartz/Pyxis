@@ -1,5 +1,5 @@
 use common::*;
-use headers::{EndOffset, NullHeader};
+use headers::{EndOffset, NullHeader, UdpHeader};
 use native::zcsi::*;
 use std::marker::PhantomData;
 use std::mem::size_of;
@@ -527,3 +527,6 @@ impl<T: EndOffset, M: Sized + Send> Packet<T, M> {
         mbuf
     }
 }
+
+unsafe impl Send for Packet<UdpHeader, EmptyMetadata> {}
+unsafe impl Sync for Packet<UdpHeader, EmptyMetadata> {}

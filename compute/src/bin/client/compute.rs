@@ -56,19 +56,48 @@ use self::atomic_float::AtomicF32;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::RwLock;
 
-use dispatch::ComputeNodeDispatcher;
+use db::e2d2::common::EmptyMetadata;
+use db::e2d2::headers::UdpHeader;
+use dispatch::{ComputeNodeWorker, Dispatcher};
+use std::collections::VecDeque;
 use std::fs::File;
 use std::io::Write;
 
 #[macro_use]
 extern crate cfg_if;
 
-fn setup_compute(
+fn setup_dispatcher(
+    config: &config::ComputeConfig,
+    ports: Vec<CacheAligned<PortQueue>>,
+    scheduler: &mut StandaloneScheduler,
+    queue: Arc<RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
+) {
+    match scheduler.add_task(Dispatcher::new(
+        &config.src.ip_addr,
+        config.max_rx_packets,
+        ports[0].clone(),
+        queue,
+    )) {
+        Ok(_) => {
+            info!(
+                "Successfully added compute node dispatcher with rx-tx queue {}.",
+                ports[0].rxq()
+            );
+        }
+        Err(ref err) => {
+            error!("Error while adding to Netbricks pipeline {}", err);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn setup_worker(
     config: &config::ComputeConfig,
     ports: Vec<CacheAligned<PortQueue>>,
     sibling: Option<CacheAligned<PortQueue>>,
     scheduler: &mut StandaloneScheduler,
     master: Arc<Master>,
+    queue: Arc<RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
     #[cfg(feature = "queue_len")] timestamp: Arc<RwLock<Vec<u64>>>,
     #[cfg(feature = "queue_len")] raw_length: Arc<RwLock<Vec<usize>>>,
     #[cfg(feature = "queue_len")] terminate: Arc<AtomicBool>,
@@ -77,8 +106,9 @@ fn setup_compute(
         error!("Client should be configured with exactly 1 port!");
         std::process::exit(1);
     }
-    match scheduler.add_task(ComputeNodeDispatcher::new(
+    match scheduler.add_task(ComputeNodeWorker::new(
         config,
+        queue,
         master,
         ports[0].clone(),
         sibling,
@@ -91,7 +121,7 @@ fn setup_compute(
     )) {
         Ok(_) => {
             info!(
-                "Successfully added compute node dispatcher with rx-tx queue {}.",
+                "Successfully added compute node worker with rx-tx queue {}.",
                 ports[0].rxq()
             );
         }
@@ -117,6 +147,7 @@ fn main() {
     }
     // finished populating, now mark as immut
     let master = Arc::new(master);
+    let queue = Arc::new(RwLock::new(VecDeque::with_capacity(config.max_rx_packets)));
 
     // Setup Netbricks.
     let mut net_context =
@@ -126,71 +157,99 @@ fn main() {
 
     // Setup the client pipeline.
     net_context.start_schedulers();
-    #[cfg(feature = "queue_len")]
-    let mut timestamps = vec![];
-    #[cfg(feature = "queue_len")]
-    let mut raw_lengths = vec![];
-    #[cfg(feature = "queue_len")]
-    let mut terminates = vec![];
-    cfg_if! {
-        if #[cfg(feature = "queue_len")]{
-            for core_id in 0..config.src.num_ports {
-                let timestamp = Arc::new(RwLock::new(Vec::with_capacity(12800000 as usize)));
-                let raw_length = Arc::new(RwLock::new(Vec::with_capacity(12800000 as usize)));
-                let terminate = Arc::new(AtomicBool::new(false));
-                timestamps.push(timestamp.clone());
-                raw_lengths.push(raw_length.clone());
-                terminates.push(terminate.clone());
-                let cmaster = master.clone();
-                net_context.add_pipeline_to_core(
-                    core_id as i32,
-                    Arc::new(
-                        move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
-                            setup_compute(
-                                &config::load::<config::ComputeConfig>("compute.toml"),
-                                ports,
-                                None,
-                                scheduler,
-                                cmaster.clone(),
-                                timestamp.clone(),
-                                raw_length.clone(),
-                                terminate.clone(),
-                            )
-                        },
-                    ),
-                );
-            }
-        }else{
-            for core_id in 0..config.src.num_ports {
-                let cmaster = master.clone();
-                net_context.add_pipeline_to_core(
-                    core_id as i32,
-                    Arc::new(
-                        move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
-                            setup_compute(
-                                &config::load::<config::ComputeConfig>("compute.toml"),
-                                ports,
-                                None,
-                                scheduler,
-                                cmaster.clone(),
-                            )
-                        },
-                    ),
-                );
-            }
-            // net_context.add_pipeline_to_run(Arc::new(
-            //     move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
-            //         setup_compute(
-            //             &config,
-            //             ports,
-            //             None,
-            //             scheduler,
-            //             master.clone(),
-            //         )
-            //     },
-            // ));
-        }
+    // setup dispatcher
+    let cfg = config.clone();
+    let cqueue = queue.clone();
+    net_context.add_pipeline_to_core(
+        0,
+        Arc::new(
+            move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
+                setup_dispatcher(
+                    // &config::load::<config::ComputeConfig>("compute.toml"),
+                    &cfg,
+                    ports,
+                    scheduler,
+                    cqueue.clone(),
+                )
+            },
+        ),
+    );
+    // setup worker
+    for core_id in 1..=config.src.num_ports {
+        let cfg = config.clone();
+        let cmaster = master.clone();
+        let cqueue = queue.clone();
+        net_context.add_pipeline_to_core(
+            core_id as i32,
+            Arc::new(
+                move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
+                    setup_worker(
+                        // &config::load::<config::ComputeConfig>("compute.toml"),
+                        &cfg,
+                        ports,
+                        None,
+                        scheduler,
+                        cmaster.clone(),
+                        cqueue.clone(),
+                    )
+                },
+            ),
+        );
     }
+    // #[cfg(feature = "queue_len")]
+    // let mut timestamps = vec![];
+    // #[cfg(feature = "queue_len")]
+    // let mut raw_lengths = vec![];
+    // #[cfg(feature = "queue_len")]
+    // let mut terminates = vec![];
+    // cfg_if! {
+    //     if #[cfg(feature = "queue_len")]{
+    //         for core_id in 0..config.src.num_ports {
+    //             let timestamp = Arc::new(RwLock::new(Vec::with_capacity(12800000 as usize)));
+    //             let raw_length = Arc::new(RwLock::new(Vec::with_capacity(12800000 as usize)));
+    //             let terminate = Arc::new(AtomicBool::new(false));
+    //             timestamps.push(timestamp.clone());
+    //             raw_lengths.push(raw_length.clone());
+    //             terminates.push(terminate.clone());
+    //             let cmaster = master.clone();
+    //             net_context.add_pipeline_to_core(
+    //                 core_id as i32,
+    //                 Arc::new(
+    //                     move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
+    //                         setup_compute(
+    //                             &config::load::<config::ComputeConfig>("compute.toml"),
+    //                             ports,
+    //                             None,
+    //                             scheduler,
+    //                             cmaster.clone(),
+    //                             timestamp.clone(),
+    //                             raw_length.clone(),
+    //                             terminate.clone(),
+    //                         )
+    //                     },
+    //                 ),
+    //             );
+    //         }
+    //     }else{
+    //         for core_id in 0..config.src.num_ports {
+    //             let cmaster = master.clone();
+    //             net_context.add_pipeline_to_core(
+    //                 core_id as i32,
+    //                 Arc::new(
+    //                     move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
+    //                         setup_compute(
+    //                             &config::load::<config::ComputeConfig>("compute.toml"),
+    //                             ports,
+    //                             None,
+    //                             scheduler,
+    //                             cmaster.clone(),
+    //                         )
+    //                     },
+    //                 ),
+    //             );
+    //         }
+    //     }
+    // }
     // net_context.add_pipeline_to_run(Arc::new(
     //     move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
     //         setup_compute(
@@ -212,43 +271,43 @@ fn main() {
 
     loop {
         std::thread::sleep(std::time::Duration::from_millis(1000));
-        cfg_if! {
-            if #[cfg(feature = "queue_len")]{
-                let mut finished = false;
-                for terminate in terminates.iter() {
-                    if terminate.load(Ordering::Relaxed) {
-                        finished = true;
-                        break;
-                    }
-                }
-                if finished{
-                    break;
-                }
-            }
-        }
+        // cfg_if! {
+        //     if #[cfg(feature = "queue_len")]{
+        //         let mut finished = false;
+        //         for terminate in terminates.iter() {
+        //             if terminate.load(Ordering::Relaxed) {
+        //                 finished = true;
+        //                 break;
+        //             }
+        //         }
+        //         if finished{
+        //             break;
+        //         }
+        //     }
+        // }
     }
-    #[cfg(feature = "queue_len")]
-    for terminate in terminates.iter() {
-        terminate.store(true, Ordering::Relaxed);
-    }
-    #[cfg(feature = "queue_len")]
-    std::thread::sleep(std::time::Duration::from_millis(1000));
-    #[cfg(feature = "queue_len")]
-    for (i, (time_vec, ql_vec)) in timestamps.iter().zip(raw_lengths.iter()).enumerate() {
-        let mut f = File::create(format!("core{}.log", i)).unwrap();
-        for &t in time_vec.read().unwrap().iter() {
-            write!(f, "{} ", t);
-        }
-        writeln!(f, "");
-        for &l in ql_vec.read().unwrap().iter() {
-            write!(f, "{} ", l);
-        }
-        println!(
-            "write queue length of core {}, total {}",
-            i,
-            time_vec.read().unwrap().len(),
-        );
-    }
+    // #[cfg(feature = "queue_len")]
+    // for terminate in terminates.iter() {
+    //     terminate.store(true, Ordering::Relaxed);
+    // }
+    // #[cfg(feature = "queue_len")]
+    // std::thread::sleep(std::time::Duration::from_millis(1000));
+    // #[cfg(feature = "queue_len")]
+    // for (i, (time_vec, ql_vec)) in timestamps.iter().zip(raw_lengths.iter()).enumerate() {
+    //     let mut f = File::create(format!("core{}.log", i)).unwrap();
+    //     for &t in time_vec.read().unwrap().iter() {
+    //         write!(f, "{} ", t);
+    //     }
+    //     writeln!(f, "");
+    //     for &l in ql_vec.read().unwrap().iter() {
+    //         write!(f, "{} ", l);
+    //     }
+    //     println!(
+    //         "write queue length of core {}, total {}",
+    //         i,
+    //         time_vec.read().unwrap().len(),
+    //     );
+    // }
     // Stop the client.
     // net_context.stop();
 }

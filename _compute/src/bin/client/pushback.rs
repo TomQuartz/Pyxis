@@ -15,7 +15,6 @@
 
 extern crate bytes;
 extern crate db;
-extern crate order_stat;
 extern crate rand;
 extern crate sandstorm;
 extern crate spin;
@@ -58,6 +57,9 @@ static mut FINISHED: bool = false;
 static mut ORD_DIST: bool = false;
 static ORDER: f64 = 2500.0;
 static STD_DEV: f64 = 500.0;
+
+// The maximum outstanding requests a client can generate; and maximum number of push-back tasks.
+const MAX_CREDIT: usize = 32;
 
 // PUSHBACK benchmark.
 // The benchmark is created and parameterized with `new()`. Many threads
@@ -149,7 +151,6 @@ impl Pushback {
         let k: [u8; 4] = unsafe { transmute(k.to_le()) };
         self.key_buf[0..mem::size_of::<u32>()].copy_from_slice(&k);
 
-        // We dont change this, b/c we bypass this part
         let o = self.order_rng.sample(&mut self.rng).abs() as u32;
 
         if is_get {
@@ -157,23 +158,6 @@ impl Pushback {
         } else {
             put(t, self.key_buf.as_slice(), self.value_buf.as_slice(), o)
         }
-    }
-}
-
-struct MultiType {
-    num_kv: u32,
-    order: u32,
-}
-impl MultiType {
-    fn new(multi_kv: &Vec<u32>, multi_ord: &Vec<u32>) -> Vec<MultiType> {
-        let mut multi_types = Vec::<MultiType>::new();
-        for (kv, ord) in multi_kv.iter().zip(multi_ord.iter()) {
-            multi_types.push(MultiType {
-                num_kv: *kv,
-                order: *ord,
-            });
-        }
-        multi_types
     }
 }
 
@@ -195,15 +179,9 @@ where
     // The total number of responses received so far.
     recvd: u64,
 
-    // Count how many reqs has been pushed back.
-    counter_pushback: u64,
-
     // Vector of sampled request latencies. Required to calculate distributions once all responses
     // have been received.
     latencies: Vec<u64>,
-
-    /// The percentage of operations that are extention. The rest are native.
-    ext_p: Vec<f32>,
 
     // If true, this receiver will make latency measurements.
     master: bool,
@@ -226,8 +204,6 @@ where
     // If true, RPC requests corresponding to native get() and put() operations are sent out. If
     // false, invoke() based RPC requests are sent out.
     native: bool,
-
-    max_out: f32,
 
     // Payload for an invoke() based get operation. Required in order to avoid making intermediate
     // copies of the extension name, table id, and key.
@@ -259,42 +235,11 @@ where
     /// Order of the final polynomial to be computed.
     ord: u32,
 
-    ord1: u32,
-    ord2: u32,
-    is_bimodal: bool,
-    bimodal_interval: u64,
-
-    rloop_factor: usize,
-    xloop_factor: usize,
-    slo: u64,
-
-    last_op: i32,
-    xloop_last_recvd: u64,
-    xloop_last_rdtsc: u64,
-    xloop_last_rate: f32,
-    // xloop_last_X: f32,
-    xloop_last_X: Vec<f32>,
-    rloop_last_recvd: u64,
-    rloop_last_rdtsc: u64,
-    rloop_last_out: f32,
-    rloop_last_kth: u64,
-
-    kth: u64,
-
-    /// These 2 var is just for exchange info between slow and fast loop
-    rate: i64,
-    d_rate: i64,
-
     // The length of the key.
     key_len: usize,
 
     // The length of the record.
     record_len: usize,
-    // modified here
-    // num_types: u32,
-    multi_types: Vec<MultiType>,
-    cum_prob: Vec<u32>,
-    partition: i32,
 }
 
 // Implementation of methods on PushbackRecv.
@@ -326,7 +271,6 @@ where
         masterservice: Arc<Master>,
         number: u32,
         order: u32,
-        ord2: u32,
     ) -> PushbackRecvSend<T> {
         // The payload on an invoke() based get request consists of the extensions name ("pushback"),
         // the table id to perform the lookup on, number of get(), number of CPU cycles and the key to lookup.
@@ -339,7 +283,6 @@ where
         payload_pushback.extend_from_slice("pushback".as_bytes());
         payload_pushback.extend_from_slice(&unsafe { transmute::<u64, [u8; 8]>(1u64.to_le()) });
         payload_pushback.extend_from_slice(&unsafe { transmute::<u32, [u8; 4]>(number.to_le()) });
-        // This is to init the order for non-bimodal situation
         payload_pushback.extend_from_slice(&unsafe { transmute::<u32, [u8; 4]>(order.to_le()) });
         payload_pushback.resize(payload_len, 0);
 
@@ -358,43 +301,12 @@ where
             transmute::<u16, [u8; 2]>((config.key_len as u16).to_le())
         });
         payload_put.resize(payload_len, 0);
-        // modified here
-        let n_types = config.multi_kv.len();
-        let estimated_load: Vec<f32> = config.multi_ord.iter().map(|&x| 1.0 / (x as f32)).collect();
-        let total: f32 = estimated_load.iter().sum();
-        let mut cumsum: f32 = 0.0;
-        let cum_prob: Vec<u32> = if config.equal_ratio {
-            (1..=n_types)
-                .map(|x| (x * 10000 / n_types) as u32)
-                .collect()
-        } else {
-            estimated_load
-                .iter()
-                .map(|&x| {
-                    cumsum += x / total;
-                    (cumsum * 10000.0) as u32
-                })
-                .collect()
-        };
-        // the number of rpc rate to compute
-        let num_x = if config.partition < 0 && config.multi_rpc {
-            config.multi_kv.len()
-        } else {
-            1
-        };
-        if master {
-            println!("cumulative prob {:?}", cum_prob);
-        }
-
         PushbackRecvSend {
             receiver: dispatch::Receiver::new(rx_port),
             responses: resps,
             start: cycles::rdtsc(),
             recvd: 0,
-            counter_pushback: 0,
             latencies: Vec::with_capacity(resps as usize),
-            /// The percentage of operations that are extention. The rest are native.
-            // ext_p: config.invoke_p as f32,
             master: master,
             stop: 0,
             workload: RefCell::new(Pushback::new(
@@ -410,62 +322,18 @@ where
             requests: reqs,
             sent: 0,
             native: !config.use_invoke,
-            max_out: config.max_out as f32,
             payload_pushback: RefCell::new(payload_pushback),
             payload_put: RefCell::new(payload_put),
             finished: false,
             outstanding: 0,
             manager: RefCell::new(TaskManager::new(Arc::clone(&masterservice))),
-            native_state: RefCell::new(HashMap::with_capacity(64)),
+            native_state: RefCell::new(HashMap::with_capacity(32)),
             num: number,
             ord: order,
-            ord1: order,
-            ord2: ord2,
-            is_bimodal: config.bimodal,
-            bimodal_interval: config.bimodal_interval,
-            rloop_factor: config.kayak_rloop_factor,
-            xloop_factor: config.kayak_xloop_factor,
-            slo: config.slo,
-            last_op: 1,
-            xloop_last_rdtsc: cycles::rdtsc(),
-            xloop_last_rate: 0.0,
-            // xloop_last_X: 50.5,
-            xloop_last_recvd: 0,
-            kth: 0,
-            rloop_last_recvd: 0,
-            rloop_last_rdtsc: cycles::rdtsc(),
-            rloop_last_out: 0.0,
-            rloop_last_kth: 0,
-            rate: 0,
-            d_rate: 0,
             key_len: config.key_len,
             record_len: 1 + 8 + config.key_len + config.value_len,
-            // modified here
-            xloop_last_X: vec![50.5;num_x],
-            ext_p: vec![config.invoke_p as f32;num_x],
-            multi_types: MultiType::new(&config.multi_kv,&config.multi_ord),
-            cum_prob: cum_prob,
-            partition: config.partition,
         }
     }
-
-    // fn native_or_rpc(&mut self, type_id: usize) -> bool {
-    //     // partition = -1 if not ours
-    //     let o = self.workload.borrow_mut().rng.gen::<u32>() % 10000;
-    //     if self.partition >= 0 {
-    //         if (type_id as i32) < self.partition {
-    //             false
-    //         } else if self.partition < type_id as i32 {
-    //             true
-    //         } else {
-    //             o >= (self.ext_p[0] * 100.0) as u32
-    //         }
-    //     } else if self.ext_p.len() > 1 {
-    //         o >= (self.ext_p[type_id] * 100.0) as u32
-    //     } else {
-    //         o >= (self.ext_p[0] * 100.0) as u32
-    //     }
-    // }
 
     fn send(&mut self) {
         // Return if there are no more requests to generate.
@@ -473,39 +341,21 @@ where
             return;
         }
 
-        // Switch ord between ord1 and ord2, only when bimodal
-        // if self.is_bimodal {
-        //     if (cycles::rdtsc() / self.bimodal_interval) % 2 == 1 {
-        //         self.ord = self.ord1;
-        //     } else {
-        //         self.ord = self.ord2;
-        //     }
-        // }
-
-        let o = self.workload.borrow_mut().rng.gen::<u32>() % 10000;
-        let type_id: usize = self.cum_prob.iter().position(|&x| x >= o).unwrap();
-        // self.num = self.multi_types[type_id].num_kv;
-        // self.ord = self.multi_types[type_id].order;
-
-        while self.outstanding < self.max_out as u64
-            && self.manager.borrow().get_queue_len() < self.max_out as usize
+        while self.outstanding < MAX_CREDIT as u64
+            && self.manager.borrow().get_queue_len() < MAX_CREDIT
         {
             // Get the current time stamp so that we can determine if it is time to issue the next RPC.
             let curr = cycles::rdtsc();
 
-            // let o = self.workload.borrow_mut().rng.gen::<u32>() % 10000 >= (self.ext_p * 100.0) as u32;
-            // let o = self.native_or_rpc(type_id);
-            let o = false
-            if o == true {
+            if self.native == true {
                 // Configured to issue native RPCs, issue a regular get()/put() operation.
                 self.workload.borrow_mut().abc(
                     |tenant, key, _ord| self.sender.send_get(tenant, 1, key, curr),
                     |tenant, key, val, _ord| self.sender.send_put(tenant, 1, key, val, curr),
                 );
-                self.native_state.borrow_mut().insert(
-                    curr,
-                    PushbackState::new(self.num, self.record_len as usize, type_id),
-                );
+                self.native_state
+                    .borrow_mut()
+                    .insert(curr, PushbackState::new(self.num, self.record_len as usize));
                 self.outstanding += 1;
             } else {
                 // Configured to issue invoke() RPCs.
@@ -517,12 +367,10 @@ where
                 self.workload.borrow_mut().abc(
                     |tenant, key, ord| {
                         unsafe {
-                            p_get[16..20].copy_from_slice(&{
-                                transmute::<u32, [u8; 4]>(self.multi_types[type_id].num_kv.to_le())
-                            });
-                            p_get[20..24].copy_from_slice(&{
-                                transmute::<u32, [u8; 4]>(self.multi_types[type_id].order.to_le())
-                            });
+                            if ORD_DIST {
+                                p_get[20..24]
+                                    .copy_from_slice(&{ transmute::<u32, [u8; 4]>(ord.to_le()) });
+                            }
                         }
                         // First 24 bytes on the payload were already pre-populated with the
                         // extension name (8 bytes), the table id (8 bytes), number of get()
@@ -569,8 +417,6 @@ where
             return;
         }
 
-        let mut packet_recvd_signal = false;
-
         // Try to receive packets from the network port.
         // If there are packets, sample the latency of the server.
         if let Some(mut packets) = self.receiver.recv_res() {
@@ -593,19 +439,17 @@ where
                             _ => {}
                         }
                         self.recvd += 1;
-                        packet_recvd_signal = true;
                         p.free_packet();
-                        /// In rust remove won't complain if no key.
-                        self.native_state.borrow_mut().remove(&timestamp);
-
+                        if self.native == true {
+                            self.native_state.borrow_mut().remove(&timestamp);
+                        }
                         continue;
                     }
 
                     _ => {}
                 }
 
-                /// Removed the condition is_native
-                {
+                if self.native == false {
                     match parse_rpc_opcode(&packet) {
                         // The response corresponds to an invoke() RPC.
                         OpCode::SandstormInvokeRpc => {
@@ -615,7 +459,6 @@ where
                                 // free the packet.
                                 RpcStatus::StatusOk => {
                                     self.recvd += 1;
-                                    packet_recvd_signal = true;
                                     self.latencies
                                         .push(curr - p.get_header().common_header.stamp);
                                     self.outstanding -= 1;
@@ -630,8 +473,6 @@ where
                                     let records = p.get_payload();
                                     let hdr = &p.get_header();
                                     let timestamp = hdr.common_header.stamp;
-
-                                    self.counter_pushback += 1;
 
                                     // Unblock the task and put it in the ready queue.
                                     self.manager.borrow_mut().update_rwset(
@@ -648,7 +489,24 @@ where
                             p.free_packet();
                         }
 
-                        // _ => packet.free_packet(),
+                        // The response corresponds to a get() or put() RPC.
+                        // The opcode on the response identifies the RPC type.
+                        OpCode::SandstormGetRpc => {
+                            let p = packet.parse_header::<GetResponse>();
+                            self.manager.borrow_mut().update_rwset(
+                                p.get_header().common_header.stamp,
+                                p.get_payload(),
+                                self.record_len,
+                                self.key_len,
+                            );
+                            p.free_packet();
+                        }
+
+                        _ => packet.free_packet(),
+                    }
+                } else {
+                    //The extension is executed locally on the client side.
+                    match parse_rpc_opcode(&packet) {
                         OpCode::SandstormGetRpc => {
                             let p = packet.parse_header::<GetResponse>();
                             let timestamp = p.get_header().common_header.stamp;
@@ -661,15 +519,10 @@ where
                                     RpcStatus::StatusOk => {
                                         let record = p.get_payload();
                                         state.update_rwset(&record, self.key_len);
-                                        let MultiType {
-                                            num_kv: n,
-                                            order: o,
-                                        } = self.multi_types[state.type_id];
-                                        if state.op_num == n as u8 {
+                                        if state.op_num == self.num as u8 {
                                             /*let start = cycles::rdtsc();
                                             while cycles::rdtsc() - start < self.ord as u64 {}*/
-                                            // Ord will change with bimodal
-                                            state.execute_task(n, o);
+                                            state.execute_task(self.num, self.ord);
                                             self.sender.send_commit(
                                                 tenant,
                                                 1,
@@ -717,171 +570,6 @@ where
                         _ => packet.free_packet(),
                     }
                 }
-
-                // kth measurement here
-                let len = self.latencies.len();
-                if len > 100 && len % 10 == 0 {
-                    let mut tmp = &self.latencies[(len - 100)..len];
-                    let mut tmpvec = tmp.to_vec();
-                    self.kth = *order_stat::kth(&mut tmpvec, 98);
-                }
-
-                // Loop logic here
-                // This is R-loop
-                // let rloop_rdtsc = cycles::rdtsc();
-                // if self.rloop_factor != 0
-                //     && packet_recvd_signal
-                //     && (rloop_rdtsc - self.rloop_last_rdtsc > 2400000000 / self.rloop_factor as u64)
-                //     && len > 100
-                //     && len % self.rloop_factor == 0
-                // {
-                //     let rloop_rate = 2.4e6 * (self.recvd - self.rloop_last_recvd) as f32
-                //         / (rloop_rdtsc - self.rloop_last_rdtsc) as f32;
-                //     self.rloop_last_rdtsc = rloop_rdtsc;
-                //     self.rloop_last_recvd = self.recvd;
-
-                //     // // Newton's method version, not really working...
-                //     // let kth_delta = self.kth - self.rloop_last_kth;
-                //     // self.rloop_last_kth = self.kth;
-                //     //
-                //     // let last_out_delta = self.max_out - self.rloop_last_out;
-                //     // self.rloop_last_out = self.max_out;
-
-                //     let lat_offset = self.slo as f32 - self.kth as f32;
-
-                //     // 3e-6 for heavy, 2e-5 normal
-                //     let out_delta = 3e-6 * lat_offset; // * last_out_delta / kth_delta as f32;
-
-                //     if self.max_out + out_delta > 2.0 {
-                //         self.max_out += out_delta;
-                //     } else {
-                //         self.max_out = self.max_out * 0.5;
-                //         if self.max_out < 2.0 {
-                //             self.max_out = 2.0;
-                //         }
-                //     }
-
-                //     // // AIMD version
-                //     // if self.slo < self.kth && self.max_out > 2 {
-                //     //     self.max_out = self.max_out * 4 / 5;
-                //     // } else {
-                //     //     self.max_out += 1;
-                //     // }
-
-                //     // Debug output
-                //     // info!("rdtsc {} len {} tail {} out {} rloop_rate {} RL", cycles::rdtsc(), len, self.kth, self.max_out, rloop_rate);
-                // }
-
-                let xloop_rdtsc = cycles::rdtsc();
-                // This is X-loop
-                if self.xloop_factor != 0
-                    && packet_recvd_signal
-                    && (xloop_rdtsc - self.xloop_last_rdtsc > 2400000000 / self.xloop_factor as u64)
-                    && len > 100
-                    && len % self.xloop_factor == 0
-                // && self.partition < 0
-                // NOTE: currently we do parameter sweep for rpc rate
-                // remove the last condition if we use kayak's x-loop to compute rpc rate
-                {
-                    // first calc the rate
-                    let xloop_rate = 2.4e6 * (self.recvd - self.xloop_last_recvd) as f32
-                        / (xloop_rdtsc - self.xloop_last_rdtsc) as f32;
-                    self.xloop_last_rdtsc = xloop_rdtsc;
-                    self.xloop_last_recvd = self.recvd;
-
-                    let delta_rate = xloop_rate - self.xloop_last_rate;
-                    self.xloop_last_rate = xloop_rate;
-
-                    for i in 0..self.ext_p.len() {
-                        let delta_X = self.ext_p[i] - self.xloop_last_X[i];
-                        self.xloop_last_X[i] = self.ext_p[i];
-                        let grad = 2.0 * delta_rate / delta_X;
-                        let mut bounded_offset_X: f32 = -1.0;
-                        if grad > 0.0 {
-                            if grad < 1.0 {
-                                bounded_offset_X = 1.0;
-                            } else if grad > 20.0 {
-                                bounded_offset_X = 5.0;
-                            } else {
-                                bounded_offset_X = grad;
-                            }
-                        } else {
-                            if grad > -1.0 {
-                                bounded_offset_X = -1.0;
-                            } else if grad < -20.0 {
-                                bounded_offset_X = -5.0;
-                            } else {
-                                bounded_offset_X = grad;
-                            }
-                        }
-                        let new_X = bounded_offset_X + self.ext_p[i];
-                        if new_X > 100.0 || new_X < 0.0 {
-                            self.ext_p[i] -= bounded_offset_X; // bounce back
-                        } else {
-                            self.ext_p[i] = new_X;
-                        }
-                    }
-
-                    // No GD version X-loop. Static step size.
-                    // self.d_rate = self.rate - self.last_rate;
-                    // self.last_rate = self.rate;
-                    //
-                    // if self.d_rate > 3 {
-                    //     // continue last operation
-                    //     if self.last_op == 1 {
-                    //         if self.ext_p < 99.0 { self.ext_p += 5.0; }
-                    //     } else {
-                    //         if self.ext_p > 0.0 {  self.ext_p -= 5.0; }
-                    //     }
-                    //
-                    // } else if self.d_rate < -3 {
-                    //     // revert last operation
-                    //     if self.last_op == 1 {
-                    //         if self.ext_p > 0.0 {  self.ext_p -= 5.0; }
-                    //         self.last_op = 0;
-                    //
-                    //     } else if self.last_op == 0 {
-                    //         if self.ext_p < 99.0 {  self.ext_p += 5.0; }
-                    //         self.last_op = 1;
-                    //     }
-                    // }
-
-                    // let delta_kth = self.kth as i32 - self.xloop_last_kth as i32;
-                    // let delta_X = self.ext_p - self.xloop_last_X;
-                    // self.xloop_last_X = self.ext_p;
-                    //
-                    // let grad: f32 = delta_kth as f32 / delta_X as f32;
-                    // let mut diff_X = grad / 10000.0;
-                    //
-                    // if diff_X > 20.0 {
-                    //     diff_X = 20.0;
-                    // } else if diff_X < -20.0 {
-                    //     diff_X = 20.0;
-                    // }
-                    //
-                    // let new_X = self.ext_p + diff_X;
-                    // if new_X >= 0.0 && new_X <= 100.0 {
-                    //     self.ext_p = new_X;
-                    // }
-
-                    // Debug output
-                    //                        info!("rate {} d_rate {} ext_p {} op {}", rate, d_rate, self.ext_p, self.last_op);
-                    if self.master {
-                        trace!(
-                            "rdtsc {} len {} tail {} out {} recvd {} rate {} d_rate {} ext_p {:?}",
-                            xloop_rdtsc,
-                            len,
-                            self.kth,
-                            self.max_out,
-                            self.recvd,
-                            xloop_rate,
-                            delta_rate,
-                            self.ext_p
-                        );
-                    }
-                    // trace!("rdtsc {} len {} tail {} out {} recvd {} rate {} d_rate {} ext_p {} off {} XL",
-                    //       xloop_rdtsc, len, self.kth, self.max_out, self.recvd, xloop_rate, delta_rate, self.ext_p, bounded_offset_X);
-                }
             }
         }
 
@@ -905,11 +593,6 @@ where
             info!("The client thread received only {} packets", self.recvd);
         }
 
-        info!(
-            "pushedback {} of total {}",
-            self.counter_pushback, self.recvd
-        );
-
         // Calculate & print the throughput for all client threads.
         println!(
             "PUSHBACK Throughput {}",
@@ -932,7 +615,7 @@ where
             }
 
             println!(
-                ">>> lat50:{} lat99:{}",
+                ">>> {} {}",
                 cycles::to_seconds(m) * 1e9,
                 cycles::to_seconds(t) * 1e9
             );
@@ -949,7 +632,7 @@ where
     fn execute(&mut self) {
         self.send();
         self.recv();
-        for _i in 0..self.max_out as usize {
+        for _i in 0..MAX_CREDIT {
             self.manager.borrow_mut().execute_task();
         }
         if self.finished == true {
@@ -981,12 +664,11 @@ fn setup_send_recv<S>(
     // Pushback compute size.
     let num = config.num_aggr as u32;
     let ord = config.order as u32;
-    let ord2 = config.order2 as u32;
 
     // Add the receiver to a netbricks pipeline.
     match scheduler.add_task(PushbackRecvSend::new(
         ports[0].clone(),
-        config.num_reqs as u64 / 2,
+        34 * 1000 * 1000 as u64,
         master,
         config,
         ports[0].clone(),
@@ -995,7 +677,6 @@ fn setup_send_recv<S>(
         masterservice,
         num,
         ord,
-        ord2,
     )) {
         Ok(_) => {
             info!(
@@ -1037,8 +718,8 @@ fn main() {
     let senders_receivers = [0, 1, 2, 3, 4, 5, 6, 7];
     assert!(senders_receivers.len() == 8);
 
-    // Setup 1 senders, and receivers.
-    for i in 0..config.num_sender {
+    // Setup 8 senders, and receivers.
+    for i in 0..8 {
         // First, retrieve a tx-rx queue pair from Netbricks
         let port = net_context
             .rx_queues
@@ -1085,7 +766,7 @@ fn main() {
             std::thread::sleep(std::time::Duration::from_secs(2));
         }
     }
-    std::thread::sleep(std::time::Duration::from_secs(2));
+    std::thread::sleep(std::time::Duration::from_secs(100));
 
     // Stop the client.
     net_context.stop();

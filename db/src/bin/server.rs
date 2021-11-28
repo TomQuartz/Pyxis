@@ -41,7 +41,8 @@ use db::master::Master;
 use db::sched::RoundRobin;
 use db::task::TaskPriority;
 
-use spin::RwLock;
+// use spin::RwLock;
+use std::sync::RwLock;
 
 use libc::ucontext_t;
 use nix::sys::signal;
@@ -50,6 +51,10 @@ use util::model::{insert_model, MODEL};
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use db::e2d2::common::EmptyMetadata;
+use db::e2d2::headers::UdpHeader;
+use db::sched::{Dispatcher, StorageNodeWorker};
+use std::collections::VecDeque;
 use std::fs::File;
 use std::io::Write;
 
@@ -99,6 +104,61 @@ impl Executable for Server {
     }
 }
 
+fn setup_dispatcher(
+    config: &config::StorageConfig,
+    ports: Vec<CacheAligned<PortQueue>>,
+    scheduler: &mut StandaloneScheduler,
+    queue: Arc<RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
+) {
+    match scheduler.add_task(Dispatcher::new(
+        &config.src.ip_addr,
+        config.max_rx_packets,
+        ports[0].clone(),
+        queue,
+    )) {
+        Ok(_) => {
+            info!(
+                "Successfully added storage node dispatcher with rx-tx queue {}.",
+                ports[0].rxq()
+            );
+        }
+        Err(ref err) => {
+            error!("Error while adding to Netbricks pipeline {}", err);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn setup_worker(
+    config: &config::StorageConfig,
+    ports: Vec<CacheAligned<PortQueue>>,
+    scheduler: &mut StandaloneScheduler,
+    master: Arc<Master>,
+    queue: Arc<RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
+) {
+    if ports.len() != 1 {
+        error!("Client should be configured with exactly 1 port!");
+        std::process::exit(1);
+    }
+    match scheduler.add_task(StorageNodeWorker::new(
+        config,
+        ports[0].clone(),
+        master,
+        queue,
+    )) {
+        Ok(_) => {
+            info!(
+                "Successfully added storage node worker with rx-tx queue {}.",
+                ports[0].rxq()
+            );
+        }
+        Err(ref err) => {
+            error!("Error while adding to Netbricks pipeline {}", err);
+            std::process::exit(1);
+        }
+    }
+}
+
 /// This function sets up a Sandstorm server's dispatch thread on top
 /// of Netbricks.
 fn setup_server<S>(
@@ -108,7 +168,7 @@ fn setup_server<S>(
     scheduler: &mut S,
     core: i32,
     master: &Arc<Master>,
-    handles: &Arc<RwLock<Vec<Arc<RoundRobin>>>>,
+    handles: &Arc<spin::RwLock<Vec<Arc<RoundRobin>>>>,
 ) where
     S: Scheduler + Sized,
 {
@@ -197,12 +257,12 @@ fn setup_server<S>(
 /// receive descriptors, and 256 transmit descriptors will be made available to
 /// Netbricks. Loopback, hardware transmit segementation offload, and hardware
 /// checksum offload will be disabled on this port.
-fn get_default_netbricks_config(config: &config::ServerConfig) -> NetbricksConfiguration {
+fn get_default_netbricks_config(config: &config::StorageConfig) -> NetbricksConfiguration {
     // General arguments supplied to netbricks.
-    let net_config_name = String::from("server");
+    let net_config_name = String::from("storage");
     let dpdk_secondary: bool = false;
     let net_primary_core: i32 = 19;
-    let net_cores: Vec<i32> = (0i32..config.num_cores).collect();
+    let net_cores: Vec<i32> = (0..16).collect();
     let net_strict_cores: bool = true;
     let net_pool_size: u32 = 16384 - 1;
     let net_cache_size: u32 = 512;
@@ -250,7 +310,7 @@ fn get_default_netbricks_config(config: &config::ServerConfig) -> NetbricksConfi
 ///
 /// Returns a Netbricks context which can be used to setup and start the
 /// server/client.
-fn config_and_init_netbricks(config: &config::ServerConfig) -> NetbricksContext {
+fn config_and_init_netbricks(config: &config::StorageConfig) -> NetbricksContext {
     let net_config: NetbricksConfiguration = get_default_netbricks_config(config);
 
     // Initialize Netbricks and return a handle.
@@ -320,102 +380,11 @@ fn main() {
 
     print_info();
 
-    let config = config::ServerConfig::load();
-    info!("Starting up Sandstorm server with config {:?}", config);
+    let config: config::StorageConfig = config::load("storage.toml");
+    info!("Starting up storage with config {:?}", config);
 
-    // let master = Arc::new(Master::new());
     let mut master = Master::new(config.key_len, config.value_len, config.record_len);
-
-    // Create tenants with data and extensions.
     match config.workload.as_str() {
-        // "YCSB" => {
-        //     info!(
-        //         "Populating YCSB data, {} tenants, {} records/tenant",
-        //         config.num_tenants, config.num_records
-        //     );
-        //     for tenant in 1..(config.num_tenants + 1) {
-        //         master.fill_test(tenant, 1, config.num_records);
-        //         master.load_test(tenant);
-        //     }
-        // }
-
-        // "TAO" => {
-        //     info!(
-        //         "Populating TAO data, {} tenants, {} records/tenant",
-        //         config.num_tenants, config.num_records
-        //     );
-        //     for tenant in 1..(config.num_tenants + 1) {
-        //         master.fill_tao(tenant, config.num_records);
-        //         master.load_test(tenant);
-        //     }
-        // }
-
-        // "AGGREGATE" => {
-        //     info!(
-        //         "Populating AGGREGATE data, {} tenants, {} records/tenant",
-        //         config.num_tenants, config.num_records
-        //     );
-        //     for tenant in 1..(config.num_tenants + 1) {
-        //         master.fill_aggregate(tenant, 1, config.num_records);
-        //         master.load_test(tenant);
-        //     }
-        // }
-
-        // "ANALYSIS" => {
-        //     info!(
-        //         "Populating ANALYSIS data, {} tenants, training dataset/tenant",
-        //         config.num_tenants
-        //     );
-        //     master.fill_analysis(config.num_tenants);
-        //     for tenant in 1..(config.num_tenants + 1) {
-        //         master.load_test(tenant);
-        //     }
-        //     assert_eq!(cfg!(feature = "ml-model"), true);
-        // }
-
-        // "AUTH" => {
-        //     info!(
-        //         "Populating AUTH data, {} tenants, {} records/tenant",
-        //         config.num_tenants, config.num_records
-        //     );
-        //     for tenant in 1..(config.num_tenants + 1) {
-        //         master.fill_auth(tenant, 1, config.num_records);
-        //         master.load_test(tenant);
-        //     }
-        // }
-
-        // "MIX" => {
-        //     info!("Populating MIX data, {} tenants", config.num_tenants);
-        //     info!("TAO: {} records/tenants", config.num_records);
-        //     info!("ANALYSIS: 68000 records/tenant");
-        //     master.fill_mix(config.num_tenants, config.num_records);
-        //     for tenant in 1..(config.num_tenants + 1) {
-        //         master.load_test(tenant);
-        //     }
-        //     assert_eq!(cfg!(feature = "ml-model"), true);
-        // }
-
-        // "YCSBT" => {
-        //     info!(
-        //         "Populating YCSB-T data, {} tenants, {} records/tenant",
-        //         config.num_tenants, config.num_records
-        //     );
-        //     for tenant in 1..(config.num_tenants + 1) {
-        //         master.fill_ycsb(tenant, 1, config.num_records);
-        //         master.load_test(tenant);
-        //     }
-        // }
-
-        // "CHECKSUM" => {
-        //     info!(
-        //         "Populating CHECKSUM data, {} tenants, {} records/tenant",
-        //         config.num_tenants, config.num_records
-        //     );
-        //     for tenant in 1..(config.num_tenants + 1) {
-        //         master.fill_aggregate(tenant, 1, config.num_records);
-        //         master.load_test(tenant);
-        //     }
-        // }
         "PUSHBACK" => {
             info!(
                 "Populating PUSHBACK data, {} tenants, {} records/tenant",
@@ -426,179 +395,334 @@ fn main() {
                 master.load_test(tenant);
             }
         }
-
-        _ => {
-            info!("Populating SANITY data for tenant 100");
-            master.fill_test(100, 100, 0);
-            master.load_test(100);
-        }
+        _ => {}
     }
-    // finished adding tenant and ext, wrap into immut arc
     let master = Arc::new(master);
+    let queue = Arc::new(RwLock::new(VecDeque::with_capacity(config.max_rx_packets)));
 
-    // Setup Netbricks.
     let mut net_context: NetbricksContext = config_and_init_netbricks(&config);
-
-    // A handle to every scheduler for pre-emption.
-    let handles = Arc::new(RwLock::new(Vec::with_capacity(config.num_cores as usize)));
-
-    // Clone `master` and `handle` so that they are still around after the schedulers are
-    // initialized.
-    let cmaster = Arc::clone(&master);
-    let chandle = Arc::clone(&handles);
-
-    // Copy out the network address that install() RPCs will be received on.
-    let install_addr = config.install_addr.clone();
-
-    // Setup the server pipeline.
     net_context.start_schedulers();
-    net_context.add_pipeline_to_run(Arc::new(
-        move |ports, scheduler: &mut StandaloneScheduler, core: i32, sibling| {
-            setup_server(&config, ports, sibling, scheduler, core, &cmaster, &chandle)
-        },
-    ));
-
-    // // Create a thread to handle the install() RPC request.
-    // let imaster = Arc::clone(&master);
-    // let _install = spawn(move || {
-    //     // Pin to the ghetto core.
-    //     let tid = unsafe { zcsi::get_thread_id() };
-    //     unsafe { zcsi::set_affinity(tid, GHETTO) };
-
-    //     // Run the installer.
-    //     let mut installer = Installer::new(imaster, install_addr);
-    //     installer.execute();
-    // });
-
-    // Run the server, and give it some time to bootup.
-    net_context.execute();
-    sleep(Duration::from_millis(1000));
-
-    // Convert to cycles.
-    let limit = (MALICIOUS_LIMIT_MS / 1000f64) * (cycles_per_second() as f64);
-
-    // Check for misbehaving tasks here.
-    loop {
-        // Scan schedulers every few milliseconds.
-        sleep(Duration::from_millis(SCAN_INTERVAL_MS));
-        #[cfg(feature = "queue_len")]
-        let mut finished = false;
-        #[cfg(feature = "queue_len")]
-        for sched in handles.write().iter_mut() {
-            if sched.terminate.load(Ordering::Relaxed) {
-                finished = true;
-                break;
-            }
-        }
-        #[cfg(feature = "queue_len")]
-        if finished {
-            break;
-        }
-        /*
-        for sched in handles.write().iter_mut() {
-            // Get the current time stamp to compare scheduler time stamps against.
-            let current = rdtsc();
-
-            // Get the latest timestamp at which the scheduler executed.
-            let latest = sched.latest();
-
-            // If the scheduler executed after `current` was measured, continue checking others.
-            if latest > current {
-                continue;
-            }
-
-            // If this scheduler executed less than "MALICIOUS_LIMIT_MS" milliseconds before, then
-            // continue checking others.
-            if current - latest < limit as u64 {
-                continue;
-            }
-
-            let tid = sched.thread();
-            let core = sched.core();
-            warn!(
-                "Detected misbehaving task {} on core {}. Current: {}, Latest: {}, Cycles/s {}",
-                tid,
-                core,
-                current,
-                latest,
-                cycles_per_second(),
-            );
-
-            // There might be an uncooperative task on this scheduler. Dequeue it's tasks and any
-            // pending response packets.
-            let mut tasks = sched.dequeue_all();
-            let mut resps = sched.responses();
-
-            // Retain only non-dispatch tasks.
-            tasks.retain(|task| task.priority() != TaskPriority::DISPATCH);
-
-            // Set the compromised flag on the scheduler and then migrate it. Stop the scheduler.
-            sched.compromised();
-            unsafe { zcsi::set_affinity(tid, GHETTO) };
-            net_context.stop_core(core);
-
-            // Create and setup a new scheduler on the core.
-            let temp = Arc::new(RwLock::new(Vec::with_capacity(1)));
-            let cmaster = Arc::clone(&master);
-            let ctemp = Arc::clone(&temp);
-            net_context.start_scheduler(core);
-            let _res = net_context.add_pipeline_to_core(
-                core,
-                Arc::new(
-                    move |ports, scheduler: &mut StandaloneScheduler, core: i32, sibling| {
-                        setup_server(
-                            &config::ServerConfig::load(),
-                            ports,
-                            sibling,
-                            scheduler,
-                            core,
-                            &cmaster,
-                            &ctemp,
-                        )
-                    },
-                ),
-            );
-
-            // Start the new scheduler, and give it some time to boot.
-            net_context.execute_core(core);
-
-            // Wait for the new scheduler to be created.
-            while temp.read().len() == 0 {}
-
-            // Enqueue all tasks and response packets from the previous scheduler.
-            let new = temp
-                .write()
-                .pop()
-                .expect("Failed to retrieve added scheduler.");
-            *sched = new;
-            sched.enqueue_many(tasks);
-            sched.append_resps(&mut resps);
-        }
-        */
-    }
-    #[cfg(feature = "queue_len")]
-    for sched in handles.write().iter_mut() {
-        sched.terminate.store(true, Ordering::Relaxed);
-    }
-    #[cfg(feature = "queue_len")]
-    sleep(Duration::from_millis(1000));
-    #[cfg(feature = "queue_len")]
-    for (i, sched) in handles.write().iter_mut().enumerate() {
-        let mut f = File::create(format!("core{}.log", i)).unwrap();
-        for &t in sched.timestamp.borrow().iter() {
-            write!(f, "{} ", t);
-        }
-        writeln!(f, "");
-        for &l in sched.raw_length.borrow().iter() {
-            write!(f, "{} ", l);
-        }
-        println!(
-            "write queue length of core {}, total {}",
-            i,
-            sched.timestamp.borrow().len()
+    // setup dispatcher
+    let cfg = config.clone();
+    let cqueue = queue.clone();
+    net_context.add_pipeline_to_core(
+        0,
+        Arc::new(
+            move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
+                setup_dispatcher(
+                    // &config::load::<config::ComputeConfig>("compute.toml"),
+                    &cfg,
+                    ports,
+                    scheduler,
+                    cqueue.clone(),
+                )
+            },
+        ),
+    );
+    // setup worker
+    for core_id in 1..=config.src.num_ports {
+        let cmaster = master.clone();
+        let cqueue = queue.clone();
+        net_context.add_pipeline_to_core(
+            core_id as i32,
+            Arc::new(
+                move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
+                    setup_worker(
+                        &config::load::<config::StorageConfig>("storage.toml"),
+                        ports,
+                        scheduler,
+                        cmaster.clone(),
+                        cqueue.clone(),
+                    )
+                },
+            ),
         );
     }
-    // Stop the server.
-    // net_context.stop();
-    // _install.join();
+
+    net_context.execute();
+    loop {
+        sleep(Duration::from_millis(1000));
+    }
+
+    // let config = config::ServerConfig::load();
+    // info!("Starting up Sandstorm server with config {:?}", config);
+
+    // // let master = Arc::new(Master::new());
+    // let mut master = Master::new(config.key_len, config.value_len, config.record_len);
+
+    // // Create tenants with data and extensions.
+    // match config.workload.as_str() {
+    //     // "YCSB" => {
+    //     //     info!(
+    //     //         "Populating YCSB data, {} tenants, {} records/tenant",
+    //     //         config.num_tenants, config.num_records
+    //     //     );
+    //     //     for tenant in 1..(config.num_tenants + 1) {
+    //     //         master.fill_test(tenant, 1, config.num_records);
+    //     //         master.load_test(tenant);
+    //     //     }
+    //     // }
+
+    //     // "TAO" => {
+    //     //     info!(
+    //     //         "Populating TAO data, {} tenants, {} records/tenant",
+    //     //         config.num_tenants, config.num_records
+    //     //     );
+    //     //     for tenant in 1..(config.num_tenants + 1) {
+    //     //         master.fill_tao(tenant, config.num_records);
+    //     //         master.load_test(tenant);
+    //     //     }
+    //     // }
+
+    //     // "AGGREGATE" => {
+    //     //     info!(
+    //     //         "Populating AGGREGATE data, {} tenants, {} records/tenant",
+    //     //         config.num_tenants, config.num_records
+    //     //     );
+    //     //     for tenant in 1..(config.num_tenants + 1) {
+    //     //         master.fill_aggregate(tenant, 1, config.num_records);
+    //     //         master.load_test(tenant);
+    //     //     }
+    //     // }
+
+    //     // "ANALYSIS" => {
+    //     //     info!(
+    //     //         "Populating ANALYSIS data, {} tenants, training dataset/tenant",
+    //     //         config.num_tenants
+    //     //     );
+    //     //     master.fill_analysis(config.num_tenants);
+    //     //     for tenant in 1..(config.num_tenants + 1) {
+    //     //         master.load_test(tenant);
+    //     //     }
+    //     //     assert_eq!(cfg!(feature = "ml-model"), true);
+    //     // }
+
+    //     // "AUTH" => {
+    //     //     info!(
+    //     //         "Populating AUTH data, {} tenants, {} records/tenant",
+    //     //         config.num_tenants, config.num_records
+    //     //     );
+    //     //     for tenant in 1..(config.num_tenants + 1) {
+    //     //         master.fill_auth(tenant, 1, config.num_records);
+    //     //         master.load_test(tenant);
+    //     //     }
+    //     // }
+
+    //     // "MIX" => {
+    //     //     info!("Populating MIX data, {} tenants", config.num_tenants);
+    //     //     info!("TAO: {} records/tenants", config.num_records);
+    //     //     info!("ANALYSIS: 68000 records/tenant");
+    //     //     master.fill_mix(config.num_tenants, config.num_records);
+    //     //     for tenant in 1..(config.num_tenants + 1) {
+    //     //         master.load_test(tenant);
+    //     //     }
+    //     //     assert_eq!(cfg!(feature = "ml-model"), true);
+    //     // }
+
+    //     // "YCSBT" => {
+    //     //     info!(
+    //     //         "Populating YCSB-T data, {} tenants, {} records/tenant",
+    //     //         config.num_tenants, config.num_records
+    //     //     );
+    //     //     for tenant in 1..(config.num_tenants + 1) {
+    //     //         master.fill_ycsb(tenant, 1, config.num_records);
+    //     //         master.load_test(tenant);
+    //     //     }
+    //     // }
+
+    //     // "CHECKSUM" => {
+    //     //     info!(
+    //     //         "Populating CHECKSUM data, {} tenants, {} records/tenant",
+    //     //         config.num_tenants, config.num_records
+    //     //     );
+    //     //     for tenant in 1..(config.num_tenants + 1) {
+    //     //         master.fill_aggregate(tenant, 1, config.num_records);
+    //     //         master.load_test(tenant);
+    //     //     }
+    //     // }
+    //     "PUSHBACK" => {
+    //         info!(
+    //             "Populating PUSHBACK data, {} tenants, {} records/tenant",
+    //             config.num_tenants, config.num_records
+    //         );
+    //         for tenant in 1..(config.num_tenants + 1) {
+    //             master.fill_test(tenant, 1, config.num_records);
+    //             master.load_test(tenant);
+    //         }
+    //     }
+
+    //     _ => {
+    //         info!("Populating SANITY data for tenant 100");
+    //         master.fill_test(100, 100, 0);
+    //         master.load_test(100);
+    //     }
+    // }
+    // // finished adding tenant and ext, wrap into immut arc
+    // let master = Arc::new(master);
+
+    // // Setup Netbricks.
+    // let mut net_context: NetbricksContext = config_and_init_netbricks(&config);
+
+    // // A handle to every scheduler for pre-emption.
+    // let handles = Arc::new(RwLock::new(Vec::with_capacity(config.num_cores as usize)));
+
+    // // Clone `master` and `handle` so that they are still around after the schedulers are
+    // // initialized.
+    // let cmaster = Arc::clone(&master);
+    // let chandle = Arc::clone(&handles);
+
+    // // Copy out the network address that install() RPCs will be received on.
+    // let install_addr = config.install_addr.clone();
+
+    // // Setup the server pipeline.
+    // net_context.start_schedulers();
+    // net_context.add_pipeline_to_run(Arc::new(
+    //     move |ports, scheduler: &mut StandaloneScheduler, core: i32, sibling| {
+    //         setup_server(&config, ports, sibling, scheduler, core, &cmaster, &chandle)
+    //     },
+    // ));
+
+    // // // Create a thread to handle the install() RPC request.
+    // // let imaster = Arc::clone(&master);
+    // // let _install = spawn(move || {
+    // //     // Pin to the ghetto core.
+    // //     let tid = unsafe { zcsi::get_thread_id() };
+    // //     unsafe { zcsi::set_affinity(tid, GHETTO) };
+
+    // //     // Run the installer.
+    // //     let mut installer = Installer::new(imaster, install_addr);
+    // //     installer.execute();
+    // // });
+
+    // // Run the server, and give it some time to bootup.
+    // net_context.execute();
+    // sleep(Duration::from_millis(1000));
+
+    // // Convert to cycles.
+    // let limit = (MALICIOUS_LIMIT_MS / 1000f64) * (cycles_per_second() as f64);
+
+    // // Check for misbehaving tasks here.
+    // loop {
+    //     // Scan schedulers every few milliseconds.
+    //     sleep(Duration::from_millis(SCAN_INTERVAL_MS));
+    //     #[cfg(feature = "queue_len")]
+    //     let mut finished = false;
+    //     #[cfg(feature = "queue_len")]
+    //     for sched in handles.write().iter_mut() {
+    //         if sched.terminate.load(Ordering::Relaxed) {
+    //             finished = true;
+    //             break;
+    //         }
+    //     }
+    //     #[cfg(feature = "queue_len")]
+    //     if finished {
+    //         break;
+    //     }
+    //     /*
+    //     for sched in handles.write().iter_mut() {
+    //         // Get the current time stamp to compare scheduler time stamps against.
+    //         let current = rdtsc();
+
+    //         // Get the latest timestamp at which the scheduler executed.
+    //         let latest = sched.latest();
+
+    //         // If the scheduler executed after `current` was measured, continue checking others.
+    //         if latest > current {
+    //             continue;
+    //         }
+
+    //         // If this scheduler executed less than "MALICIOUS_LIMIT_MS" milliseconds before, then
+    //         // continue checking others.
+    //         if current - latest < limit as u64 {
+    //             continue;
+    //         }
+
+    //         let tid = sched.thread();
+    //         let core = sched.core();
+    //         warn!(
+    //             "Detected misbehaving task {} on core {}. Current: {}, Latest: {}, Cycles/s {}",
+    //             tid,
+    //             core,
+    //             current,
+    //             latest,
+    //             cycles_per_second(),
+    //         );
+
+    //         // There might be an uncooperative task on this scheduler. Dequeue it's tasks and any
+    //         // pending response packets.
+    //         let mut tasks = sched.dequeue_all();
+    //         let mut resps = sched.responses();
+
+    //         // Retain only non-dispatch tasks.
+    //         tasks.retain(|task| task.priority() != TaskPriority::DISPATCH);
+
+    //         // Set the compromised flag on the scheduler and then migrate it. Stop the scheduler.
+    //         sched.compromised();
+    //         unsafe { zcsi::set_affinity(tid, GHETTO) };
+    //         net_context.stop_core(core);
+
+    //         // Create and setup a new scheduler on the core.
+    //         let temp = Arc::new(RwLock::new(Vec::with_capacity(1)));
+    //         let cmaster = Arc::clone(&master);
+    //         let ctemp = Arc::clone(&temp);
+    //         net_context.start_scheduler(core);
+    //         let _res = net_context.add_pipeline_to_core(
+    //             core,
+    //             Arc::new(
+    //                 move |ports, scheduler: &mut StandaloneScheduler, core: i32, sibling| {
+    //                     setup_server(
+    //                         &config::ServerConfig::load(),
+    //                         ports,
+    //                         sibling,
+    //                         scheduler,
+    //                         core,
+    //                         &cmaster,
+    //                         &ctemp,
+    //                     )
+    //                 },
+    //             ),
+    //         );
+
+    //         // Start the new scheduler, and give it some time to boot.
+    //         net_context.execute_core(core);
+
+    //         // Wait for the new scheduler to be created.
+    //         while temp.read().len() == 0 {}
+
+    //         // Enqueue all tasks and response packets from the previous scheduler.
+    //         let new = temp
+    //             .write()
+    //             .pop()
+    //             .expect("Failed to retrieve added scheduler.");
+    //         *sched = new;
+    //         sched.enqueue_many(tasks);
+    //         sched.append_resps(&mut resps);
+    //     }
+    //     */
+    // }
+    // #[cfg(feature = "queue_len")]
+    // for sched in handles.write().iter_mut() {
+    //     sched.terminate.store(true, Ordering::Relaxed);
+    // }
+    // #[cfg(feature = "queue_len")]
+    // sleep(Duration::from_millis(1000));
+    // #[cfg(feature = "queue_len")]
+    // for (i, sched) in handles.write().iter_mut().enumerate() {
+    //     let mut f = File::create(format!("core{}.log", i)).unwrap();
+    //     for &t in sched.timestamp.borrow().iter() {
+    //         write!(f, "{} ", t);
+    //     }
+    //     writeln!(f, "");
+    //     for &l in sched.raw_length.borrow().iter() {
+    //         write!(f, "{} ", l);
+    //     }
+    //     println!(
+    //         "write queue length of core {}, total {}",
+    //         i,
+    //         sched.timestamp.borrow().len()
+    //     );
+    // }
+    // // Stop the server.
+    // // net_context.stop();
+    // // _install.join();
 }
