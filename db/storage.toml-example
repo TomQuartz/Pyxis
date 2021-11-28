@@ -9,10 +9,10 @@ workload = "PUSHBACK"
 num_records = 1000000
 
 key_len = 30
-value_len = 16384
-record_len = 512
+value_len = 32768
+record_len = 1024
 
-max_rx_packets = 128
+max_rx_packets = 64
 nic_pci = "0000:03:00.1"
 [src]
 num_ports = 1

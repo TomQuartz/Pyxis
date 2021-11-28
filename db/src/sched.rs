@@ -326,9 +326,24 @@ impl Receiver {
     }
 }
 
+pub struct Queue {
+    pub queue: std::sync::RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>,
+    /// length is set by Dispatcher, and cleared by the first worker in that round
+    // LB will only update those with positive queue length, thus reducing update frequency and variance
+    pub length: AtomicIsize,
+}
+impl Queue {
+    pub fn new(capacity: usize) -> Queue {
+        Queue {
+            queue: std::sync::RwLock::new(VecDeque::with_capacity(capacity)),
+            length: AtomicIsize::new(-1),
+        }
+    }
+}
+
 pub struct Dispatcher {
     receiver: Receiver,
-    queue: Arc<std::sync::RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
+    queue: Arc<Queue>,
 }
 
 impl Dispatcher {
@@ -337,7 +352,7 @@ impl Dispatcher {
         ip_addr: &str,
         max_rx_packets: usize,
         net_port: CacheAligned<PortQueue>,
-        queue: Arc<std::sync::RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
+        queue: Arc<Queue>,
     ) -> Dispatcher {
         Dispatcher {
             receiver: Receiver::new(net_port, max_rx_packets, ip_addr),
@@ -349,16 +364,21 @@ impl Dispatcher {
         if let Some(mut packets) = self.receiver.recv() {
             trace!("dispatcher recv {} packets", packets.len());
             if packets.len() > 0 {
-                let mut queue = self.queue.write().unwrap();
+                let mut queue = self.queue.queue.write().unwrap();
+                // TODO: smooth queue length here
+                // let ql = queue.len();
                 while let Some((packet, _)) = packets.pop() {
                     queue.push_back(packet);
                 }
+                self.queue
+                    .length
+                    .store(queue.len() as isize, Ordering::Relaxed);
             }
         }
     }
     /// get a packet from common queue
     pub fn poll(&self) -> Option<Packet<UdpHeader, EmptyMetadata>> {
-        self.queue.write().unwrap().pop_front()
+        self.queue.queue.write().unwrap().pop_front()
     }
 }
 impl Executable for Dispatcher {
@@ -493,7 +513,7 @@ impl TaskManager {
 
 pub struct StorageNodeWorker {
     net_port: CacheAligned<PortQueue>,
-    queue: Arc<std::sync::RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
+    queue: Arc<Queue>,
     manager: TaskManager,
 }
 impl StorageNodeWorker {
@@ -501,7 +521,7 @@ impl StorageNodeWorker {
         config: &StorageConfig,
         net_port: CacheAligned<PortQueue>,
         masterservice: Arc<Master>,
-        queue: Arc<std::sync::RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
+        queue: Arc<Queue>,
     ) -> StorageNodeWorker {
         let resp_hdr =
             PacketHeaders::create_hdr(&config.src, net_port.txq() as u16, &NetConfig::default());
@@ -548,17 +568,19 @@ impl StorageNodeWorker {
 
 impl Executable for StorageNodeWorker {
     fn execute(&mut self) {
-        let (request, queue_len) = {
-            let mut queue = self.queue.write().unwrap();
-            let queue_len = queue.len();
-            let request = queue.pop_front();
-            (request, queue_len)
-        };
+        // let (request, queue_len) = {
+        //     let mut queue = self.queue.write().unwrap();
+        //     let queue_len = queue.len();
+        //     let request = queue.pop_front();
+        //     (request, queue_len)
+        // };
+        let request = self.queue.queue.write().unwrap().pop_front();
         if let Some(request) = request {
             if let Some(task) = self.manager.create_task(request) {
                 // TODO: add dispatch overhead to task time
                 // TODO: smooth queue_len here
-                self.manager.run_task(task, queue_len as f64);
+                let queue_len = self.queue.length.swap(-1, Ordering::Relaxed) as f64;
+                self.manager.run_task(task, queue_len);
                 self.send_response();
             }
         }

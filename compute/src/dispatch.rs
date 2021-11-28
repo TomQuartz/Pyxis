@@ -41,7 +41,7 @@ use std::sync::Arc;
 
 use db::e2d2::scheduler::Executable;
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
 use std::sync::RwLock;
 
 /// A simple RPC request generator for Sandstorm.
@@ -725,9 +725,22 @@ impl LBDispatcher {
     }
 }
 
+pub struct Queue {
+    pub queue: RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>,
+    pub length: AtomicIsize,
+}
+impl Queue {
+    pub fn new(capacity: usize) -> Queue {
+        Queue {
+            queue: RwLock::new(VecDeque::with_capacity(capacity)),
+            length: AtomicIsize::new(-1),
+        }
+    }
+}
+
 pub struct Dispatcher {
     receiver: Receiver,
-    queue: Arc<RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
+    queue: Arc<Queue>,
 }
 
 impl Dispatcher {
@@ -736,7 +749,7 @@ impl Dispatcher {
         ip_addr: &str,
         max_rx_packets: usize,
         net_port: CacheAligned<PortQueue>,
-        queue: Arc<RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
+        queue: Arc<Queue>,
     ) -> Dispatcher {
         Dispatcher {
             receiver: Receiver::new(net_port, max_rx_packets, ip_addr),
@@ -748,16 +761,21 @@ impl Dispatcher {
         if let Some(mut packets) = self.receiver.recv() {
             trace!("dispatcher recv {} packets", packets.len());
             if packets.len() > 0 {
-                let mut queue = self.queue.write().unwrap();
+                let mut queue = self.queue.queue.write().unwrap();
+                // TODO: smooth queue length here
+                // let ql = queue.len();
                 while let Some((packet, _)) = packets.pop() {
                     queue.push_back(packet);
                 }
+                self.queue
+                    .length
+                    .store(queue.len() as isize, Ordering::Relaxed);
             }
         }
     }
     /// get a packet from common queue
     pub fn poll(&self) -> Option<Packet<UdpHeader, EmptyMetadata>> {
-        self.queue.write().unwrap().pop_front()
+        self.queue.queue.write().unwrap().pop_front()
     }
 }
 impl Executable for Dispatcher {
@@ -775,7 +793,7 @@ impl Executable for Dispatcher {
 pub struct ComputeNodeWorker {
     sender: Rc<Sender>,
     receiver: Receiver,
-    queue: Arc<RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
+    queue: Arc<Queue>,
     manager: TaskManager,
     // this is dynamic, i.e. resp dst is set as req src upon recving new reqs
     resp_hdr: PacketHeaders,
@@ -792,7 +810,7 @@ pub struct ComputeNodeWorker {
 impl ComputeNodeWorker {
     pub fn new(
         config: &ComputeConfig,
-        queue: Arc<RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
+        queue: Arc<Queue>,
         masterservice: Arc<Master>,
         net_port: CacheAligned<PortQueue>,
         sib_port: Option<CacheAligned<PortQueue>>,
@@ -840,19 +858,22 @@ impl ComputeNodeWorker {
                 self.dispatch(packet);
             }
             if self.manager.ready.len() > 0 {
-                let queue_len = self.queue.read().unwrap().len() as f64;
-                return queue_len + 1.0;
+                let queue_len = self.queue.length.swap(-1, Ordering::Relaxed) as f64;
+                // return queue_len + 1.0;
+                return queue_len;
             }
         }
-        let (request, queue_len) = {
-            let mut queue = self.queue.write().unwrap();
-            let queue_len = queue.len();
-            let request = queue.pop_front();
-            (request, queue_len)
-        };
+        // let (request, queue_len) = {
+        //     let mut queue = self.queue.queue.write().unwrap();
+        //     let queue_len = queue.len();
+        //     let request = queue.pop_front();
+        //     (request, queue_len)
+        // };
+        let request = self.queue.queue.write().unwrap().pop_front();
         if let Some(request) = request {
             self.dispatch(request);
-            return queue_len as f64;
+            // return queue_len as f64;
+            self.queue.length.swap(0, Ordering::Relaxed) as f64;
         }
         return 0.0;
     }

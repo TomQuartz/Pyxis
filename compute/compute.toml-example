@@ -11,6 +11,6 @@ num_ports = 8
 ip_addr = "10.10.1.6"
 mac_addr = "9c:dc:71:47:7b:01"
 [[storage]]
-num_ports = 8
+num_ports = 1
 ip_addr = "10.10.1.7"
 mac_addr = "9c:dc:71:5d:90:c1"

@@ -53,7 +53,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use db::e2d2::common::EmptyMetadata;
 use db::e2d2::headers::UdpHeader;
-use db::sched::{Dispatcher, StorageNodeWorker};
+use db::sched::{Dispatcher, Queue, StorageNodeWorker};
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::Write;
@@ -108,7 +108,7 @@ fn setup_dispatcher(
     config: &config::StorageConfig,
     ports: Vec<CacheAligned<PortQueue>>,
     scheduler: &mut StandaloneScheduler,
-    queue: Arc<RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
+    queue: Arc<Queue>,
 ) {
     match scheduler.add_task(Dispatcher::new(
         &config.src.ip_addr,
@@ -134,7 +134,7 @@ fn setup_worker(
     ports: Vec<CacheAligned<PortQueue>>,
     scheduler: &mut StandaloneScheduler,
     master: Arc<Master>,
-    queue: Arc<RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
+    queue: Arc<Queue>,
 ) {
     if ports.len() != 1 {
         error!("Client should be configured with exactly 1 port!");
@@ -398,7 +398,8 @@ fn main() {
         _ => {}
     }
     let master = Arc::new(master);
-    let queue = Arc::new(RwLock::new(VecDeque::with_capacity(config.max_rx_packets)));
+    // let queue = Arc::new(RwLock::new(VecDeque::with_capacity(config.max_rx_packets)));
+    let queue = Arc::new(Queue::new(config.max_rx_packets));
 
     let mut net_context: NetbricksContext = config_and_init_netbricks(&config);
     net_context.start_schedulers();

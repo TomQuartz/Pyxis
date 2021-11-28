@@ -58,6 +58,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use dispatch::LBDispatcher;
 use std::fmt::{self, Write};
 use std::fs::File;
+use std::io::Write as writef;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::RwLock;
@@ -389,13 +390,13 @@ struct ServerLoad {
     cluster_name: String,
     ip2load: HashMap<u32, RwLock<MovingAvg>>,
     #[cfg(feature = "server_stats")]
-    load_trace: HashMap<u32, RwLock<Vec<(u64, f64)>>>,
+    load_trace: HashMap<u32, RwLock<Vec<(usize, (u64, f64))>>>,
 }
 
 impl ServerLoad {
     fn new(cluster_name: &str, ip_and_ports: Vec<(&String, u16)>, exp_decay: f64) -> ServerLoad {
         let mut ip2load = HashMap::new();
-        for (ip, num_ports) in ip_and_ports {
+        for &(ip, num_ports) in &ip_and_ports {
             // let mut server_load = vec![];
             // for _ in 0..num_ports {
             //     server_load.push(RwLock::new(MovingAvg::new(exp_decay)));
@@ -406,13 +407,13 @@ impl ServerLoad {
         #[cfg(feature = "server_stats")]
         let mut load_trace = HashMap::new();
         #[cfg(feature = "server_stats")]
-        for (ip, num_ports) in ip_and_ports {
+        for &(ip, num_ports) in &ip_and_ports {
             // let mut server_trace = vec![];
             // for _ in 0..num_ports {
             //     server_trace.push(RwLock::new(vec![]));
             // }
             let ip = u32::from(Ipv4Addr::from_str(ip).unwrap());
-            load_trace.insert(ip, RwLock::new(vec![]));
+            load_trace.insert(ip, RwLock::new(Vec::with_capacity(128000)));
         }
         ServerLoad {
             cluster_name: cluster_name.to_string(),
@@ -434,9 +435,12 @@ impl ServerLoad {
         }
     }
     #[cfg(feature = "server_stats")]
-    fn update_trace(&self, src_ip: u32, src_port: u16, curr_rdtsc: u64, delta: f64) {
+    fn update_trace(&self, src_ip: u32, src_port: u16, curr_rdtsc: u64, delta: f64, id: usize) {
         if let Some(server_trace) = self.load_trace.get(&src_ip) {
-            server_trace.write().unwrap().push((curr_rdtsc, delta));
+            server_trace
+                .write()
+                .unwrap()
+                .push((id, (curr_rdtsc, delta)));
         }
     }
     fn avg_server(&self, ip: u32) -> f64 {
@@ -464,15 +468,15 @@ impl ServerLoad {
             let mut f = File::create(format!("{}_ip{}.log", self.cluster_name, ip)).unwrap();
             let mut start: u64 = 0;
             let mut duration: f32 = 0.0;
-            for &(timestamp, queue_len) in server_trace {
+            for &(id, (timestamp, queue_len)) in server_trace.iter() {
                 if start == 0 {
                     start = timestamp;
                 }
-                duration = (timestamp - start) as f32 / 2.4;
-                writeln!(f, "{:.2} {}", duration, queue_len);
+                duration = (timestamp - start) as f32 / 2400.0;
+                writeln!(f, "{} {:.2} {}", id, duration, queue_len);
             }
             println!(
-                "cluster {} ip {} duration {} total {} records",
+                "cluster {} ip {} duration {:.2} total {} records",
                 self.cluster_name,
                 ip,
                 duration,
@@ -486,18 +490,20 @@ impl fmt::Display for ServerLoad {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "#######{}#######", self.cluster_name)?;
         for &ip in self.ip2load.keys() {
-            writeln!(f, "ip {}", ip)?;
-            let server_load = self.ip2load.get(&ip).unwrap();
-            // let mut server_total = 0f64;
-            // let mut server_total_moving = 0f64;
-            // let num_cores = server_load.len() as f64;
-            for (i, core_load) in server_load.iter().enumerate() {
-                let core_load = core_load.read().unwrap();
-                // server_total += core_load.avg.E_x;
-                // server_total_moving += core_load.avg();
-                writeln!(f, "    core {} {}", i, *core_load)?;
-            }
-            // writeln!(f,"    ip {} avg {} moving {}", ip,server_total/num_cores,server_total_moving/num_cores)?;
+            let server_load = self.ip2load.get(&ip).unwrap().read().unwrap();
+            writeln!(f, "ip {} load {}", ip, server_load)?;
+            // writeln!(f, "ip {}", ip)?;
+            // let server_load = self.ip2load.get(&ip).unwrap();
+            // // let mut server_total = 0f64;
+            // // let mut server_total_moving = 0f64;
+            // // let num_cores = server_load.len() as f64;
+            // for (i, core_load) in server_load.iter().enumerate() {
+            //     let core_load = core_load.read().unwrap();
+            //     // server_total += core_load.avg.E_x;
+            //     // server_total_moving += core_load.avg();
+            //     writeln!(f, "    core {} {}", i, *core_load)?;
+            // }
+            // // writeln!(f,"    ip {} avg {} moving {}", ip,server_total/num_cores,server_total_moving/num_cores)?;
         }
         Ok(())
     }
@@ -862,12 +868,12 @@ impl LoadBalancer {
         if let Ok(_) = self.storage_load.update(src_ip, src_port, core_load) {
             #[cfg(feature = "server_stats")]
             self.storage_load
-                .update_trace(src_ip, src_port, curr_rdtsc, core_load);
+                .update_trace(src_ip, src_port, curr_rdtsc, core_load, self.id);
         } else {
             self.compute_load.update(src_ip, src_port, core_load);
             #[cfg(feature = "server_stats")]
             self.compute_load
-                .update_trace(src_ip, src_port, curr_rdtsc, core_load);
+                .update_trace(src_ip, src_port, curr_rdtsc, core_load, self.id);
         }
     }
 
@@ -908,7 +914,7 @@ impl LoadBalancer {
                                         src_port,
                                         hdr.core_load,
                                         #[cfg(feature = "server_stats")]
-                                        curr_rdtsc,
+                                        (curr_rdtsc - self.init_rdtsc),
                                     );
                                     self.latencies[type_id].push(curr_rdtsc - timestamp);
                                     self.outstanding_reqs.remove(&timestamp);
@@ -1011,11 +1017,17 @@ impl Drop for LoadBalancer {
                 self.id, self.recvd
             );
         } else {
+            let slots = self.slots.iter().map(|x| x.counter).collect::<Vec<_>>();
+            let mean = slots.iter().sum::<usize>() as f32 / self.slots.len() as f32;
+            let std_dev = (slots
+                .iter()
+                .map(|&x| (x as f32 - mean) * (x as f32 - mean))
+                .sum::<f32>()
+                / self.slots.len() as f32)
+                .sqrt();
             info!(
-                "client thread {} recvd {} slots {:?}",
-                self.id,
-                self.recvd,
-                self.slots.iter().map(|x| x.counter).collect::<Vec<_>>(),
+                "client thread {} recvd {} slots {}x(mean:{:.2},std:{:.2})",
+                self.id, self.recvd, self.max_out, mean, std_dev,
             );
         }
 

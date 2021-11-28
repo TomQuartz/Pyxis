@@ -58,7 +58,7 @@ use std::sync::RwLock;
 
 use db::e2d2::common::EmptyMetadata;
 use db::e2d2::headers::UdpHeader;
-use dispatch::{ComputeNodeWorker, Dispatcher};
+use dispatch::{ComputeNodeWorker, Dispatcher, Queue};
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::Write;
@@ -70,7 +70,7 @@ fn setup_dispatcher(
     config: &config::ComputeConfig,
     ports: Vec<CacheAligned<PortQueue>>,
     scheduler: &mut StandaloneScheduler,
-    queue: Arc<RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
+    queue: Arc<Queue>,
 ) {
     match scheduler.add_task(Dispatcher::new(
         &config.src.ip_addr,
@@ -97,7 +97,7 @@ fn setup_worker(
     sibling: Option<CacheAligned<PortQueue>>,
     scheduler: &mut StandaloneScheduler,
     master: Arc<Master>,
-    queue: Arc<RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>>,
+    queue: Arc<Queue>,
     #[cfg(feature = "queue_len")] timestamp: Arc<RwLock<Vec<u64>>>,
     #[cfg(feature = "queue_len")] raw_length: Arc<RwLock<Vec<usize>>>,
     #[cfg(feature = "queue_len")] terminate: Arc<AtomicBool>,
@@ -147,7 +147,8 @@ fn main() {
     }
     // finished populating, now mark as immut
     let master = Arc::new(master);
-    let queue = Arc::new(RwLock::new(VecDeque::with_capacity(config.max_rx_packets)));
+    // let queue = Arc::new(RwLock::new(VecDeque::with_capacity(config.max_rx_packets)));
+    let queue = Arc::new(Queue::new(config.max_rx_packets));
 
     // Setup Netbricks.
     let mut net_context =
