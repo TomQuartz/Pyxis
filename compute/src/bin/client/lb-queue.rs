@@ -234,6 +234,9 @@ impl Avg {
         self.E_x2 =
             self.E_x2 * ((self.counter - 1.0) / self.counter) + delta * delta / self.counter;
     }
+    fn avg(&self) -> f64 {
+        self.lastest
+    }
 }
 #[cfg(feature = "server_stats")]
 impl fmt::Display for Avg {
@@ -388,7 +391,8 @@ impl fmt::Display for MovingAvg {
 
 struct ServerLoad {
     cluster_name: String,
-    ip2load: HashMap<u32, RwLock<MovingAvg>>,
+    // ip2load: HashMap<u32, RwLock<MovingAvg>>,
+    ip2load: HashMap<u32, RwLock<Avg>>,
     #[cfg(feature = "server_stats")]
     load_trace: HashMap<u32, RwLock<Vec<(usize, (u64, f64))>>>,
 }
@@ -402,7 +406,8 @@ impl ServerLoad {
             //     server_load.push(RwLock::new(MovingAvg::new(exp_decay)));
             // }
             let ip = u32::from(Ipv4Addr::from_str(ip).unwrap());
-            ip2load.insert(ip, RwLock::new(MovingAvg::new(exp_decay)));
+            // ip2load.insert(ip, RwLock::new(MovingAvg::new(exp_decay)));
+            ip2load.insert(ip, RwLock::new(Avg::new()));
         }
         #[cfg(feature = "server_stats")]
         let mut load_trace = HashMap::new();
@@ -1144,12 +1149,12 @@ fn main() {
     let storage_load = Arc::new(ServerLoad::new(
         "storage",
         storage_servers,
-        config.moving_avg,
+        config.moving_exp,
     ));
     let compute_load = Arc::new(ServerLoad::new(
         "compute",
         compute_servers,
-        config.moving_avg,
+        config.moving_exp,
     ));
     let num_types = config.multi_kv.len();
     let mut kth = vec![];

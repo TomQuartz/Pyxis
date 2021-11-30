@@ -71,12 +71,14 @@ fn setup_dispatcher(
     ports: Vec<CacheAligned<PortQueue>>,
     scheduler: &mut StandaloneScheduler,
     queue: Arc<Queue>,
+    moving_exp: f64,
 ) {
     match scheduler.add_task(Dispatcher::new(
         &config.src.ip_addr,
         config.max_rx_packets,
         ports[0].clone(),
         queue,
+        moving_exp,
     )) {
         Ok(_) => {
             info!(
@@ -171,6 +173,7 @@ fn main() {
                     ports,
                     scheduler,
                     cqueue.clone(),
+                    cfg.moving_exp,
                 )
             },
         ),

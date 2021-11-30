@@ -1,3 +1,4 @@
+moving_exp = 0.8
 max_rx_packets = 64
 nic_pci = "0000:03:00.1"
 

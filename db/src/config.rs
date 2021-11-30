@@ -376,7 +376,7 @@ pub struct LBConfig {
     pub partition: f64,
     pub max_out: u32,
     pub xloop_factor: u64,
-    pub moving_avg: f64,
+    pub moving_exp: f64,
     pub lr: f64,
     pub min_step: f64,
     pub max_step: f64,
@@ -400,6 +400,7 @@ pub struct LBConfig {
 #[serde(default)]
 pub struct ComputeConfig {
     // pub max_credits: u32,
+    pub moving_exp: f64,
     pub max_rx_packets: usize,
     pub nic_pci: String,
     pub src: NetConfig,
@@ -420,6 +421,7 @@ pub struct StorageConfig {
     pub key_len: usize,
     pub value_len: usize,
     pub record_len: usize,
+    pub moving_exp: f64,
     pub max_rx_packets: usize,
     pub nic_pci: String,
     pub src: NetConfig,

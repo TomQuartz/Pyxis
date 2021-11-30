@@ -761,15 +761,56 @@ impl TimeAvg {
         self.time_avg
     }
 }
+struct MovingTimeAvg {
+    moving_avg: f64,
+    elapsed: f64,
+    last_data: f64,
+    last_time: u64,
+    norm: f64,
+    moving_exp: f64,
+    // #[cfg(feature = "queue_len")]
+    // avg: Avg,
+}
+impl MovingTimeAvg {
+    fn new(moving_exp: f64) -> MovingTimeAvg {
+        MovingTimeAvg {
+            moving_avg: 0.0,
+            elapsed: 0.0,
+            last_data: 0.0,
+            last_time: 0,
+            norm: 0.0,
+            moving_exp: moving_exp,
+            // #[cfg(feature = "queue_len")]
+            // avg: Avg::new(),
+        }
+    }
+    fn update(&mut self, current_time: u64, delta: f64) {
+        let elapsed = (current_time - self.last_time) as f64;
+        self.last_time = current_time;
+        let delta_avg = (self.last_data + delta) / 2.0;
+        self.last_data = delta;
+        self.elapsed = self.elapsed * self.moving_exp + elapsed;
+        // self.norm = self.norm * (1.0 - self.moving_exp) + self.moving_exp;
+        let update_ratio = elapsed / self.elapsed;
+        self.moving_avg = self.moving_avg * (1.0 - update_ratio) + delta_avg * update_ratio;
+        // #[cfg(feature = "queue_len")]
+        // self.avg.update(delta_avg);
+    }
+    fn avg(&self) -> f64 {
+        self.moving_avg
+    }
+}
 
 pub struct Queue {
-    pub queue: RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>,
+    pub queue: std::sync::RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>,
+    /// length is set by Dispatcher, and cleared by the first worker in that round
+    // LB will only update those with positive queue length, thus reducing update frequency and variance
     pub length: AtomicF64,
 }
 impl Queue {
     pub fn new(capacity: usize) -> Queue {
         Queue {
-            queue: RwLock::new(VecDeque::with_capacity(capacity)),
+            queue: std::sync::RwLock::new(VecDeque::with_capacity(capacity)),
             length: AtomicF64::new(-1.0),
         }
     }
@@ -778,7 +819,7 @@ impl Queue {
 pub struct Dispatcher {
     receiver: Receiver,
     queue: Arc<Queue>,
-    time_avg: TimeAvg,
+    time_avg: MovingTimeAvg,
 }
 
 impl Dispatcher {
@@ -788,11 +829,12 @@ impl Dispatcher {
         max_rx_packets: usize,
         net_port: CacheAligned<PortQueue>,
         queue: Arc<Queue>,
+        moving_exp: f64,
     ) -> Dispatcher {
         Dispatcher {
             receiver: Receiver::new(net_port, max_rx_packets, ip_addr),
             queue: queue,
-            time_avg: TimeAvg::new(),
+            time_avg: MovingTimeAvg::new(moving_exp),
             // queue: RwLock::new(VecDeque::with_capacity(config.max_rx_packets)),
         }
     }

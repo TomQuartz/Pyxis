@@ -391,15 +391,15 @@ impl MovingTimeAvg {
         self.last_time = current_time;
         let delta_avg = (self.last_data + delta) / 2.0;
         self.last_data = delta;
-        self.elapsed += elapsed;
-        let update_ratio = self.moving_exp * elapsed / self.elapsed;
+        self.elapsed = self.elapsed * self.moving_exp + elapsed;
+        // self.norm = self.norm * (1.0 - self.moving_exp) + self.moving_exp;
+        let update_ratio = elapsed / self.elapsed;
         self.moving_avg = self.moving_avg * (1.0 - update_ratio) + delta_avg * update_ratio;
-        self.norm = self.norm * (1.0 - update_ratio) + update_ratio;
         // #[cfg(feature = "queue_len")]
         // self.avg.update(delta_avg);
     }
     fn avg(&self) -> f64 {
-        self.moving_avg / self.norm
+        self.moving_avg
     }
 }
 
@@ -421,7 +421,7 @@ impl Queue {
 pub struct Dispatcher {
     receiver: Receiver,
     queue: Arc<Queue>,
-    time_avg: TimeAvg,
+    time_avg: MovingTimeAvg,
 }
 
 impl Dispatcher {
@@ -431,11 +431,12 @@ impl Dispatcher {
         max_rx_packets: usize,
         net_port: CacheAligned<PortQueue>,
         queue: Arc<Queue>,
+        moving_exp: f64,
     ) -> Dispatcher {
         Dispatcher {
             receiver: Receiver::new(net_port, max_rx_packets, ip_addr),
             queue: queue,
-            time_avg: TimeAvg::new(),
+            time_avg: MovingTimeAvg::new(moving_exp),
             // queue: RwLock::new(VecDeque::with_capacity(config.max_rx_packets)),
         }
     }
