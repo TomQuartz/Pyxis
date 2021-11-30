@@ -873,9 +873,9 @@ impl ComputeNodeWorker {
         if let Some(request) = request {
             self.dispatch(request);
             // return queue_len as f64;
-            self.queue.length.swap(0, Ordering::Relaxed) as f64;
+            self.queue.length.swap(-1, Ordering::Relaxed) as f64;
         }
-        return 0.0;
+        return -1.0;
     }
 
     // fn poll_response(&mut self) -> usize {

@@ -1,4 +1,4 @@
-max_rx_packets = 32
+max_rx_packets = 64
 nic_pci = "0000:03:00.1"
 
 [src]
@@ -6,10 +6,6 @@ num_ports = 8
 ip_addr = "10.10.1.2"
 mac_addr = "9c:dc:71:56:af:b5"
 
-[[storage]]
-num_ports = 8
-ip_addr = "10.10.1.6"
-mac_addr = "9c:dc:71:47:7b:01"
 [[storage]]
 num_ports = 1
 ip_addr = "10.10.1.7"
