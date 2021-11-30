@@ -391,8 +391,8 @@ impl fmt::Display for MovingAvg {
 
 struct ServerLoad {
     cluster_name: String,
-    // ip2load: HashMap<u32, RwLock<MovingAvg>>,
-    ip2load: HashMap<u32, RwLock<Avg>>,
+    ip2load: HashMap<u32, RwLock<MovingAvg>>,
+    // ip2load: HashMap<u32, RwLock<Avg>>,
     #[cfg(feature = "server_stats")]
     load_trace: HashMap<u32, RwLock<Vec<(usize, (u64, f64))>>>,
 }
@@ -406,8 +406,8 @@ impl ServerLoad {
             //     server_load.push(RwLock::new(MovingAvg::new(exp_decay)));
             // }
             let ip = u32::from(Ipv4Addr::from_str(ip).unwrap());
-            // ip2load.insert(ip, RwLock::new(MovingAvg::new(exp_decay)));
-            ip2load.insert(ip, RwLock::new(Avg::new()));
+            ip2load.insert(ip, RwLock::new(MovingAvg::new(exp_decay)));
+            // ip2load.insert(ip, RwLock::new(Avg::new()));
         }
         #[cfg(feature = "server_stats")]
         let mut load_trace = HashMap::new();
@@ -553,7 +553,7 @@ struct LoadBalancer {
     partition: Partition,
     // xloop
     learnable: bool,
-    xloop: QueueGrad,
+    xloop: QueuePivot,
     // // bimodal
     // bimodal: bool,
     // bimodal_interval: u64,
@@ -701,12 +701,12 @@ impl LoadBalancer {
                 lowerbound: 0.0,
             },
             learnable: config.learnable,
-            xloop: QueueGrad::new(
+            xloop: QueuePivot::new(
                 config.xloop_factor,
-                config.lr,
-                config.min_step,
-                config.max_step,
-                config.exp,
+                config.partition,
+                config.range,
+                config.step_large,
+                config.step_small,
             ),
             // not used
             // bimodal: config.bimodal,

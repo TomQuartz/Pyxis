@@ -323,3 +323,240 @@ impl fmt::Display for QueueGrad {
         write!(f, "{}", self.msg)
     }
 }
+
+pub struct QueueSweep {
+    interval: u64,
+    last_rdtsc: u64,
+    last_ql_storage: f64,
+    last_ql_compute: f64,
+    last_x: f64,
+    threshold: f64,
+    min_range: f64,
+    lowerbound: f64,
+    upperbound: f64,
+    // min_step: f64,
+    max_step: f64,
+    lr: f64,
+    lr_decay: f64,
+    msg: String,
+}
+
+impl QueueSweep {
+    pub fn new(
+        xloop_factor: u64,
+        min_range: f64,
+        threshold: f64,
+        max_step: f64,
+        lr_decay: f64,
+    ) -> QueueSweep {
+        QueueSweep {
+            interval: CPU_FREQUENCY / xloop_factor,
+            last_rdtsc: 0,
+            last_ql_storage: 10000.0, // a large number
+            last_ql_compute: 0.0,
+            last_x: 10000.0,
+            min_range: min_range,
+            threshold: threshold,
+            lowerbound: 0.0,
+            upperbound: 10000.0,
+            max_step: max_step,
+            lr: 1.0,
+            lr_decay: lr_decay,
+            msg: String::new(),
+        }
+    }
+    pub fn ready(&mut self, curr_rdtsc: u64) -> bool {
+        curr_rdtsc - self.last_rdtsc > self.interval
+    }
+
+    /// update
+    pub fn update_x(
+        &mut self,
+        xinterface: &impl XInterface<X = f64>,
+        curr_rdtsc: u64,
+        ql_storage: f64,
+        ql_compute: f64,
+    ) {
+        // let last_ql_diff = self.last_ql_storage - self.last_ql_compute;
+        let ql_diff = ql_storage - ql_compute;
+        let delta_ql_storage = ql_storage - self.last_ql_storage;
+        let delta_ql_compute = ql_compute - self.last_ql_compute;
+        // let delta_ql_diff = ql_diff - last_ql_diff;
+        let x = xinterface.get();
+        let delta_x = x - self.last_x;
+        // sync timer
+        self.last_rdtsc = curr_rdtsc;
+        // sweep
+        let mut step: f64 = 0.0;
+        if ql_diff > 0.0 {
+            if self.upperbound - self.lowerbound > self.min_range {
+                // TODO: dynamic thresh? like lr
+                if delta_ql_storage < -self.threshold {
+                    if delta_x > 0.0 {
+                        self.lowerbound = self.last_x;
+                        step = self.max_step * self.lr;
+                    } else {
+                        self.upperbound = self.last_x;
+                        step = -self.max_step * self.lr;
+                    }
+                } else {
+                    // ql_storage stop descending
+                    // decrease step size and sweep [lb,ub] in the opposite direction
+                    // TODO: other stop criterion
+                    self.lr *= self.lr_decay;
+                    if delta_x > 0.0 {
+                        self.upperbound = x;
+                        step = -self.max_step * self.lr;
+                    } else {
+                        self.lowerbound = x;
+                        step = self.max_step * self.lr;
+                    }
+                }
+            } else {
+                // jump out, sweep again
+                self.upperbound = 10000.0;
+                self.lowerbound = 0.0;
+                self.lr = 1.0;
+                if x <= 5000.0 {
+                    step = self.max_step * self.lr;
+                } else {
+                    step = -self.max_step * self.lr;
+                }
+            }
+            // sync
+            self.last_ql_storage = ql_storage;
+            self.last_x = x;
+        } else {
+            // do nothing for now, just reset history
+            // if xloop escape this branch, then the workload must have been changed
+            // prepare to sweep again
+            self.upperbound = 10000.0;
+            self.lowerbound = 0.0;
+            self.lr = 1.0;
+            self.last_ql_storage = 10000.0;
+            self.last_x = 10000.0;
+        }
+        // update
+        xinterface.update(step);
+        self.msg.clear();
+        write!(
+            self.msg,
+            "x {} ql {:?} d_ql {:?} d_x {} step {} range {:?} lr {}",
+            x,
+            (ql_storage, ql_compute),
+            (delta_ql_storage, delta_ql_compute),
+            delta_x,
+            step,
+            (self.lowerbound, self.upperbound),
+            self.lr,
+        );
+    }
+}
+
+impl fmt::Display for QueueSweep {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.msg)
+    }
+}
+
+pub struct QueuePivot {
+    interval: u64,
+    last_rdtsc: u64,
+    last_ql_storage: f64,
+    last_ql_compute: f64,
+    last_x: f64,
+    // threshold: f64,
+    pivot: f64,
+    range: f64,
+    step_large: f64,
+    step_small: f64,
+    msg: String,
+}
+
+impl QueuePivot {
+    pub fn new(
+        xloop_factor: u64,
+        pivot: f64,
+        range: f64,
+        step_large: f64,
+        step_small: f64,
+    ) -> QueuePivot {
+        QueuePivot {
+            interval: CPU_FREQUENCY / xloop_factor,
+            last_rdtsc: 0,
+            last_ql_storage: 10000.0, // a large number
+            last_ql_compute: 0.0,
+            last_x: 10000.0,
+            pivot: pivot,
+            range: range,           // 100
+            step_large: step_large, // 1000
+            step_small: step_small, // 25
+            msg: String::new(),
+        }
+    }
+    pub fn ready(&mut self, curr_rdtsc: u64) -> bool {
+        curr_rdtsc - self.last_rdtsc > self.interval
+    }
+
+    /// update
+    pub fn update_x(
+        &mut self,
+        xinterface: &impl XInterface<X = f64>,
+        curr_rdtsc: u64,
+        ql_storage: f64,
+        ql_compute: f64,
+    ) {
+        // let last_ql_diff = self.last_ql_storage - self.last_ql_compute;
+        let ql_diff = ql_storage - ql_compute;
+        let delta_ql_storage = ql_storage - self.last_ql_storage;
+        let delta_ql_compute = ql_compute - self.last_ql_compute;
+        // let delta_ql_diff = ql_diff - last_ql_diff;
+        let x = xinterface.get();
+        let delta_x = x - self.last_x;
+        // sweep
+        let dist = x - self.pivot;
+        let mut step: f64 = 0.0;
+        if ql_diff > 0.0 {
+            if dist.abs() > self.range {
+                let bounded_step = self.step_large.min(dist.abs() - self.range);
+                if dist > 0.0 {
+                    step = -bounded_step;
+                } else {
+                    step = bounded_step;
+                }
+            } else {
+                if delta_x > 0.0 {
+                    step = self.step_small;
+                } else {
+                    step = -self.step_small;
+                }
+            }
+        } else {
+            // do nothing for now
+        }
+        // sync
+        self.last_rdtsc = curr_rdtsc;
+        self.last_ql_storage = ql_storage;
+        self.last_x = x;
+        // update
+        xinterface.update(step);
+        self.msg.clear();
+        write!(
+            self.msg,
+            "x {} ql {:?} d_ql {:?} d_x {} step {}",
+            x,
+            (ql_storage, ql_compute),
+            (delta_ql_storage, delta_ql_compute),
+            delta_x,
+            step,
+            // (self.lowerbound, self.upperbound),
+            // self.lr,
+        );
+    }
+}
+
+impl fmt::Display for QueuePivot {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.msg)
+    }
+}

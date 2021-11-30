@@ -422,6 +422,7 @@ pub struct Dispatcher {
     receiver: Receiver,
     queue: Arc<Queue>,
     time_avg: MovingTimeAvg,
+    // time_avg: TimeAvg,
 }
 
 impl Dispatcher {
@@ -437,6 +438,7 @@ impl Dispatcher {
             receiver: Receiver::new(net_port, max_rx_packets, ip_addr),
             queue: queue,
             time_avg: MovingTimeAvg::new(moving_exp),
+            // time_avg: TimeAvg::new(),
             // queue: RwLock::new(VecDeque::with_capacity(config.max_rx_packets)),
         }
     }
