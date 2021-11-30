@@ -37,6 +37,7 @@ pub extern crate e2d2;
 pub extern crate env_logger;
 #[macro_use]
 pub extern crate log;
+extern crate atomic_float;
 
 mod alloc;
 mod container;

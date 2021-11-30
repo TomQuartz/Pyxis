@@ -39,6 +39,7 @@ use sched::TaskManager;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use atomic_float::AtomicF64;
 use db::e2d2::scheduler::Executable;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
@@ -725,15 +726,51 @@ impl LBDispatcher {
     }
 }
 
+struct TimeAvg {
+    time_avg: f64,
+    elapsed: f64,
+    last_data: f64,
+    last_time: u64,
+    // #[cfg(feature = "queue_len")]
+    // avg: Avg,
+}
+
+impl TimeAvg {
+    fn new() -> TimeAvg {
+        TimeAvg {
+            time_avg: 0.0,
+            elapsed: 0.0,
+            last_data: 0.0,
+            last_time: 0,
+            // #[cfg(feature = "queue_len")]
+            // avg: Avg::new(),
+        }
+    }
+    fn update(&mut self, current_time: u64, delta: f64) {
+        let elapsed = (current_time - self.last_time) as f64;
+        self.last_time = current_time;
+        let delta_avg = (self.last_data + delta) / 2.0;
+        self.last_data = delta;
+        self.elapsed += elapsed;
+        let update_ratio = elapsed / self.elapsed;
+        self.time_avg = self.time_avg * (1.0 - update_ratio) + delta_avg * update_ratio;
+        // #[cfg(feature = "queue_len")]
+        // self.avg.update(delta_avg);
+    }
+    fn avg(&self) -> f64 {
+        self.time_avg
+    }
+}
+
 pub struct Queue {
     pub queue: RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>,
-    pub length: AtomicIsize,
+    pub length: AtomicF64,
 }
 impl Queue {
     pub fn new(capacity: usize) -> Queue {
         Queue {
             queue: RwLock::new(VecDeque::with_capacity(capacity)),
-            length: AtomicIsize::new(-1),
+            length: AtomicF64::new(-1.0),
         }
     }
 }
@@ -741,6 +778,7 @@ impl Queue {
 pub struct Dispatcher {
     receiver: Receiver,
     queue: Arc<Queue>,
+    time_avg: TimeAvg,
 }
 
 impl Dispatcher {
@@ -754,22 +792,26 @@ impl Dispatcher {
         Dispatcher {
             receiver: Receiver::new(net_port, max_rx_packets, ip_addr),
             queue: queue,
+            time_avg: TimeAvg::new(),
             // queue: RwLock::new(VecDeque::with_capacity(config.max_rx_packets)),
         }
     }
-    pub fn recv(&self) {
+    pub fn recv(&mut self) {
         if let Some(mut packets) = self.receiver.recv() {
             trace!("dispatcher recv {} packets", packets.len());
             if packets.len() > 0 {
+                let current_time = cycles::rdtsc();
                 let mut queue = self.queue.queue.write().unwrap();
                 // TODO: smooth queue length here
                 // let ql = queue.len();
                 while let Some((packet, _)) = packets.pop() {
                     queue.push_back(packet);
                 }
+                let queue_len = queue.len() as f64;
+                self.time_avg.update(current_time, queue_len);
                 self.queue
                     .length
-                    .store(queue.len() as isize, Ordering::Relaxed);
+                    .store(self.time_avg.avg(), Ordering::Relaxed);
             }
         }
     }
@@ -858,7 +900,7 @@ impl ComputeNodeWorker {
                 self.dispatch(packet);
             }
             if self.manager.ready.len() > 0 {
-                let queue_len = self.queue.length.swap(-1, Ordering::Relaxed) as f64;
+                let queue_len = self.queue.length.swap(-1.0, Ordering::Relaxed) as f64;
                 // return queue_len + 1.0;
                 return queue_len;
             }
@@ -873,7 +915,7 @@ impl ComputeNodeWorker {
         if let Some(request) = request {
             self.dispatch(request);
             // return queue_len as f64;
-            return self.queue.length.swap(-1, Ordering::Relaxed) as f64;
+            return self.queue.length.swap(-1.0, Ordering::Relaxed) as f64;
         }
         return -1.0;
     }

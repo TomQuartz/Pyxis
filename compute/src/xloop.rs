@@ -273,11 +273,12 @@ impl QueueGrad {
         self.last_ql_compute = ql_compute;
         self.last_x = x;
         // grad
-        let step: f64;
+        let mut step: f64 = 0.0;
+        let mut raw_step: f64 = 0.0;
         if ql_diff > 0.0 {
             if delta_ql_storage < 0.0 {
                 // proceed with grad
-                let raw_step = self.lr * delta_ql_storage / delta_x;
+                raw_step = self.lr * delta_ql_storage / delta_x;
                 let bounded_step = raw_step.abs().max(self.min_step).min(self.max_step);
                 step = if raw_step > 0.0 {
                     bounded_step
@@ -289,29 +290,30 @@ impl QueueGrad {
                 step = -delta_x * (1.0 - self.exp);
             }
         } else {
-            if delta_ql_compute < 0.0 {
-                let raw_step = self.lr * delta_ql_compute / delta_x;
-                let bounded_step = raw_step.abs().max(self.min_step).min(self.max_step);
-                step = if raw_step > 0.0 {
-                    bounded_step
-                } else {
-                    -bounded_step
-                };
-            } else {
-                // bounce back
-                step = -delta_x * (1.0 - self.exp);
-            }
+            // if delta_ql_compute < 0.0 {
+            //     let raw_step = self.lr * delta_ql_compute / delta_x;
+            //     let bounded_step = raw_step.abs().max(self.min_step).min(self.max_step);
+            //     step = if raw_step > 0.0 {
+            //         bounded_step
+            //     } else {
+            //         -bounded_step
+            //     };
+            // } else {
+            //     // bounce back
+            //     step = -delta_x * (1.0 - self.exp);
+            // }
         }
         xinterface.update(step);
         self.msg.clear();
         write!(
             self.msg,
-            "ql {:?} x {} d_ql {:?} d_x {} step {}",
+            "ql {:?} x {} d_ql {:?} d_x {} step {} raw_step {}",
             (ql_storage, ql_compute),
             x,
             (delta_ql_storage, delta_ql_compute),
             delta_x,
             step,
+            raw_step,
         );
     }
 }

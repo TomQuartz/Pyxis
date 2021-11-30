@@ -48,6 +48,7 @@ rust-crypto  = "0.2.36"
 sandstorm    = {path = "../sandstorm"}
 e2d2         = {path = "../net/framework"}
 util         = {path = "../util"}
+atomic_float = "0.1.0"
 
 # Add feature name in default features to enable cyclecounter for the given stage,
 # where stage name can be ["dispatch", "execution"].

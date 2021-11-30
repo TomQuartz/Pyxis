@@ -13,6 +13,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+use atomic_float::AtomicF64;
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
@@ -326,17 +327,93 @@ impl Receiver {
     }
 }
 
+struct TimeAvg {
+    time_avg: f64,
+    elapsed: f64,
+    last_data: f64,
+    last_time: u64,
+    // #[cfg(feature = "queue_len")]
+    // avg: Avg,
+}
+
+impl TimeAvg {
+    fn new() -> TimeAvg {
+        TimeAvg {
+            time_avg: 0.0,
+            elapsed: 0.0,
+            last_data: 0.0,
+            last_time: 0,
+            // #[cfg(feature = "queue_len")]
+            // avg: Avg::new(),
+        }
+    }
+    fn update(&mut self, current_time: u64, delta: f64) {
+        let elapsed = (current_time - self.last_time) as f64;
+        self.last_time = current_time;
+        let delta_avg = (self.last_data + delta) / 2.0;
+        self.last_data = delta;
+        self.elapsed += elapsed;
+        let update_ratio = elapsed / self.elapsed;
+        self.time_avg = self.time_avg * (1.0 - update_ratio) + delta_avg * update_ratio;
+        // #[cfg(feature = "queue_len")]
+        // self.avg.update(delta_avg);
+    }
+    fn avg(&self) -> f64 {
+        self.time_avg
+    }
+}
+
+struct MovingTimeAvg {
+    moving_avg: f64,
+    elapsed: f64,
+    last_data: f64,
+    last_time: u64,
+    norm: f64,
+    moving_exp: f64,
+    // #[cfg(feature = "queue_len")]
+    // avg: Avg,
+}
+impl MovingTimeAvg {
+    fn new(moving_exp: f64) -> MovingTimeAvg {
+        MovingTimeAvg {
+            moving_avg: 0.0,
+            elapsed: 0.0,
+            last_data: 0.0,
+            last_time: 0,
+            norm: 0.0,
+            moving_exp: moving_exp,
+            // #[cfg(feature = "queue_len")]
+            // avg: Avg::new(),
+        }
+    }
+    fn update(&mut self, current_time: u64, delta: f64) {
+        let elapsed = (current_time - self.last_time) as f64;
+        self.last_time = current_time;
+        let delta_avg = (self.last_data + delta) / 2.0;
+        self.last_data = delta;
+        self.elapsed += elapsed;
+        let update_ratio = self.moving_exp * elapsed / self.elapsed;
+        self.moving_avg = self.moving_avg * (1.0 - update_ratio) + delta_avg * update_ratio;
+        self.norm = self.norm * (1.0 - update_ratio) + update_ratio;
+        // #[cfg(feature = "queue_len")]
+        // self.avg.update(delta_avg);
+    }
+    fn avg(&self) -> f64 {
+        self.moving_avg / self.norm
+    }
+}
+
 pub struct Queue {
     pub queue: std::sync::RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>,
     /// length is set by Dispatcher, and cleared by the first worker in that round
     // LB will only update those with positive queue length, thus reducing update frequency and variance
-    pub length: AtomicIsize,
+    pub length: AtomicF64,
 }
 impl Queue {
     pub fn new(capacity: usize) -> Queue {
         Queue {
             queue: std::sync::RwLock::new(VecDeque::with_capacity(capacity)),
-            length: AtomicIsize::new(-1),
+            length: AtomicF64::new(-1.0),
         }
     }
 }
@@ -344,6 +421,7 @@ impl Queue {
 pub struct Dispatcher {
     receiver: Receiver,
     queue: Arc<Queue>,
+    time_avg: TimeAvg,
 }
 
 impl Dispatcher {
@@ -357,22 +435,26 @@ impl Dispatcher {
         Dispatcher {
             receiver: Receiver::new(net_port, max_rx_packets, ip_addr),
             queue: queue,
+            time_avg: TimeAvg::new(),
             // queue: RwLock::new(VecDeque::with_capacity(config.max_rx_packets)),
         }
     }
-    pub fn recv(&self) {
+    pub fn recv(&mut self) {
         if let Some(mut packets) = self.receiver.recv() {
             trace!("dispatcher recv {} packets", packets.len());
             if packets.len() > 0 {
+                let current_time = cycles::rdtsc();
                 let mut queue = self.queue.queue.write().unwrap();
                 // TODO: smooth queue length here
                 // let ql = queue.len();
                 while let Some((packet, _)) = packets.pop() {
                     queue.push_back(packet);
                 }
+                let queue_len = queue.len() as f64;
+                self.time_avg.update(current_time, queue_len);
                 self.queue
                     .length
-                    .store(queue.len() as isize, Ordering::Relaxed);
+                    .store(self.time_avg.avg(), Ordering::Relaxed);
             }
         }
     }
@@ -579,7 +661,7 @@ impl Executable for StorageNodeWorker {
             if let Some(task) = self.manager.create_task(request) {
                 // TODO: add dispatch overhead to task time
                 // TODO: smooth queue_len here
-                let queue_len = self.queue.length.swap(-1, Ordering::Relaxed) as f64;
+                let queue_len = self.queue.length.swap(-1.0, Ordering::Relaxed) as f64;
                 self.manager.run_task(task, queue_len);
                 self.send_response();
             }
@@ -587,82 +669,6 @@ impl Executable for StorageNodeWorker {
     }
     fn dependencies(&mut self) -> Vec<usize> {
         vec![]
-    }
-}
-
-struct TimeAvg {
-    time_avg: f64,
-    elapsed: f64,
-    last_data: f64,
-    last_time: u64,
-    // #[cfg(feature = "queue_len")]
-    // avg: Avg,
-}
-
-impl TimeAvg {
-    fn new() -> TimeAvg {
-        TimeAvg {
-            time_avg: 0.0,
-            elapsed: 0.0,
-            last_data: 0.0,
-            last_time: 0,
-            // #[cfg(feature = "queue_len")]
-            // avg: Avg::new(),
-        }
-    }
-    fn update(&mut self, current_time: u64, delta: f64) {
-        let elapsed = (current_time - self.last_time) as f64;
-        self.last_time = current_time;
-        let delta_avg = (self.last_data + delta) / 2.0;
-        self.last_data = delta;
-        self.elapsed += elapsed;
-        let update_ratio = elapsed / self.elapsed;
-        self.time_avg = self.time_avg * (1.0 - update_ratio) + delta_avg * update_ratio;
-        // #[cfg(feature = "queue_len")]
-        // self.avg.update(delta_avg);
-    }
-    fn avg(&self) -> f64 {
-        self.time_avg
-    }
-}
-
-struct MovingTimeAvg {
-    moving_avg: f64,
-    elapsed: f64,
-    last_data: f64,
-    last_time: u64,
-    norm: f64,
-    moving_exp: f64,
-    // #[cfg(feature = "queue_len")]
-    // avg: Avg,
-}
-impl MovingTimeAvg {
-    fn new(moving_exp: f64) -> MovingTimeAvg {
-        MovingTimeAvg {
-            moving_avg: 0.0,
-            elapsed: 0.0,
-            last_data: 0.0,
-            last_time: 0,
-            norm: 0.0,
-            moving_exp: moving_exp,
-            // #[cfg(feature = "queue_len")]
-            // avg: Avg::new(),
-        }
-    }
-    fn update(&mut self, current_time: u64, delta: f64) {
-        let elapsed = (current_time - self.last_time) as f64;
-        self.last_time = current_time;
-        let delta_avg = (self.last_data + delta) / 2.0;
-        self.last_data = delta;
-        self.elapsed += elapsed;
-        let update_ratio = self.moving_exp * elapsed / self.elapsed;
-        self.moving_avg = self.moving_avg * (1.0 - update_ratio) + delta_avg * update_ratio;
-        self.norm = self.norm * (1.0 - update_ratio) + update_ratio;
-        // #[cfg(feature = "queue_len")]
-        // self.avg.update(delta_avg);
-    }
-    fn avg(&self) -> f64 {
-        self.moving_avg / self.norm
     }
 }
 

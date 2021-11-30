@@ -26,6 +26,8 @@ extern crate util;
 #[macro_use]
 pub extern crate log;
 
+extern crate atomic_float;
+
 mod container;
 
 pub mod xloop;
