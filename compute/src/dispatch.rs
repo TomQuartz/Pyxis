@@ -873,7 +873,7 @@ impl ComputeNodeWorker {
         if let Some(request) = request {
             self.dispatch(request);
             // return queue_len as f64;
-            self.queue.length.swap(-1, Ordering::Relaxed) as f64;
+            return self.queue.length.swap(-1, Ordering::Relaxed) as f64;
         }
         return -1.0;
     }

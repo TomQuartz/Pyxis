@@ -629,7 +629,7 @@ impl InvokeResponse {
         InvokeResponse {
             common_header: RpcResponseHeader::new(req_stamp, opcode, tenant),
             overhead: 0,
-            core_load: 0.0,
+            core_load: -1.0,
         }
     }
 }
