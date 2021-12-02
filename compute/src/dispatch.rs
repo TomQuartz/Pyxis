@@ -811,7 +811,7 @@ impl MovingTimeAvg {
 pub struct Dispatcher {
     receiver: Receiver,
     queue: Arc<Queue>,
-    task_duration_cv: Arc<RwLock<CoeffOfVar>>,
+    reset: Vec<Arc<AtomicBool>>,
     // time_avg: MovingTimeAvg,
 }
 
@@ -822,13 +822,13 @@ impl Dispatcher {
         max_rx_packets: usize,
         net_port: CacheAligned<PortQueue>,
         queue: Arc<Queue>,
-        task_duration_cv: Arc<RwLock<CoeffOfVar>>,
+        reset: Vec<Arc<AtomicBool>>,
         moving_exp: f64,
     ) -> Dispatcher {
         Dispatcher {
             receiver: Receiver::new(net_port, max_rx_packets, ip_addr),
             queue: queue,
-            task_duration_cv: task_duration_cv,
+            reset: reset,
             // time_avg: MovingTimeAvg::new(moving_exp),
             // queue: RwLock::new(VecDeque::with_capacity(config.max_rx_packets)),
         }
@@ -842,7 +842,11 @@ impl Dispatcher {
                 while let Some((packet, _)) = packets.pop() {
                     if parse_rpc_opcode(&packet) == OpCode::ResetRpc {
                         // reset
-                        self.task_duration_cv.write().unwrap().reset();
+                        // this will create bottleneck since all workers attempts to write
+                        // self.task_duration_cv.write().unwrap().reset();
+                        for reset in &self.reset {
+                            reset.store(true, Ordering::Relaxed);
+                        }
                         // TODO: reset queue
                         packet.free_packet();
                     } else {
@@ -897,14 +901,12 @@ impl CoeffOfVar {
         self.E_x
     }
     fn std(&self) -> f64 {
-        ((self.E_x2 - self.E_x * self.E_x) * (self.counter / (self.counter - 1.0))).sqrt()
+        (self.E_x2 - self.E_x * self.E_x).sqrt()
+        // ((self.E_x2 - self.E_x * self.E_x) * (self.counter / (self.counter - 1.0))).sqrt()
     }
     fn cv(&self) -> f64 {
-        if self.counter == 0.0 {
-            return 0.0;
-        }
-        (self.E_x2 - self.E_x * self.E_x) / (self.E_x * self.E_x)
-            * (self.counter / (self.counter - 1.0))
+        (self.E_x2 - self.E_x * self.E_x) / (self.E_x * self.E_x + 1e-6)
+        // * (self.counter / (self.counter - 1.0))
     }
 }
 
@@ -915,7 +917,10 @@ pub struct ComputeNodeWorker {
     sender: Rc<Sender>,
     receiver: Receiver,
     queue: Arc<Queue>,
-    task_duration_cv: Arc<RwLock<CoeffOfVar>>,
+    // this will bottleneck since all workers attempts to write
+    // task_duration_cv: Arc<RwLock<CoeffOfVar>>,
+    task_duration_cv: CoeffOfVar,
+    reset: Arc<AtomicBool>,
     manager: TaskManager,
     // this is dynamic, i.e. resp dst is set as req src upon recving new reqs
     resp_hdr: PacketHeaders,
@@ -933,7 +938,8 @@ impl ComputeNodeWorker {
     pub fn new(
         config: &ComputeConfig,
         queue: Arc<Queue>,
-        task_duration_cv: Arc<RwLock<CoeffOfVar>>,
+        // task_duration_cv: Arc<RwLock<CoeffOfVar>>,
+        reset: Arc<AtomicBool>,
         masterservice: Arc<Master>,
         net_port: CacheAligned<PortQueue>,
         sib_port: Option<CacheAligned<PortQueue>>,
@@ -943,7 +949,9 @@ impl ComputeNodeWorker {
     ) -> ComputeNodeWorker {
         ComputeNodeWorker {
             queue: queue,
-            task_duration_cv: task_duration_cv,
+            // task_duration_cv: task_duration_cv,
+            task_duration_cv: CoeffOfVar::new(),
+            reset: reset,
             resp_hdr: PacketHeaders::create_hdr(
                 &config.src,
                 net_port.txq() as u16,
@@ -1166,25 +1174,30 @@ impl Executable for ComputeNodeWorker {
         // if self.terminate.load(Ordering::Relaxed) {
         //     return;
         // }
-        let current = cycles::rdtsc();
-        let eventloop_interval = if self.last_run > 0 {
-            current - self.last_run
-        } else {
-            0
-        };
-        self.last_run = current;
+        // let current = cycles::rdtsc();
+        // let eventloop_interval = if self.last_run > 0 {
+        //     current - self.last_run
+        // } else {
+        //     0
+        // };
+        // self.last_run = current;
         // event loop
         // TODO: smooth queue_len
         let queue_len = self.poll();
         if self.manager.ready.len() > 0 {
-            let cv = self.task_duration_cv.read().unwrap().cv();
+            // let cv = self.task_duration_cv.read().unwrap().cv();
+            let cv = self.task_duration_cv.cv();
             let start = cycles::rdtsc();
             self.manager.execute_task(queue_len, cv);
             // TODO: add transmission overhead in send_response(in case of multi-packet resp)
             self.send_response();
             let end = cycles::rdtsc();
             let task_time = (end - start) as f64;
-            self.task_duration_cv.write().unwrap().update(task_time);
+            if self.reset.load(Ordering::Relaxed) {
+                self.task_duration_cv.reset();
+            }
+            // self.task_duration_cv.write().unwrap().update(task_time);
+            self.task_duration_cv.update(task_time);
         }
         // TODO: pass in queue_len
         // self.manager.execute_tasks(queue_len);

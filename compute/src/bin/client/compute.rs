@@ -71,7 +71,7 @@ fn setup_dispatcher(
     ports: Vec<CacheAligned<PortQueue>>,
     scheduler: &mut StandaloneScheduler,
     queue: Arc<Queue>,
-    task_duration_cv: Arc<RwLock<CoeffOfVar>>,
+    reset_vec: Vec<Arc<AtomicBool>>,
     moving_exp: f64,
 ) {
     match scheduler.add_task(Dispatcher::new(
@@ -79,7 +79,7 @@ fn setup_dispatcher(
         config.max_rx_packets,
         ports[0].clone(),
         queue,
-        task_duration_cv,
+        reset_vec,
         moving_exp,
     )) {
         Ok(_) => {
@@ -102,7 +102,8 @@ fn setup_worker(
     scheduler: &mut StandaloneScheduler,
     master: Arc<Master>,
     queue: Arc<Queue>,
-    task_duration_cv: Arc<RwLock<CoeffOfVar>>,
+    reset: Arc<AtomicBool>,
+    // task_duration_cv: Arc<RwLock<CoeffOfVar>>,
     #[cfg(feature = "queue_len")] timestamp: Arc<RwLock<Vec<u64>>>,
     #[cfg(feature = "queue_len")] raw_length: Arc<RwLock<Vec<usize>>>,
     #[cfg(feature = "queue_len")] terminate: Arc<AtomicBool>,
@@ -114,7 +115,7 @@ fn setup_worker(
     match scheduler.add_task(ComputeNodeWorker::new(
         config,
         queue,
-        task_duration_cv,
+        reset,
         master,
         ports[0].clone(),
         sibling,
@@ -155,7 +156,11 @@ fn main() {
     let master = Arc::new(master);
     // let queue = Arc::new(RwLock::new(VecDeque::with_capacity(config.max_rx_packets)));
     let queue = Arc::new(Queue::new(config.max_rx_packets));
-    let task_duration_cv = Arc::new(RwLock::new(CoeffOfVar::new()));
+    // let task_duration_cv = Arc::new(RwLock::new(CoeffOfVar::new()));
+    let mut reset_vec = vec![];
+    for _ in 0..config.src.num_ports {
+        reset_vec.push(Arc::new(AtomicBool::new(false)));
+    }
 
     // Setup Netbricks.
     let mut net_context =
@@ -168,7 +173,7 @@ fn main() {
     // setup dispatcher
     let cfg = config.clone();
     let cqueue = queue.clone();
-    let ctask_duration_cv = task_duration_cv.clone();
+    let creset_vec = reset_vec.clone();
     net_context.add_pipeline_to_core(
         0,
         Arc::new(
@@ -179,7 +184,7 @@ fn main() {
                     ports,
                     scheduler,
                     cqueue.clone(),
-                    ctask_duration_cv.clone(),
+                    creset_vec.clone(),
                     cfg.moving_exp,
                 )
             },
@@ -190,7 +195,8 @@ fn main() {
         let cfg = config.clone();
         let cmaster = master.clone();
         let cqueue = queue.clone();
-        let ctask_duration_cv = task_duration_cv.clone();
+        // let ctask_duration_cv = task_duration_cv.clone();
+        let creset = reset_vec[core_id as usize - 1].clone();
         net_context.add_pipeline_to_core(
             core_id as i32,
             Arc::new(
@@ -203,7 +209,8 @@ fn main() {
                         scheduler,
                         cmaster.clone(),
                         cqueue.clone(),
-                        ctask_duration_cv.clone(),
+                        // ctask_duration_cv.clone(),
+                        creset.clone(),
                     )
                 },
             ),

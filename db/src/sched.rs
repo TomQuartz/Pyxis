@@ -345,7 +345,7 @@ impl Queue {
 pub struct Dispatcher {
     receiver: Receiver,
     queue: Arc<Queue>,
-    task_duration_cv: Arc<std::sync::RwLock<CoeffOfVar>>,
+    reset: Vec<Arc<AtomicBool>>,
     // time_avg: MovingTimeAvg,
 }
 
@@ -356,13 +356,13 @@ impl Dispatcher {
         max_rx_packets: usize,
         net_port: CacheAligned<PortQueue>,
         queue: Arc<Queue>,
-        task_duration_cv: Arc<std::sync::RwLock<CoeffOfVar>>,
+        reset: Vec<Arc<AtomicBool>>,
         moving_exp: f64,
     ) -> Dispatcher {
         Dispatcher {
             receiver: Receiver::new(net_port, max_rx_packets, ip_addr),
             queue: queue,
-            task_duration_cv: task_duration_cv,
+            reset: reset,
             // time_avg: MovingTimeAvg::new(moving_exp),
             // queue: RwLock::new(VecDeque::with_capacity(config.max_rx_packets)),
         }
@@ -376,10 +376,14 @@ impl Dispatcher {
                 while let Some((packet, _)) = packets.pop() {
                     if parse_rpc_opcode(&packet) == OpCode::ResetRpc {
                         // reset
-                        self.task_duration_cv.write().unwrap().reset();
+                        // this will create bottleneck since all workers attempts to write
+                        // self.task_duration_cv.write().unwrap().reset();
+                        for reset in &self.reset {
+                            reset.store(true, Ordering::Relaxed);
+                        }
                         // TODO: reset queue
                         packet.free_packet();
-                    }else{
+                    } else {
                         queue.push_back(packet);
                     }
                 }
@@ -572,7 +576,9 @@ impl CoeffOfVar {
 pub struct StorageNodeWorker {
     net_port: CacheAligned<PortQueue>,
     queue: Arc<Queue>,
-    task_duration_cv: Arc<std::sync::RwLock<CoeffOfVar>>,
+    reset: Arc<AtomicBool>,
+    // task_duration_cv: Arc<std::sync::RwLock<CoeffOfVar>>,
+    task_duration_cv: CoeffOfVar,
     manager: TaskManager,
 }
 impl StorageNodeWorker {
@@ -581,14 +587,16 @@ impl StorageNodeWorker {
         net_port: CacheAligned<PortQueue>,
         masterservice: Arc<Master>,
         queue: Arc<Queue>,
-        task_duration_cv: Arc<std::sync::RwLock<CoeffOfVar>>,
+        reset: Arc<AtomicBool>,
+        // task_duration_cv: Arc<std::sync::RwLock<CoeffOfVar>>,
     ) -> StorageNodeWorker {
         let resp_hdr =
             PacketHeaders::create_hdr(&config.src, net_port.txq() as u16, &NetConfig::default());
         StorageNodeWorker {
             net_port: net_port,
             queue: queue,
-            task_duration_cv: task_duration_cv,
+            reset: reset,
+            task_duration_cv: CoeffOfVar::new(),
             manager: TaskManager::new(masterservice, resp_hdr),
         }
     }
@@ -645,16 +653,22 @@ impl Executable for StorageNodeWorker {
                 //     // self.queue.reset()
                 //     return;
                 // }
-                let cv = self.task_duration_cv.read().unwrap().cv();
+                let cv = self.task_duration_cv.cv();
+                // let cv = self.task_duration_cv.read().unwrap().cv();
                 // TODO: add dispatch overhead to task time
                 // TODO: smooth queue_len here
                 let queue_len = self.queue.length.swap(-1.0, Ordering::Relaxed) as f64;
                 let start = cycles::rdtsc();
                 self.manager.run_task(task, queue_len, cv);
+                // TODO: add multi-packet transmission overhead in send_response
                 self.send_response();
                 let end = cycles::rdtsc();
                 let duration = (end - start) as f64;
-                self.task_duration_cv.write().unwrap().update(duration);
+                if self.reset.load(Ordering::Relaxed) {
+                    self.task_duration_cv.reset();
+                }
+                self.task_duration_cv.update(duration);
+                // self.task_duration_cv.write().unwrap().update(duration);
             }
         }
     }
