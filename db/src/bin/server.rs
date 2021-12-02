@@ -109,6 +109,7 @@ fn setup_dispatcher(
     ports: Vec<CacheAligned<PortQueue>>,
     scheduler: &mut StandaloneScheduler,
     queue: Arc<Queue>,
+    task_duration_cv: Arc<RwLock<CoeffOfVar>>,
     moving_exp: f64,
 ) {
     match scheduler.add_task(Dispatcher::new(
@@ -116,6 +117,7 @@ fn setup_dispatcher(
         config.max_rx_packets,
         ports[0].clone(),
         queue,
+        task_duration_cv,
         moving_exp,
     )) {
         Ok(_) => {
@@ -411,6 +413,7 @@ fn main() {
     // setup dispatcher
     let cfg = config.clone();
     let cqueue = queue.clone();
+    let ctask_duration_cv = task_duration_cv.clone();
     net_context.add_pipeline_to_core(
         0,
         Arc::new(
@@ -421,6 +424,7 @@ fn main() {
                     ports,
                     scheduler,
                     cqueue.clone(),
+                    ctask_duration_cv.clone(),
                     cfg.moving_exp,
                 )
             },

@@ -345,6 +345,7 @@ impl Queue {
 pub struct Dispatcher {
     receiver: Receiver,
     queue: Arc<Queue>,
+    task_duration_cv: Arc<std::sync::RwLock<CoeffOfVar>>,
     // time_avg: MovingTimeAvg,
 }
 
@@ -355,11 +356,13 @@ impl Dispatcher {
         max_rx_packets: usize,
         net_port: CacheAligned<PortQueue>,
         queue: Arc<Queue>,
+        task_duration_cv: Arc<std::sync::RwLock<CoeffOfVar>>,
         moving_exp: f64,
     ) -> Dispatcher {
         Dispatcher {
             receiver: Receiver::new(net_port, max_rx_packets, ip_addr),
             queue: queue,
+            task_duration_cv: task_duration_cv,
             // time_avg: MovingTimeAvg::new(moving_exp),
             // queue: RwLock::new(VecDeque::with_capacity(config.max_rx_packets)),
         }
@@ -371,7 +374,14 @@ impl Dispatcher {
                 let current_time = cycles::rdtsc();
                 let mut queue = self.queue.queue.write().unwrap();
                 while let Some((packet, _)) = packets.pop() {
-                    queue.push_back(packet);
+                    if parse_rpc_opcode(&packet) == OpCode::ResetRpc {
+                        // reset
+                        self.task_duration_cv.write().unwrap().reset();
+                        // TODO: reset queue
+                        packet.free_packet();
+                    }else{
+                        queue.push_back(packet);
+                    }
                 }
                 let queue_len = queue.len() as f64;
                 // self.time_avg.update(current_time, queue_len);
@@ -486,6 +496,15 @@ impl TaskManager {
                 //     self.scheduler.terminate.store(true, Ordering::Relaxed);
                 //     request.free_packet();
                 // }
+                // OpCode::ResetRpc => {
+                //     request.free_packet();
+                //     // we cannot reset here, so pass the result to caller
+                //     // println!("core {} resets", self.sender.net_port.rxq());
+                //     // self.task_duration_cv.write().unwrap().reset();
+                //     // TODO: reset dispatcher moving avg queue len
+                //     // self.queue.moving_avg.reset()
+                //     Some(None)
+                // }
                 _ => {
                     request.free_packet();
                     None
@@ -526,6 +545,11 @@ impl CoeffOfVar {
             E_x: 0.0,
             E_x2: 0.0,
         }
+    }
+    fn reset(&mut self) {
+        self.counter = 0.0;
+        self.E_x = 0.0;
+        self.E_x2 = 0.0;
     }
     fn update(&mut self, delta: f64) {
         self.counter += 1.0;
@@ -614,6 +638,13 @@ impl Executable for StorageNodeWorker {
         let request = self.queue.queue.write().unwrap().pop_front();
         if let Some(request) = request {
             if let Some(task) = self.manager.create_task(request) {
+                // reset rpc
+                // if task.is_none() {
+                //     self.task_duration_cv.reset();
+                //     // TODO: reset queue
+                //     // self.queue.reset()
+                //     return;
+                // }
                 let cv = self.task_duration_cv.read().unwrap().cv();
                 // TODO: add dispatch overhead to task time
                 // TODO: smooth queue_len here

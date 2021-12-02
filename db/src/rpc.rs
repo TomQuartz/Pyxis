@@ -405,6 +405,23 @@ pub fn create_terminate_rpc(
     fixup_header_length_fields(request.deparse_header(size_of::<UdpHeader>()))
 }
 
+#[inline]
+pub fn create_reset_rpc(
+    mac: &MacHeader,
+    ip: &IpHeader,
+    udp: &UdpHeader,
+    dst: u16,
+) -> Packet<IpHeader, EmptyMetadata> {
+    // Allocate a packet, write the header and payload into it, and set fields on it's UDP and IP
+    // header. Since the payload contains both, the name and arguments in it, args_len can be
+    // calculated as payload length - name_len.
+    let mut request = create_request(mac, ip, udp, dst)
+        .push_header(&InvokeRequest::new(0, 0, 0, 0))
+        .expect("Failed to push RPC header into request!");
+    request.get_mut_header().common_header.opcode = OpCode::ResetRpc;
+    fixup_header_length_fields(request.deparse_header(size_of::<UdpHeader>()))
+}
+
 /// Allocate and populate a packet that requests a server "commit" operation.
 ///
 /// # Panic

@@ -347,6 +347,20 @@ impl Sender {
         }
     }
 
+    pub fn send_reset(&self) {
+        for endpoint in 0..self.num_endpoints {
+            let mut request = rpc::create_reset_rpc(
+                &self.req_hdrs[endpoint].mac_header,
+                &self.req_hdrs[endpoint].ip_header,
+                &self.req_hdrs[endpoint].udp_header,
+                self.get_dst_port(endpoint),
+                // self.get_dst_port_by_type(type_id),
+                // (id & 0xffff) as u16 & (self.dst_ports - 1),
+            );
+            self.send_pkt(request);
+        }
+    }
+
     /// Computes the destination UDP port given a tenant identifier.
     #[inline]
     fn get_dst_port(&self, endpoint: usize) -> u16 {
@@ -731,6 +745,7 @@ pub struct Queue {
     /// length is set by Dispatcher, and cleared by the first worker in that round
     // LB will only update those with positive queue length, thus reducing update frequency and variance
     pub length: AtomicF64,
+    // TODO: add moving avg here
 }
 impl Queue {
     pub fn new(capacity: usize) -> Queue {
@@ -796,6 +811,7 @@ impl MovingTimeAvg {
 pub struct Dispatcher {
     receiver: Receiver,
     queue: Arc<Queue>,
+    task_duration_cv: Arc<RwLock<CoeffOfVar>>,
     // time_avg: MovingTimeAvg,
 }
 
@@ -806,11 +822,13 @@ impl Dispatcher {
         max_rx_packets: usize,
         net_port: CacheAligned<PortQueue>,
         queue: Arc<Queue>,
+        task_duration_cv: Arc<RwLock<CoeffOfVar>>,
         moving_exp: f64,
     ) -> Dispatcher {
         Dispatcher {
             receiver: Receiver::new(net_port, max_rx_packets, ip_addr),
             queue: queue,
+            task_duration_cv: task_duration_cv,
             // time_avg: MovingTimeAvg::new(moving_exp),
             // queue: RwLock::new(VecDeque::with_capacity(config.max_rx_packets)),
         }
@@ -822,7 +840,14 @@ impl Dispatcher {
                 let current_time = cycles::rdtsc();
                 let mut queue = self.queue.queue.write().unwrap();
                 while let Some((packet, _)) = packets.pop() {
-                    queue.push_back(packet);
+                    if parse_rpc_opcode(&packet) == OpCode::ResetRpc {
+                        // reset
+                        self.task_duration_cv.write().unwrap().reset();
+                        // TODO: reset queue
+                        packet.free_packet();
+                    } else {
+                        queue.push_back(packet);
+                    }
                 }
                 let queue_len = queue.len() as f64;
                 // self.time_avg.update(current_time, queue_len);
@@ -857,6 +882,11 @@ impl CoeffOfVar {
             E_x2: 0.0,
         }
     }
+    fn reset(&mut self) {
+        self.counter = 0.0;
+        self.E_x = 0.0;
+        self.E_x2 = 0.0;
+    }
     fn update(&mut self, delta: f64) {
         self.counter += 1.0;
         self.E_x = self.E_x * ((self.counter - 1.0) / self.counter) + delta / self.counter;
@@ -870,6 +900,9 @@ impl CoeffOfVar {
         ((self.E_x2 - self.E_x * self.E_x) * (self.counter / (self.counter - 1.0))).sqrt()
     }
     fn cv(&self) -> f64 {
+        if self.counter == 0.0 {
+            return 0.0;
+        }
         (self.E_x2 - self.E_x * self.E_x) / (self.E_x * self.E_x)
             * (self.counter / (self.counter - 1.0))
     }
@@ -1022,6 +1055,14 @@ impl ComputeNodeWorker {
                 println!("core {} terminate", self.sender.net_port.rxq());
                 Ok(())
             }
+            // OpCode::ResetRpc => {
+            //     packet.free_packet();
+            //     // println!("core {} resets", self.sender.net_port.rxq());
+            //     self.task_duration_cv.write().unwrap().reset();
+            //     // TODO: reset dispatcher moving avg queue len
+            //     // self.queue.moving_avg.reset()
+            //     Ok(())
+            // }
             _ => {
                 trace!("pkt is not for compute node, ignore");
                 packet.free_packet();

@@ -72,8 +72,10 @@ pub enum OpCode {
     #[cfg(feature = "queue_len")]
     TerminateRpc = 0x07,
 
+    ResetRpc = 0x08,
+
     /// Any value beyond this represents an invalid rpc.
-    InvalidOperation = 0x08,
+    InvalidOperation = 0x09,
 }
 
 /// This enum represents the status of a completed RPC. A status of 'StatusOk'

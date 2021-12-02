@@ -436,6 +436,7 @@ impl QueueSweep {
         if step != 0.0 {
             xinterface.update(step);
         }
+        // reset after each update
         self.compute_load.reset();
         self.storage_load.reset();
         self.msg.clear();

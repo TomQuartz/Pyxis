@@ -905,10 +905,12 @@ impl LoadBalancer {
                 self.tput = self.global_recvd.load(Ordering::Relaxed) as f64
                     / cycles::to_seconds(self.stop - self.start);
             }
-            #[cfg(feature = "queue_len")]
-            self.dispatcher.sender2compute.send_terminate();
-            #[cfg(feature = "queue_len")]
-            self.dispatcher.sender2storage.send_terminate();
+            // #[cfg(feature = "queue_len")]
+            // self.dispatcher.sender2compute.send_terminate();
+            // #[cfg(feature = "queue_len")]
+            // self.dispatcher.sender2storage.send_terminate();
+            self.dispatcher.sender2storage.send_reset();
+            self.dispatcher.sender2compute.send_reset();
         }
     }
 }
