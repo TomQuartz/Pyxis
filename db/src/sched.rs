@@ -666,6 +666,7 @@ impl Executable for StorageNodeWorker {
                 let duration = (end - start) as f64;
                 if self.reset.load(Ordering::Relaxed) {
                     self.task_duration_cv.reset();
+                    self.reset.store(false, Ordering::Relaxed);
                 }
                 self.task_duration_cv.update(duration);
                 // self.task_duration_cv.write().unwrap().update(duration);

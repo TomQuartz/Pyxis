@@ -1195,6 +1195,7 @@ impl Executable for ComputeNodeWorker {
             let task_time = (end - start) as f64;
             if self.reset.load(Ordering::Relaxed) {
                 self.task_duration_cv.reset();
+                self.reset.store(false, Ordering::Relaxed);
             }
             // self.task_duration_cv.write().unwrap().update(task_time);
             self.task_duration_cv.update(task_time);
