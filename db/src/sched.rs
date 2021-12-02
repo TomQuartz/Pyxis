@@ -565,11 +565,12 @@ impl CoeffOfVar {
         self.E_x
     }
     fn std(&self) -> f64 {
-        ((self.E_x2 - self.E_x * self.E_x) * (self.counter / (self.counter - 1.0))).sqrt()
+        (self.E_x2 - self.E_x * self.E_x).sqrt()
+        // ((self.E_x2 - self.E_x * self.E_x) * (self.counter / (self.counter - 1.0))).sqrt()
     }
     fn cv(&self) -> f64 {
-        (self.E_x2 - self.E_x * self.E_x) / (self.E_x * self.E_x)
-            * (self.counter / (self.counter - 1.0))
+        (self.E_x2 - self.E_x * self.E_x) / (self.E_x * self.E_x + 1e-6)
+        // * (self.counter / (self.counter - 1.0))
     }
 }
 
