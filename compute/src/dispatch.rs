@@ -726,81 +726,6 @@ impl LBDispatcher {
     }
 }
 
-struct TimeAvg {
-    time_avg: f64,
-    elapsed: f64,
-    last_data: f64,
-    last_time: u64,
-    // #[cfg(feature = "queue_len")]
-    // avg: Avg,
-}
-
-impl TimeAvg {
-    fn new() -> TimeAvg {
-        TimeAvg {
-            time_avg: 0.0,
-            elapsed: 0.0,
-            last_data: 0.0,
-            last_time: 0,
-            // #[cfg(feature = "queue_len")]
-            // avg: Avg::new(),
-        }
-    }
-    fn update(&mut self, current_time: u64, delta: f64) {
-        let elapsed = (current_time - self.last_time) as f64;
-        self.last_time = current_time;
-        let delta_avg = (self.last_data + delta) / 2.0;
-        self.last_data = delta;
-        self.elapsed += elapsed;
-        let update_ratio = elapsed / self.elapsed;
-        self.time_avg = self.time_avg * (1.0 - update_ratio) + delta_avg * update_ratio;
-        // #[cfg(feature = "queue_len")]
-        // self.avg.update(delta_avg);
-    }
-    fn avg(&self) -> f64 {
-        self.time_avg
-    }
-}
-struct MovingTimeAvg {
-    moving_avg: f64,
-    elapsed: f64,
-    last_data: f64,
-    last_time: u64,
-    norm: f64,
-    moving_exp: f64,
-    // #[cfg(feature = "queue_len")]
-    // avg: Avg,
-}
-impl MovingTimeAvg {
-    fn new(moving_exp: f64) -> MovingTimeAvg {
-        MovingTimeAvg {
-            moving_avg: 0.0,
-            elapsed: 0.0,
-            last_data: 0.0,
-            last_time: 0,
-            norm: 0.0,
-            moving_exp: moving_exp,
-            // #[cfg(feature = "queue_len")]
-            // avg: Avg::new(),
-        }
-    }
-    fn update(&mut self, current_time: u64, delta: f64) {
-        let elapsed = (current_time - self.last_time) as f64;
-        self.last_time = current_time;
-        let delta_avg = (self.last_data + delta) / 2.0;
-        self.last_data = delta;
-        self.elapsed = self.elapsed * self.moving_exp + elapsed;
-        // self.norm = self.norm * (1.0 - self.moving_exp) + self.moving_exp;
-        let update_ratio = elapsed / self.elapsed;
-        self.moving_avg = self.moving_avg * (1.0 - update_ratio) + delta_avg * update_ratio;
-        // #[cfg(feature = "queue_len")]
-        // self.avg.update(delta_avg);
-    }
-    fn avg(&self) -> f64 {
-        self.moving_avg
-    }
-}
-
 pub struct Queue {
     pub queue: std::sync::RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>,
     /// length is set by Dispatcher, and cleared by the first worker in that round
@@ -816,11 +741,62 @@ impl Queue {
     }
 }
 
+struct MovingTimeAvg {
+    moving_avg: f64,
+    elapsed: f64,
+    latest: f64,
+    last_time: u64,
+    moving_exp: f64,
+    // #[cfg(feature = "queue_len")]
+    // avg: Avg,
+}
+impl MovingTimeAvg {
+    fn new(moving_exp: f64) -> MovingTimeAvg {
+        MovingTimeAvg {
+            moving_avg: 0.0,
+            elapsed: 0.0,
+            latest: 0.0,
+            last_time: 0,
+            moving_exp: moving_exp,
+            // #[cfg(feature = "queue_len")]
+            // avg: Avg::new(),
+        }
+    }
+    // reset after xloop changes parition
+    fn reset(&mut self) {
+        self.moving_avg = 0.0;
+        self.elapsed = 0.0;
+    }
+    fn update(&mut self, current_time: u64, new: f64) {
+        let elapsed = (current_time - self.last_time) as f64;
+        self.elapsed = self.elapsed * self.moving_exp + elapsed;
+        let update_ratio = elapsed / self.elapsed;
+        let interval_avg = (self.latest + new) / 2.0;
+        self.moving_avg = self.moving_avg * (1.0 - update_ratio) + interval_avg * update_ratio;
+        // sync
+        self.last_time = current_time;
+        self.latest = new;
+        // #[cfg(feature = "queue_len")]
+        // self.avg.update(delta_avg);
+    }
+    fn avg(&self) -> f64 {
+        self.moving_avg
+    }
+}
+// impl fmt::Display for MovingTimeAvg {
+//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//         write!(
+//             f,
+//             "moving {:.2} elapsed {:.2} latest {:.2}",
+//             self.moving_avg, self.elapsed, self.latest
+//         )
+//     }
+// }
+
 pub struct Dispatcher {
     receiver: Receiver,
     queue: Arc<Queue>,
-    time_avg: MovingTimeAvg,
-    // time_avg: TimeAvg,
+    // time_avg: MovingTimeAvg,
 }
 
 impl Dispatcher {
@@ -835,8 +811,7 @@ impl Dispatcher {
         Dispatcher {
             receiver: Receiver::new(net_port, max_rx_packets, ip_addr),
             queue: queue,
-            time_avg: MovingTimeAvg::new(moving_exp),
-            // time_avg: TimeAvg::new(),
+            // time_avg: MovingTimeAvg::new(moving_exp),
             // queue: RwLock::new(VecDeque::with_capacity(config.max_rx_packets)),
         }
     }
@@ -846,16 +821,12 @@ impl Dispatcher {
             if packets.len() > 0 {
                 let current_time = cycles::rdtsc();
                 let mut queue = self.queue.queue.write().unwrap();
-                // TODO: smooth queue length here
-                // let ql = queue.len();
                 while let Some((packet, _)) = packets.pop() {
                     queue.push_back(packet);
                 }
                 let queue_len = queue.len() as f64;
-                self.time_avg.update(current_time, queue_len);
-                self.queue
-                    .length
-                    .store(self.time_avg.avg(), Ordering::Relaxed);
+                // self.time_avg.update(current_time, queue_len);
+                self.queue.length.store(queue_len, Ordering::Relaxed);
             }
         }
     }
@@ -873,6 +844,37 @@ impl Executable for Dispatcher {
     }
 }
 
+pub struct CoeffOfVar {
+    counter: f64,
+    E_x: f64,
+    E_x2: f64,
+}
+impl CoeffOfVar {
+    pub fn new() -> CoeffOfVar {
+        CoeffOfVar {
+            counter: 0.0,
+            E_x: 0.0,
+            E_x2: 0.0,
+        }
+    }
+    fn update(&mut self, delta: f64) {
+        self.counter += 1.0;
+        self.E_x = self.E_x * ((self.counter - 1.0) / self.counter) + delta / self.counter;
+        self.E_x2 =
+            self.E_x2 * ((self.counter - 1.0) / self.counter) + delta * delta / self.counter;
+    }
+    fn mean(&self) -> f64 {
+        self.E_x
+    }
+    fn std(&self) -> f64 {
+        ((self.E_x2 - self.E_x * self.E_x) * (self.counter / (self.counter - 1.0))).sqrt()
+    }
+    fn cv(&self) -> f64 {
+        (self.E_x2 - self.E_x * self.E_x) / (self.E_x * self.E_x)
+            * (self.counter / (self.counter - 1.0))
+    }
+}
+
 /// sender&receiver for compute node
 // 1. does not precompute mac and ip addr for LB and storage
 // 2. repeated parse and reparse header
@@ -880,6 +882,7 @@ pub struct ComputeNodeWorker {
     sender: Rc<Sender>,
     receiver: Receiver,
     queue: Arc<Queue>,
+    task_duration_cv: Arc<RwLock<CoeffOfVar>>,
     manager: TaskManager,
     // this is dynamic, i.e. resp dst is set as req src upon recving new reqs
     resp_hdr: PacketHeaders,
@@ -897,6 +900,7 @@ impl ComputeNodeWorker {
     pub fn new(
         config: &ComputeConfig,
         queue: Arc<Queue>,
+        task_duration_cv: Arc<RwLock<CoeffOfVar>>,
         masterservice: Arc<Master>,
         net_port: CacheAligned<PortQueue>,
         sib_port: Option<CacheAligned<PortQueue>>,
@@ -906,6 +910,7 @@ impl ComputeNodeWorker {
     ) -> ComputeNodeWorker {
         ComputeNodeWorker {
             queue: queue,
+            task_duration_cv: task_duration_cv,
             resp_hdr: PacketHeaders::create_hdr(
                 &config.src,
                 net_port.txq() as u16,
@@ -981,9 +986,9 @@ impl ComputeNodeWorker {
     //     }
     // }
 
-    pub fn run_extensions(&mut self, queue_len: f64) {
-        self.manager.execute_tasks(queue_len);
-    }
+    // pub fn run_extensions(&mut self, queue_len: f64) {
+    //     self.manager.execute_tasks(queue_len);
+    // }
 
     pub fn send_response(&mut self) {
         let resps = &mut self.manager.responses;
@@ -1130,8 +1135,18 @@ impl Executable for ComputeNodeWorker {
         // event loop
         // TODO: smooth queue_len
         let queue_len = self.poll();
+        if self.manager.ready.len() > 0 {
+            let cv = self.task_duration_cv.read().unwrap().cv();
+            let start = cycles::rdtsc();
+            self.manager.execute_task(queue_len, cv);
+            // TODO: add transmission overhead in send_response(in case of multi-packet resp)
+            self.send_response();
+            let end = cycles::rdtsc();
+            let task_time = (end - start) as f64;
+            self.task_duration_cv.write().unwrap().update(task_time);
+        }
         // TODO: pass in queue_len
-        self.manager.execute_tasks(queue_len);
+        // self.manager.execute_tasks(queue_len);
         // self.run_extensions(0.0);
         // let current_time = cycles::rdtsc();
         // let queue_length = self.manager.ready.len();

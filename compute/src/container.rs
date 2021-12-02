@@ -197,7 +197,8 @@ impl Task for Container {
     /// Refer to the Task trait for Documentation.
     unsafe fn tear(
         &mut self,
-        core_load: &mut f64,
+        server_load: &mut f64,
+        task_duration_cv: f64,
     ) -> Option<(
         Packet<UdpHeader, EmptyMetadata>,
         Vec<Packet<UdpHeader, EmptyMetadata>>,
@@ -217,10 +218,16 @@ impl Task for Container {
             // set profile
             let mut invoke_resp_hdr = res.get_mut_header();
             invoke_resp_hdr.common_header.duration = self.time;
+            // TODO: include packet transmission cost in storage_overhead
+            // TODO: add get_resp processing time in self.time
+            // NOTE: the transmission time of the last packet won't be included
+            // but this is fine since we need s-s',
+            // where the transmission time of a rpc resp packet is also not included in s
             invoke_resp_hdr.overhead = self.storage_overhead;
-            if *core_load >= 0.0 {
-                invoke_resp_hdr.core_load = *core_load;
-                *core_load = -1.0;
+            if *server_load >= 0.0 {
+                invoke_resp_hdr.server_load = *server_load;
+                *server_load = -1.0;
+                invoke_resp_hdr.task_duration_cv = task_duration_cv;
             }
             let req = req.deparse_header(PACKET_UDP_LEN as usize);
             let res = res.deparse_header(PACKET_UDP_LEN as usize);

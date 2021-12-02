@@ -110,7 +110,8 @@ pub trait Task {
     /// second member consists of a response packet, if available.
     unsafe fn tear(
         &mut self,
-        core_load: &mut f64,
+        server_load: &mut f64,
+        task_duration_cv: f64,
     ) -> Option<(
         Packet<UdpHeader, EmptyMetadata>,
         Vec<Packet<UdpHeader, EmptyMetadata>>,

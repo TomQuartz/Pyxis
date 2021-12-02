@@ -53,7 +53,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use db::e2d2::common::EmptyMetadata;
 use db::e2d2::headers::UdpHeader;
-use db::sched::{Dispatcher, Queue, StorageNodeWorker};
+use db::sched::{CoeffOfVar, Dispatcher, Queue, StorageNodeWorker};
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::Write;
@@ -137,6 +137,7 @@ fn setup_worker(
     scheduler: &mut StandaloneScheduler,
     master: Arc<Master>,
     queue: Arc<Queue>,
+    task_duration_cv: Arc<RwLock<CoeffOfVar>>,
 ) {
     if ports.len() != 1 {
         error!("Client should be configured with exactly 1 port!");
@@ -147,6 +148,7 @@ fn setup_worker(
         ports[0].clone(),
         master,
         queue,
+        task_duration_cv,
     )) {
         Ok(_) => {
             info!(
@@ -402,6 +404,7 @@ fn main() {
     let master = Arc::new(master);
     // let queue = Arc::new(RwLock::new(VecDeque::with_capacity(config.max_rx_packets)));
     let queue = Arc::new(Queue::new(config.max_rx_packets));
+    let task_duration_cv = Arc::new(RwLock::new(CoeffOfVar::new()));
 
     let mut net_context: NetbricksContext = config_and_init_netbricks(&config);
     net_context.start_schedulers();
@@ -427,6 +430,7 @@ fn main() {
     for core_id in 1..=config.src.num_ports {
         let cmaster = master.clone();
         let cqueue = queue.clone();
+        let ctask_duration_cv = task_duration_cv.clone();
         net_context.add_pipeline_to_core(
             core_id as i32,
             Arc::new(
@@ -437,6 +441,7 @@ fn main() {
                         scheduler,
                         cmaster.clone(),
                         cqueue.clone(),
+                        ctask_duration_cv.clone(),
                     )
                 },
             ),

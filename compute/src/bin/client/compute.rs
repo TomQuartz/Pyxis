@@ -58,7 +58,7 @@ use std::sync::RwLock;
 
 use db::e2d2::common::EmptyMetadata;
 use db::e2d2::headers::UdpHeader;
-use dispatch::{ComputeNodeWorker, Dispatcher, Queue};
+use dispatch::{CoeffOfVar, ComputeNodeWorker, Dispatcher, Queue};
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::Write;
@@ -100,6 +100,7 @@ fn setup_worker(
     scheduler: &mut StandaloneScheduler,
     master: Arc<Master>,
     queue: Arc<Queue>,
+    task_duration_cv: Arc<RwLock<CoeffOfVar>>,
     #[cfg(feature = "queue_len")] timestamp: Arc<RwLock<Vec<u64>>>,
     #[cfg(feature = "queue_len")] raw_length: Arc<RwLock<Vec<usize>>>,
     #[cfg(feature = "queue_len")] terminate: Arc<AtomicBool>,
@@ -111,6 +112,7 @@ fn setup_worker(
     match scheduler.add_task(ComputeNodeWorker::new(
         config,
         queue,
+        task_duration_cv,
         master,
         ports[0].clone(),
         sibling,
@@ -151,6 +153,7 @@ fn main() {
     let master = Arc::new(master);
     // let queue = Arc::new(RwLock::new(VecDeque::with_capacity(config.max_rx_packets)));
     let queue = Arc::new(Queue::new(config.max_rx_packets));
+    let task_duration_cv = Arc::new(RwLock::new(CoeffOfVar::new()));
 
     // Setup Netbricks.
     let mut net_context =
@@ -183,6 +186,7 @@ fn main() {
         let cfg = config.clone();
         let cmaster = master.clone();
         let cqueue = queue.clone();
+        let ctask_duration_cv = task_duration_cv.clone();
         net_context.add_pipeline_to_core(
             core_id as i32,
             Arc::new(
@@ -195,6 +199,7 @@ fn main() {
                         scheduler,
                         cmaster.clone(),
                         cqueue.clone(),
+                        ctask_duration_cv.clone(),
                     )
                 },
             ),

@@ -389,131 +389,6 @@ impl fmt::Display for MovingAvg {
 //     }
 // }
 
-struct ServerLoad {
-    cluster_name: String,
-    ip2load: HashMap<u32, RwLock<MovingAvg>>,
-    // ip2load: HashMap<u32, RwLock<Avg>>,
-    #[cfg(feature = "server_stats")]
-    load_trace: HashMap<u32, RwLock<Vec<(usize, (u64, f64))>>>,
-}
-
-impl ServerLoad {
-    fn new(cluster_name: &str, ip_and_ports: Vec<(&String, u16)>, exp_decay: f64) -> ServerLoad {
-        let mut ip2load = HashMap::new();
-        for &(ip, num_ports) in &ip_and_ports {
-            // let mut server_load = vec![];
-            // for _ in 0..num_ports {
-            //     server_load.push(RwLock::new(MovingAvg::new(exp_decay)));
-            // }
-            let ip = u32::from(Ipv4Addr::from_str(ip).unwrap());
-            ip2load.insert(ip, RwLock::new(MovingAvg::new(exp_decay)));
-            // ip2load.insert(ip, RwLock::new(Avg::new()));
-        }
-        #[cfg(feature = "server_stats")]
-        let mut load_trace = HashMap::new();
-        #[cfg(feature = "server_stats")]
-        for &(ip, num_ports) in &ip_and_ports {
-            // let mut server_trace = vec![];
-            // for _ in 0..num_ports {
-            //     server_trace.push(RwLock::new(vec![]));
-            // }
-            let ip = u32::from(Ipv4Addr::from_str(ip).unwrap());
-            load_trace.insert(ip, RwLock::new(Vec::with_capacity(128000)));
-        }
-        ServerLoad {
-            cluster_name: cluster_name.to_string(),
-            ip2load: ip2load,
-            #[cfg(feature = "server_stats")]
-            load_trace: load_trace,
-        }
-    }
-    fn update(&self, src_ip: u32, src_port: u16, delta: f64) -> Result<(), ()> {
-        if let Some(server_load) = self.ip2load.get(&src_ip) {
-            server_load
-                .write()
-                .unwrap()
-                // TODO: reimpl update of moving_avg to (moving) time avg
-                .update(delta);
-            Ok(())
-        } else {
-            Err(())
-        }
-    }
-    #[cfg(feature = "server_stats")]
-    fn update_trace(&self, src_ip: u32, src_port: u16, curr_rdtsc: u64, delta: f64, id: usize) {
-        if let Some(server_trace) = self.load_trace.get(&src_ip) {
-            server_trace
-                .write()
-                .unwrap()
-                .push((id, (curr_rdtsc, delta)));
-        }
-    }
-    fn avg_server(&self, ip: u32) -> f64 {
-        let server_load = self.ip2load.get(&ip).unwrap();
-        // let num_cores = server_load.len() as f64;
-        // let mut total = 0f64;
-        // for core_load in server_load.iter() {
-        //     total += core_load.read().unwrap().avg();
-        // }
-        // total / num_cores
-        server_load.read().unwrap().avg()
-    }
-    fn avg_all(&self) -> f64 {
-        let mut total = 0f64;
-        let num_servers = self.ip2load.len() as f64;
-        for &ip in self.ip2load.keys() {
-            total += self.avg_server(ip);
-        }
-        total / num_servers
-    }
-    #[cfg(feature = "server_stats")]
-    fn write_trace(&self) {
-        for &ip in self.load_trace.keys() {
-            let server_trace = self.load_trace.get(&ip).unwrap().read().unwrap();
-            let mut f = File::create(format!("{}_ip{}.log", self.cluster_name, ip)).unwrap();
-            let mut start: u64 = 0;
-            let mut duration: f32 = 0.0;
-            for &(id, (timestamp, queue_len)) in server_trace.iter() {
-                if start == 0 {
-                    start = timestamp;
-                }
-                duration = (timestamp - start) as f32 / 2400.0;
-                writeln!(f, "{} {:.2} {}", id, duration, queue_len);
-            }
-            println!(
-                "cluster {} ip {} duration {:.2} total {} records",
-                self.cluster_name,
-                ip,
-                duration,
-                server_trace.len(),
-            )
-        }
-    }
-}
-#[cfg(feature = "server_stats")]
-impl fmt::Display for ServerLoad {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "#######{}#######", self.cluster_name)?;
-        for &ip in self.ip2load.keys() {
-            let server_load = self.ip2load.get(&ip).unwrap().read().unwrap();
-            writeln!(f, "ip {} load {}", ip, server_load)?;
-            // writeln!(f, "ip {}", ip)?;
-            // let server_load = self.ip2load.get(&ip).unwrap();
-            // // let mut server_total = 0f64;
-            // // let mut server_total_moving = 0f64;
-            // // let num_cores = server_load.len() as f64;
-            // for (i, core_load) in server_load.iter().enumerate() {
-            //     let core_load = core_load.read().unwrap();
-            //     // server_total += core_load.avg.E_x;
-            //     // server_total_moving += core_load.avg();
-            //     writeln!(f, "    core {} {}", i, *core_load)?;
-            // }
-            // // writeln!(f,"    ip {} avg {} moving {}", ip,server_total/num_cores,server_total_moving/num_cores)?;
-        }
-        Ok(())
-    }
-}
-
 #[derive(Default)]
 struct Slot {
     counter: usize,
@@ -546,14 +421,14 @@ struct LoadBalancer {
     outstanding_reqs: HashMap<u64, usize>,
     slots: Vec<Slot>,
     // load balancing
-    storage_load: Arc<ServerLoad>,
-    compute_load: Arc<ServerLoad>,
+    // storage_load: Arc<ServerLoad>,
+    // compute_load: Arc<ServerLoad>,
     // rpc control
     max_out: u32,
     partition: Partition,
     // xloop
     learnable: bool,
-    xloop: QueuePivot,
+    xloop: QueueSweep,
     // // bimodal
     // bimodal: bool,
     // bimodal_interval: u64,
@@ -655,8 +530,8 @@ impl LoadBalancer {
         LoadBalancer {
             tput: 0.0,
             finished: finished,
-            storage_load: storage_load,
-            compute_load: compute_load,
+            // storage_load: storage_load,
+            // compute_load: compute_load,
             dispatcher: LBDispatcher::new(config, net_port),
             workload: RefCell::new(Pushback::new(
                 config.key_len,
@@ -701,12 +576,15 @@ impl LoadBalancer {
                 lowerbound: 0.0,
             },
             learnable: config.learnable,
-            xloop: QueuePivot::new(
+            xloop: QueueSweep::new(
                 config.xloop_factor,
-                config.partition,
-                config.range,
-                config.step_large,
-                config.step_small,
+                config.min_range,
+                config.ql_diff_thresh,
+                config.monotone_thresh,
+                config.max_step,
+                config.lr_decay,
+                storage_load,
+                compute_load,
             ),
             // not used
             // bimodal: config.bimodal,
@@ -863,22 +741,41 @@ impl LoadBalancer {
         &self,
         src_ip: u32,
         src_port: u16,
-        core_load: f64,
-        #[cfg(feature = "server_stats")] curr_rdtsc: u64,
+        curr_rdtsc: u64,
+        server_load: f64,
+        task_duration_cv: f64,
     ) {
         // set to -1 after the first rpc resp packet in that round
-        if core_load < 0.0 {
+        if server_load < 0.0 {
             return;
         }
-        if let Ok(_) = self.storage_load.update(src_ip, src_port, core_load) {
+        if let Ok(_) =
+            self.xloop
+                .storage_load
+                .update(src_ip, src_port, curr_rdtsc - self.start, server_load)
+        {
             #[cfg(feature = "server_stats")]
-            self.storage_load
-                .update_trace(src_ip, src_port, curr_rdtsc, core_load, self.id);
+            self.xloop.storage_load.update_trace(
+                src_ip,
+                src_port,
+                curr_rdtsc,
+                server_load,
+                task_duration_cv,
+                self.id,
+            );
         } else {
-            self.compute_load.update(src_ip, src_port, core_load);
+            self.xloop
+                .compute_load
+                .update(src_ip, src_port, curr_rdtsc - self.start, server_load);
             #[cfg(feature = "server_stats")]
-            self.compute_load
-                .update_trace(src_ip, src_port, curr_rdtsc, core_load, self.id);
+            self.xloop.compute_load.update_trace(
+                src_ip,
+                src_port,
+                curr_rdtsc,
+                server_load,
+                task_duration_cv,
+                self.id,
+            );
         }
     }
 
@@ -917,9 +814,11 @@ impl LoadBalancer {
                                     self.update_load(
                                         src_ip,
                                         src_port,
-                                        hdr.core_load,
-                                        #[cfg(feature = "server_stats")]
-                                        (curr_rdtsc - self.init_rdtsc),
+                                        curr_rdtsc,
+                                        hdr.server_load,
+                                        hdr.task_duration_cv,
+                                        // #[cfg(feature = "server_stats")]
+                                        // (curr_rdtsc - self.init_rdtsc),
                                     );
                                     self.latencies[type_id].push(curr_rdtsc - timestamp);
                                     self.outstanding_reqs.remove(&timestamp);
@@ -953,10 +852,9 @@ impl LoadBalancer {
                     let curr_rdtsc = cycles::rdtsc();
                     // let global_recvd = self.global_recvd.load(Ordering::Relaxed);
                     if self.learnable && self.xloop.ready(curr_rdtsc) {
-                        let ql_storage = self.storage_load.avg_all();
-                        let ql_compute = self.compute_load.avg_all();
-                        self.xloop
-                            .update_x(&self.partition, curr_rdtsc, ql_storage, ql_compute);
+                        // let ql_storage = self.storage_load.avg_all();
+                        // let ql_compute = self.compute_load.avg_all();
+                        self.xloop.update_x(&self.partition, curr_rdtsc);
                         // self.xloop
                         //     .xloop(&self.partition, curr_rdtsc, ql_storage, ql_compute);
                     }
@@ -967,7 +865,7 @@ impl LoadBalancer {
                     {
                         // tput
                         let global_recvd = self.global_recvd.load(Ordering::Relaxed);
-                        let output_rate = 2.4e6 * (global_recvd - self.output_last_recvd) as f32
+                        let output_tput = 2.4e6 * (global_recvd - self.output_last_recvd) as f32
                             / (curr_rdtsc - self.output_last_rdtsc) as f32;
                         // lat
                         for (type_id, kth) in self.kth.iter().enumerate() {
@@ -982,12 +880,15 @@ impl LoadBalancer {
                         let partition = self.partition.get() / 100.0;
                         println!(
                             "rdtsc {} tail {:?} tput {} {}",
-                            curr_rdtsc, self.avg_lat, output_rate, self.xloop,
+                            curr_rdtsc / 2400000,
+                            self.avg_lat,
+                            output_tput,
+                            self.xloop,
                         );
                         #[cfg(feature = "server_stats")]
-                        print!("{}", self.storage_load);
+                        debug!("{}", self.xloop.storage_load);
                         #[cfg(feature = "server_stats")]
-                        print!("{}", self.compute_load);
+                        debug!("{}", self.xloop.compute_load);
                         self.output_last_rdtsc = curr_rdtsc;
                         self.output_last_recvd = global_recvd;
                     }
@@ -1052,13 +953,13 @@ impl Drop for LoadBalancer {
                     _ => m = lat[lat.len() / 2],
                 }
                 println!(
-                    "type {} >>> lat50:{} lat99:{}",
+                    "type {} >>> lat50:{:.2} lat99:{:.2}",
                     type_id,
                     cycles::to_seconds(m) * 1e9,
                     cycles::to_seconds(t) * 1e9
                 );
             }
-            println!("PUSHBACK Throughput {}", self.tput);
+            println!("PUSHBACK Throughput {:.2}", self.tput);
         }
     }
 }
@@ -1222,9 +1123,11 @@ fn main() {
     net_context.stop();
 
     #[cfg(feature = "server_stats")]
-    storage_load.write_trace();
+    storage_load.print_trace();
+    // storage_load.write_trace();
     #[cfg(feature = "server_stats")]
-    compute_load.write_trace();
+    compute_load.print_trace();
+    // compute_load.write_trace();
 }
 
 // #[cfg(test)]

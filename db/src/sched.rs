@@ -327,82 +327,6 @@ impl Receiver {
     }
 }
 
-struct TimeAvg {
-    time_avg: f64,
-    elapsed: f64,
-    last_data: f64,
-    last_time: u64,
-    // #[cfg(feature = "queue_len")]
-    // avg: Avg,
-}
-
-impl TimeAvg {
-    fn new() -> TimeAvg {
-        TimeAvg {
-            time_avg: 0.0,
-            elapsed: 0.0,
-            last_data: 0.0,
-            last_time: 0,
-            // #[cfg(feature = "queue_len")]
-            // avg: Avg::new(),
-        }
-    }
-    fn update(&mut self, current_time: u64, delta: f64) {
-        let elapsed = (current_time - self.last_time) as f64;
-        self.last_time = current_time;
-        let delta_avg = (self.last_data + delta) / 2.0;
-        self.last_data = delta;
-        self.elapsed += elapsed;
-        let update_ratio = elapsed / self.elapsed;
-        self.time_avg = self.time_avg * (1.0 - update_ratio) + delta_avg * update_ratio;
-        // #[cfg(feature = "queue_len")]
-        // self.avg.update(delta_avg);
-    }
-    fn avg(&self) -> f64 {
-        self.time_avg
-    }
-}
-
-struct MovingTimeAvg {
-    moving_avg: f64,
-    elapsed: f64,
-    last_data: f64,
-    last_time: u64,
-    norm: f64,
-    moving_exp: f64,
-    // #[cfg(feature = "queue_len")]
-    // avg: Avg,
-}
-impl MovingTimeAvg {
-    fn new(moving_exp: f64) -> MovingTimeAvg {
-        MovingTimeAvg {
-            moving_avg: 0.0,
-            elapsed: 0.0,
-            last_data: 0.0,
-            last_time: 0,
-            norm: 0.0,
-            moving_exp: moving_exp,
-            // #[cfg(feature = "queue_len")]
-            // avg: Avg::new(),
-        }
-    }
-    fn update(&mut self, current_time: u64, delta: f64) {
-        let elapsed = (current_time - self.last_time) as f64;
-        self.last_time = current_time;
-        let delta_avg = (self.last_data + delta) / 2.0;
-        self.last_data = delta;
-        self.elapsed = self.elapsed * self.moving_exp + elapsed;
-        // self.norm = self.norm * (1.0 - self.moving_exp) + self.moving_exp;
-        let update_ratio = elapsed / self.elapsed;
-        self.moving_avg = self.moving_avg * (1.0 - update_ratio) + delta_avg * update_ratio;
-        // #[cfg(feature = "queue_len")]
-        // self.avg.update(delta_avg);
-    }
-    fn avg(&self) -> f64 {
-        self.moving_avg
-    }
-}
-
 pub struct Queue {
     pub queue: std::sync::RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>,
     /// length is set by Dispatcher, and cleared by the first worker in that round
@@ -421,8 +345,7 @@ impl Queue {
 pub struct Dispatcher {
     receiver: Receiver,
     queue: Arc<Queue>,
-    time_avg: MovingTimeAvg,
-    // time_avg: TimeAvg,
+    // time_avg: MovingTimeAvg,
 }
 
 impl Dispatcher {
@@ -437,8 +360,7 @@ impl Dispatcher {
         Dispatcher {
             receiver: Receiver::new(net_port, max_rx_packets, ip_addr),
             queue: queue,
-            time_avg: MovingTimeAvg::new(moving_exp),
-            // time_avg: TimeAvg::new(),
+            // time_avg: MovingTimeAvg::new(moving_exp),
             // queue: RwLock::new(VecDeque::with_capacity(config.max_rx_packets)),
         }
     }
@@ -448,16 +370,12 @@ impl Dispatcher {
             if packets.len() > 0 {
                 let current_time = cycles::rdtsc();
                 let mut queue = self.queue.queue.write().unwrap();
-                // TODO: smooth queue length here
-                // let ql = queue.len();
                 while let Some((packet, _)) = packets.pop() {
                     queue.push_back(packet);
                 }
                 let queue_len = queue.len() as f64;
-                self.time_avg.update(current_time, queue_len);
-                self.queue
-                    .length
-                    .store(self.time_avg.avg(), Ordering::Relaxed);
+                // self.time_avg.update(current_time, queue_len);
+                self.queue.length.store(queue_len, Ordering::Relaxed);
             }
         }
     }
@@ -578,11 +496,11 @@ impl TaskManager {
         }
     }
     // TODO: profile overhead in dispatch
-    fn run_task(&mut self, mut task: Box<Task>, mut queue_len: f64) {
+    fn run_task(&mut self, mut task: Box<Task>, mut queue_len: f64, task_duration_cv: f64) {
         if task.run().0 == COMPLETED {
             // The task finished execution, check for request and response packets. If they
             // exist, then free the request packet, and enqueue the response packet.
-            if let Some((req, resps)) = unsafe { task.tear(&mut queue_len) } {
+            if let Some((req, resps)) = unsafe { task.tear(&mut queue_len, task_duration_cv) } {
                 trace!("task complete");
                 req.free_packet();
                 for resp in resps.into_iter() {
@@ -596,9 +514,41 @@ impl TaskManager {
     }
 }
 
+pub struct CoeffOfVar {
+    counter: f64,
+    E_x: f64,
+    E_x2: f64,
+}
+impl CoeffOfVar {
+    pub fn new() -> CoeffOfVar {
+        CoeffOfVar {
+            counter: 0.0,
+            E_x: 0.0,
+            E_x2: 0.0,
+        }
+    }
+    fn update(&mut self, delta: f64) {
+        self.counter += 1.0;
+        self.E_x = self.E_x * ((self.counter - 1.0) / self.counter) + delta / self.counter;
+        self.E_x2 =
+            self.E_x2 * ((self.counter - 1.0) / self.counter) + delta * delta / self.counter;
+    }
+    fn mean(&self) -> f64 {
+        self.E_x
+    }
+    fn std(&self) -> f64 {
+        ((self.E_x2 - self.E_x * self.E_x) * (self.counter / (self.counter - 1.0))).sqrt()
+    }
+    fn cv(&self) -> f64 {
+        (self.E_x2 - self.E_x * self.E_x) / (self.E_x * self.E_x)
+            * (self.counter / (self.counter - 1.0))
+    }
+}
+
 pub struct StorageNodeWorker {
     net_port: CacheAligned<PortQueue>,
     queue: Arc<Queue>,
+    task_duration_cv: Arc<std::sync::RwLock<CoeffOfVar>>,
     manager: TaskManager,
 }
 impl StorageNodeWorker {
@@ -607,12 +557,14 @@ impl StorageNodeWorker {
         net_port: CacheAligned<PortQueue>,
         masterservice: Arc<Master>,
         queue: Arc<Queue>,
+        task_duration_cv: Arc<std::sync::RwLock<CoeffOfVar>>,
     ) -> StorageNodeWorker {
         let resp_hdr =
             PacketHeaders::create_hdr(&config.src, net_port.txq() as u16, &NetConfig::default());
         StorageNodeWorker {
             net_port: net_port,
             queue: queue,
+            task_duration_cv: task_duration_cv,
             manager: TaskManager::new(masterservice, resp_hdr),
         }
     }
@@ -662,16 +614,58 @@ impl Executable for StorageNodeWorker {
         let request = self.queue.queue.write().unwrap().pop_front();
         if let Some(request) = request {
             if let Some(task) = self.manager.create_task(request) {
+                let cv = self.task_duration_cv.read().unwrap().cv();
                 // TODO: add dispatch overhead to task time
                 // TODO: smooth queue_len here
                 let queue_len = self.queue.length.swap(-1.0, Ordering::Relaxed) as f64;
-                self.manager.run_task(task, queue_len);
+                let start = cycles::rdtsc();
+                self.manager.run_task(task, queue_len, cv);
                 self.send_response();
+                let end = cycles::rdtsc();
+                let duration = (end - start) as f64;
+                self.task_duration_cv.write().unwrap().update(duration);
             }
         }
     }
     fn dependencies(&mut self) -> Vec<usize> {
         vec![]
+    }
+}
+
+struct TimeAvg {
+    time_avg: f64,
+    elapsed: f64,
+    latest: f64,
+    last_time: u64,
+    // #[cfg(feature = "queue_len")]
+    // avg: Avg,
+}
+
+impl TimeAvg {
+    fn new() -> TimeAvg {
+        TimeAvg {
+            time_avg: 0.0,
+            elapsed: 0.0,
+            latest: 0.0,
+            last_time: 0,
+            // #[cfg(feature = "queue_len")]
+            // avg: Avg::new(),
+        }
+    }
+    fn update(&mut self, current_time: u64, new: f64) {
+        let elapsed = (current_time - self.last_time) as f64;
+        self.elapsed += elapsed;
+        let update_ratio = elapsed / self.elapsed;
+        let interval_avg = (self.latest + new) / 2.0;
+        self.time_avg = self.time_avg * (1.0 - update_ratio) + interval_avg * update_ratio;
+        // sync
+        self.last_time = current_time;
+        self.latest = new;
+        // #[cfg(feature = "queue_len")]
+        // self.avg.update(delta_avg);
+    }
+    fn avg(&self) -> f64 {
+        self.time_avg
     }
 }
 
@@ -948,7 +942,7 @@ impl RoundRobin {
                 if task.run().0 == COMPLETED {
                     // The task finished execution, check for request and response packets. If they
                     // exist, then free the request packet, and enqueue the response packet.
-                    if let Some((req, resps)) = unsafe { task.tear(&mut avg_queue_len) } {
+                    if let Some((req, resps)) = unsafe { task.tear(&mut avg_queue_len, 0.0) } {
                         trace!("task complete");
                         req.free_packet();
                         for resp in resps.into_iter() {

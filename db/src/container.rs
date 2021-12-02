@@ -171,11 +171,12 @@ impl<'a> Task for Container<'a> {
     }
 
     /// Refer to the Task trait for Documentation.
-    // NOTE: pass arg core_load here instead of maintaining a field for each task
-    // because core_load is a property of the server
+    // NOTE: pass arg server_load here instead of maintaining a field for each task
+    // because server_load is a property of the server
     unsafe fn tear(
         &mut self,
-        core_load: &mut f64,
+        server_load: &mut f64,
+        task_duration_cv: f64,
     ) -> Option<(
         Packet<UdpHeader, EmptyMetadata>,
         Vec<Packet<UdpHeader, EmptyMetadata>>,
@@ -204,10 +205,11 @@ impl<'a> Task for Container<'a> {
                     invoke_resp_hdr.common_header.duration = self.time;
                     // add server load to INVOKE resp hdr
                     // NOTE: this field is for INVOKE resp only, used by LB
-                    // for GET resp, the arg core_load is ignored by native::tear
-                    if *core_load >= 0.0 {
-                        invoke_resp_hdr.core_load = *core_load;
-                        *core_load = -1.0;
+                    // for GET resp, the arg server_load is ignored by native::tear
+                    if *server_load >= 0.0 {
+                        invoke_resp_hdr.server_load = *server_load;
+                        *server_load = -1.0;
+                        invoke_resp_hdr.task_duration_cv = task_duration_cv;
                     }
                     // let time_ptr = &self.time as *const _ as *const u8;
                     // let time_u8 = unsafe { slice::from_raw_parts(time_ptr, mem::size_of::<u64>()) };

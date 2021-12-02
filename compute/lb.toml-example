@@ -6,27 +6,37 @@ n_keys = 1000000
 put_pct = 0
 skew = 0.99
 tenant_skew = 0.1
-num_reqs = 64000
+num_reqs = 64000000
 
-multi_kv = [0]
-multi_ord = [25600]
-multi_ratio = [100]
+multi_kv = [4,0]
+multi_ord = [0,25600]
+multi_ratio = [12,88]
 multi_rpc = false
 
 learnable = false
-partition = 0
-max_out = 64
+partition = 50
+max_out = 32
 
-moving_avg = 0.999
-#lr =
-#min_step = 
-#max_step = 
-#exp = 
+# queue
+ql_diff_thresh = 50
 
-xloop_factor = 40000
+# sweep
+min_range = 50
+monotone_thresh = 10
+max_step = 1000
+lr_decay = 0.1
+
+# pivot
+pivot = 1200
+range = 200
+step_large = 1000
+step_small = 20
+
+xloop_factor = 800
+moving_exp = 0
 invoke_p = 100
 bimodal = false
-output_factor = 0
+output_factor = 200
 
 ############################### LB N/W CONFIG ##############################
 
@@ -35,28 +45,28 @@ nic_pci = "0000:03:00.1"
 [src]
 num_ports = 8
 ip_addr = "10.10.1.1"
-mac_addr = "9c:dc:71:56:af:a5"
+mac_addr = "9c:dc:71:56:fd:c5"
 
 [[compute]]
 num_ports = 1
 ip_addr = "10.10.1.5"
-mac_addr = "9c:dc:71:5c:ef:f1"
+mac_addr = "9c:dc:71:56:af:85"
 [[compute]]
 num_ports = 1
 ip_addr = "10.10.1.3"
-mac_addr = "9c:dc:71:5d:12:a1"
+mac_addr = "9c:dc:71:5e:2f:b1"
 [[compute]]
 num_ports = 1
 ip_addr = "10.10.1.4"
-mac_addr = "9c:dc:71:5d:30:51"
+mac_addr = "9c:dc:71:56:bf:05"
 [[compute]]
 num_ports = 1
 ip_addr = "10.10.1.2"
-mac_addr = "9c:dc:71:5d:12:11"
+mac_addr = "9c:dc:71:56:af:75"
 
 [[storage]]
 num_ports = 1
-ip_addr = "10.10.1.7"
-mac_addr = "9c:dc:71:5d:90:c1"
+ip_addr = "10.10.1.6"
+mac_addr = "9c:dc:71:5d:90:d1"
 
 

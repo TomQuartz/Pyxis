@@ -377,14 +377,16 @@ pub struct LBConfig {
     pub max_out: u32,
     pub xloop_factor: u64,
     pub moving_exp: f64,
+    // queue
+    pub ql_diff_thresh: f64,
     // pivot
-    // pub pivot: f64,
+    pub pivot: f64,
     pub range: f64,
     pub step_large: f64,
     pub step_small: f64,
     // sweep
     pub min_range: f64,
-    pub threshold: f64,
+    pub monotone_thresh: f64,
     pub max_step: f64,
     pub lr_decay: f64,
     // bimodal, not used for now
