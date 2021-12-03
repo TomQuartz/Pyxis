@@ -162,14 +162,16 @@ impl ServerLoad {
         let mut ql_total_std: f64 = 0.0;
         let mut task_cv_total: f64 = 0.0;
         let mut task_cv_total_std: f64 = 0.0;
+        let mut task_cv_total_median: f64 = 0.0;
         for &ip in self.ip2trace.keys() {
-            let server_trace = self.ip2trace.get(&ip).unwrap().read().unwrap();
+            let mut server_trace = self.ip2trace.get(&ip).unwrap().write().unwrap();
             let num_records = server_trace.len();
             let mut duration: u64 = 0;
             let mut ql_mean: f64 = 0.0;
             let mut ql_std: f64 = 0.0;
             let mut task_cv_mean: f64 = 0.0;
             let mut task_cv_std: f64 = 0.0;
+            let mut task_cv_median: f64 = 0.0;
             if num_records > 0 {
                 let start: u64 = server_trace[0].1 .0;
                 let end: u64 = server_trace[num_records - 1].1 .0;
@@ -181,6 +183,8 @@ impl ServerLoad {
                     .sum::<f64>()
                     / num_records as f64)
                     .sqrt();
+                server_trace.sort_by(|a, b| a.1 .1 .1.partial_cmp(&b.1 .1 .1).unwrap());
+                task_cv_median = server_trace[num_records / 2].1 .1 .1;
                 task_cv_mean =
                     server_trace.iter().map(|x| x.1 .1 .1).sum::<f64>() / num_records as f64;
                 task_cv_std = (server_trace
@@ -194,14 +198,16 @@ impl ServerLoad {
             ql_total_std += ql_std;
             task_cv_total += task_cv_mean;
             task_cv_total_std += task_cv_std;
+            task_cv_total_median += task_cv_median;
             println!(
-                "cluster {} ip {} ql_mean {:.2} ql_std {:.2} task_cv_mean {:2} task_cv_std {:2} duration {} total {} records",
+                "cluster {} ip {} ql_mean {:.2} ql_std {:.2} task_cv_mean {:.2} task_cv_std {:.2} task_cv_median {:.2} duration {} total {} records",
                 self.cluster_name,
                 ip,
                 ql_mean,
                 ql_std,
                 task_cv_mean,
                 task_cv_std,
+                task_cv_median,
                 duration / 2400,
                 num_records,
             )
@@ -211,9 +217,10 @@ impl ServerLoad {
         let ql_std = ql_total_std / num_servers;
         let task_cv_mean = task_cv_total / num_servers;
         let task_cv_std = task_cv_total_std / num_servers;
+        let task_cv_median = task_cv_total_median / num_servers;
         println!(
-            "{} summary ql_mean {:.2} ql_std {:.2} task_cv_mean {:2} task_cv_std {:2}",
-            self.cluster_name, ql_mean, ql_std, task_cv_mean, task_cv_std
+            "{} summary ql_mean {:.2} ql_std {:.2} task_cv_mean {:.2} task_cv_std {:.2} task_cv_median {:.2}",
+            self.cluster_name, ql_mean, ql_std, task_cv_mean, task_cv_std, task_cv_median,
         );
     }
     // #[cfg(feature = "server_stats")]

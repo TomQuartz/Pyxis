@@ -746,7 +746,7 @@ impl LoadBalancer {
         task_duration_cv: f64,
     ) {
         // set to -1 after the first rpc resp packet in that round
-        if server_load < 0.0 {
+        if server_load < 0.0 || task_duration_cv == 0.0{
             return;
         }
         if let Ok(_) =
