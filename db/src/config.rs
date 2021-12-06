@@ -20,6 +20,9 @@ use std::io::Read;
 
 use super::e2d2::headers::*;
 use super::toml;
+use e2d2::config::{NetbricksConfiguration, PortConfiguration};
+// use e2d2::scheduler::NetBricksContext as NetbricksContext;
+use e2d2::scheduler::*;
 
 /// To show the error while parsing the MAC address.
 #[derive(Debug, Clone)]
@@ -54,20 +57,20 @@ pub fn parse_mac(mac: &str) -> Result<MacAddress, ParseError> {
     }
 }
 
-/// Load a config from `filename` otherwise return a default structure.
-fn load_config(filename: &str) -> ServerConfig {
-    let mut contents = String::new();
+// /// Load a config from `filename` otherwise return a default structure.
+// fn load_config(filename: &str) -> ServerConfig {
+//     let mut contents = String::new();
 
-    let _ = File::open(filename).and_then(|mut file| file.read_to_string(&mut contents));
+//     let _ = File::open(filename).and_then(|mut file| file.read_to_string(&mut contents));
 
-    match toml::from_str(&contents) {
-        Ok(config) => config,
-        Err(e) => {
-            warn!("Failure paring config file {}: {}", filename, e);
-            ServerConfig::default()
-        }
-    }
-}
+//     match toml::from_str(&contents) {
+//         Ok(config) => config,
+//         Err(e) => {
+//             warn!("Failure paring config file {}: {}", filename, e);
+//             ServerConfig::default()
+//         }
+//     }
+// }
 
 /// Load a config from `filename` otherwise return a default structure.
 fn load_config_cl(filename: &str) -> ClientConfig {
@@ -83,7 +86,7 @@ fn load_config_cl(filename: &str) -> ClientConfig {
         }
     }
 }
-
+/*
 /// All of the various configuration options needed to run a server, both optional and required.
 /// Normally this config is recovered from a server.toml file (an example of which is in
 /// server.toml-example). If this file is malformed or missing, the server will typically
@@ -140,6 +143,7 @@ impl ServerConfig {
             .expect("Missing or malformed mac_address field in server config.")
     }
 }
+*/
 
 /// All of the various configuration options needed to run a client, both optional and required.
 /// Normally this config is recovered from a client.toml file (an example of which is in
@@ -350,9 +354,18 @@ where
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
 pub struct NetConfig {
-    pub num_ports: u16,
+    pub num_ports: i32,
     pub ip_addr: String,
     pub mac_addr: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(default)]
+pub struct ServerConfig {
+    pub nic_pci: String,
+    pub num_cores: i32,
+    pub max_rx_packets: usize,
+    pub server: NetConfig,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -397,9 +410,7 @@ pub struct LBConfig {
     pub bimodal_rpc: Vec<u32>,
     pub output_factor: u64,
     // network configuration
-    pub max_rx_packets: usize,
-    pub nic_pci: String,
-    pub src: NetConfig,
+    pub lb: ServerConfig,
     pub compute: Vec<NetConfig>,
     pub storage: Vec<NetConfig>,
 }
@@ -409,10 +420,7 @@ pub struct LBConfig {
 pub struct ComputeConfig {
     // pub max_credits: u32,
     pub moving_exp: f64,
-    pub max_rx_packets: usize,
-    pub nic_pci: String,
-    pub src: NetConfig,
-    // lb: NetConfig,
+    pub compute: ServerConfig,
     pub storage: Vec<NetConfig>,
 }
 
@@ -430,7 +438,83 @@ pub struct StorageConfig {
     pub value_len: usize,
     pub record_len: usize,
     pub moving_exp: f64,
-    pub max_rx_packets: usize,
-    pub nic_pci: String,
-    pub src: NetConfig,
+    pub storage: ServerConfig,
+}
+
+pub fn get_default_netbricks_config(config: &ServerConfig) -> NetbricksConfiguration {
+    // assert!(
+    //     (config.server.num_ports as u32).is_power_of_two(),
+    //     "the number of ports should be power of two"
+    // );
+    assert!(
+        config.num_cores % config.server.num_ports == 0,
+        "the number of server cores should be multiples of the number of ports"
+    );
+    // General arguments supplied to netbricks.
+    let net_config_name = String::from("storage");
+    let dpdk_secondary: bool = false;
+    let net_primary_core: i32 = 19;
+    let net_queues: Vec<i32> = (0..config.server.num_ports).collect();
+    let net_strict_cores: bool = false;
+    let net_pool_size: u32 = 16384 - 1;
+    let net_cache_size: u32 = 512;
+    let net_dpdk_args: Option<String> = None;
+
+    // Port configuration. Required to configure the physical network interface.
+    let net_port_name = config.nic_pci.clone();
+    let net_port_rx_queues: Vec<i32> = net_queues.clone();
+    let net_port_tx_queues: Vec<i32> = net_queues.clone();
+    let net_port_rxd: i32 = 8192 / config.server.num_ports;
+    let net_port_txd: i32 = 8192 / config.server.num_ports;
+    let net_port_loopback: bool = false;
+    let net_port_tcp_tso: bool = false;
+    let net_port_csum_offload: bool = false;
+
+    let net_port_config = PortConfiguration {
+        name: net_port_name,
+        rx_queues: net_port_rx_queues,
+        tx_queues: net_port_tx_queues,
+        rxd: net_port_rxd,
+        txd: net_port_txd,
+        loopback: net_port_loopback,
+        tso: net_port_tcp_tso,
+        csum: net_port_csum_offload,
+    };
+
+    // The set of ports used by netbricks.
+    let net_ports: Vec<PortConfiguration> = vec![net_port_config];
+    let net_cores: Vec<i32> = (0..config.num_cores).collect();
+    NetbricksConfiguration {
+        name: net_config_name,
+        secondary: dpdk_secondary,
+        primary_core: net_primary_core,
+        cores: net_cores,
+        strict: net_strict_cores,
+        ports: net_ports,
+        pool_size: net_pool_size,
+        cache_size: net_cache_size,
+        dpdk_args: net_dpdk_args,
+    }
+}
+
+/// This function configures and initializes Netbricks. In the case of a
+/// failure, it causes the program to exit.
+///
+/// Returns a Netbricks context which can be used to setup and start the
+/// server/client.
+pub fn config_and_init_netbricks(config: &ServerConfig) -> NetBricksContext {
+    let net_config: NetbricksConfiguration = get_default_netbricks_config(config);
+
+    // Initialize Netbricks and return a handle.
+    match initialize_system(&net_config) {
+        Ok(net_context) => {
+            return net_context;
+        }
+
+        Err(ref err) => {
+            error!("Error during Netbricks init: {}", err);
+            // TODO: Drop NetbricksConfiguration?
+            std::process::exit(1);
+        }
+    }
 }

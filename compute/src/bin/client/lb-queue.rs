@@ -24,7 +24,7 @@ extern crate splinter;
 extern crate time;
 extern crate zipf;
 
-mod setup;
+// mod setup;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -34,15 +34,17 @@ use std::mem::transmute;
 use std::sync::Arc;
 
 use self::bytes::Bytes;
-use db::config;
+use db::config::{self, *};
 use db::cycles;
 use db::e2d2::allocators::*;
+use db::e2d2::config::{NetbricksConfiguration, PortConfiguration};
 use db::e2d2::interface::*;
 use db::e2d2::scheduler::*;
 use db::log::*;
 use db::master::Master;
 use db::rpc::*;
 use db::wireformat::*;
+// use db::e2d2::scheduler::NetBricksContext as NetbricksContext;
 
 use rand::distributions::{Normal, Sample};
 use rand::{Rng, SeedableRng, XorShiftRng};
@@ -746,7 +748,7 @@ impl LoadBalancer {
         task_duration_cv: f64,
     ) {
         // set to -1 after the first rpc resp packet in that round
-        if server_load < 0.0 || task_duration_cv == 0.0{
+        if server_load < 0.0 || task_duration_cv == 0.0 {
             return;
         }
         if let Ok(_) =
@@ -987,9 +989,9 @@ impl Executable for LoadBalancer {
 
 fn setup_lb(
     config: &config::LBConfig,
-    ports: Vec<CacheAligned<PortQueue>>,
     scheduler: &mut StandaloneScheduler,
-    core_id: i32,
+    ports: Vec<CacheAligned<PortQueue>>,
+    core_id: usize,
     num_types: usize,
     partition: Arc<AtomicF64>,
     storage_load: Arc<ServerLoad>,
@@ -1004,7 +1006,7 @@ fn setup_lb(
         std::process::exit(1);
     }
     match scheduler.add_task(LoadBalancer::new(
-        core_id as usize,
+        core_id,
         config,
         ports[0].clone(),
         num_types,
@@ -1034,8 +1036,7 @@ fn main() {
     warn!("Starting up Sandstorm client with config {:?}", config);
 
     // Setup Netbricks.
-    let mut net_context =
-        setup::config_and_init_netbricks(config.nic_pci.clone(), config.src.num_ports);
+    let mut net_context = config_and_init_netbricks(&config.lb);
     net_context.start_schedulers();
     // setup shared data
     let partition = Arc::new(AtomicF64::new(config.partition * 100.0));
@@ -1063,7 +1064,7 @@ fn main() {
     let mut kth = vec![];
     for _ in 0..num_types {
         let mut kth_type = vec![];
-        for _ in 0..config.src.num_ports {
+        for _ in 0..config.lb.num_cores {
             kth_type.push(Arc::new(AtomicUsize::new(0)));
         }
         kth.push(kth_type);
@@ -1071,10 +1072,9 @@ fn main() {
     let recvd = Arc::new(AtomicUsize::new(0));
     let init_rdtsc = cycles::rdtsc();
     let finished = Arc::new(AtomicBool::new(false));
-    // Setup the client pipeline.
-    // let cores: Vec<i32> = [(0..8).collect::<Vec<_>>(), (10..18).collect::<Vec<_>>()].concat();
-    let cores: Vec<i32> = (0..10).collect();
-    for &core_id in cores[..config.src.num_ports as usize].iter() {
+    // setup lb
+    for (core_id, &core) in net_context.active_cores.clone().iter().enumerate() {
+        let cfg = config.clone();
         let kth_copy = kth.clone();
         let partition_copy = partition.clone();
         let recvd_copy = recvd.clone();
@@ -1082,14 +1082,14 @@ fn main() {
         let compute_load_copy = compute_load.clone();
         let finished_copy = finished.clone();
         net_context.add_pipeline_to_core(
-            core_id as i32,
+            core,
             Arc::new(
-                move |ports, sched: &mut StandaloneScheduler, core: i32, _sibling| {
+                move |ports, _sib_port, scheduler: &mut StandaloneScheduler| {
                     setup_lb(
-                        &config::load::<config::LBConfig>("lb.toml"),
+                        &cfg.clone(),
+                        scheduler,
                         ports,
-                        sched,
-                        core,
+                        core_id,
                         num_types,
                         partition_copy.clone(),
                         storage_load_copy.clone(),
@@ -1105,7 +1105,7 @@ fn main() {
     }
 
     // Allow the system to bootup fully.
-    std::thread::sleep(std::time::Duration::from_secs(1));
+    std::thread::sleep(std::time::Duration::from_secs(2));
 
     // Run the client.
     net_context.execute();

@@ -24,17 +24,16 @@ extern crate splinter;
 extern crate time;
 extern crate zipf;
 
-mod setup;
+// mod setup;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::mem;
 use std::mem::transmute;
-use std::sync::Arc;
 
 use self::bytes::Bytes;
-use db::config;
+use db::config::{self, *};
 use db::cycles;
 use db::e2d2::allocators::*;
 use db::e2d2::interface::*;
@@ -48,7 +47,7 @@ use rand::distributions::{Normal, Sample};
 use rand::{Rng, SeedableRng, XorShiftRng};
 use splinter::nativestate::PushbackState;
 use splinter::proxy::KV;
-use splinter::sched::TaskManager;
+// use splinter::sched::TaskManager;
 use splinter::*;
 use zipf::ZipfDistribution;
 
@@ -56,16 +55,21 @@ use self::atomic_float::AtomicF32;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::RwLock;
 
+use db::dispatch::Queue;
 use db::e2d2::common::EmptyMetadata;
+use db::e2d2::config::{NetbricksConfiguration, PortConfiguration};
 use db::e2d2::headers::UdpHeader;
-use dispatch::{CoeffOfVar, ComputeNodeWorker, Dispatcher, Queue};
+use db::e2d2::scheduler::NetBricksContext as NetbricksContext;
+// use dispatch::{CoeffOfVar, ComputeNodeWorker, Dispatcher, Queue};
+use splinter::sched::{ComputeNodeWorker, TaskManager};
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::Write;
+use std::sync::Arc;
 
-#[macro_use]
-extern crate cfg_if;
-
+// #[macro_use]
+// extern crate cfg_if;
+/*
 fn setup_dispatcher(
     config: &config::ComputeConfig,
     ports: Vec<CacheAligned<PortQueue>>,
@@ -138,11 +142,121 @@ fn setup_worker(
         }
     }
 }
+*/
+fn setup_worker(
+    config: &config::ComputeConfig,
+    scheduler: &mut StandaloneScheduler,
+    ports: Vec<CacheAligned<PortQueue>>,
+    sib_port: Option<CacheAligned<PortQueue>>,
+    queue: Arc<Queue>,
+    sib_queue: Option<Arc<Queue>>,
+    reset: Vec<Arc<AtomicBool>>,
+    manager: Arc<TaskManager>,
+    id: usize,
+) {
+    if ports.len() != 1 {
+        error!("Client should be configured with exactly 1 port!");
+        std::process::exit(1);
+    }
+    match scheduler.add_task(ComputeNodeWorker::new(
+        config,
+        ports[0].clone(),
+        sib_port,
+        queue,
+        sib_queue,
+        reset,
+        manager,
+        id,
+    )) {
+        Ok(_) => {
+            info!(
+                "Successfully added compute node worker with rx-tx queue {}.",
+                ports[0].rxq()
+            );
+        }
+        Err(ref err) => {
+            error!("Error while adding to Netbricks pipeline {}", err);
+            std::process::exit(1);
+        }
+    }
+}
 
 fn main() {
     db::env_logger::init().expect("ERROR: failed to initialize logger!");
     // TODO
-    let config: config::ComputeConfig = config::load("compute.toml");
+    let config: ComputeConfig = config::load("compute.toml");
+    warn!("Starting up compute node with config {:?}", config);
+
+    let mut master = Master::new(0, 0, 0);
+    // Create tenants with extensions.
+    let num_tenants: u32 = 1;
+    info!("Populating extension for {} tenants", num_tenants);
+    for tenant in 1..(num_tenants + 1) {
+        master.load_test(tenant);
+    }
+    // finished populating, now mark as immut
+    // let master = Arc::new(master);
+    let mut net_context: NetbricksContext = config_and_init_netbricks(&config.compute);
+    net_context.start_schedulers();
+    // setup shared data
+    let num_ports = config.compute.server.num_ports;
+    let workers_per_port = config.compute.num_cores / num_ports;
+    let mut queues = vec![];
+    for _ in 0..config.compute.server.num_ports {
+        queues.push(Arc::new(Queue::new(config.compute.max_rx_packets)));
+    }
+    // let queue = Arc::new(Queue::new(config.max_rx_packets));
+    let mut reset_vec = vec![];
+    for _ in 0..config.compute.server.num_ports {
+        let mut reset = vec![];
+        for _ in 0..workers_per_port {
+            reset.push(Arc::new(AtomicBool::new(false)));
+        }
+        reset_vec.push(reset);
+    }
+    // shared task manager
+    let manager = Arc::new(TaskManager::new(master));
+    // setup worker
+    for (core_id, &core) in net_context.active_cores.clone().iter().enumerate() {
+        let cfg = config.clone();
+        let port_id = core_id % (num_ports as usize);
+        let sib_id = (port_id + 1) % (num_ports as usize);
+        let cqueue = queues[port_id].clone();
+        let csib_queue = Some(queues[sib_id].clone());
+        let creset = reset_vec[port_id].clone();
+        let cmanager = manager.clone();
+        let worker_id = core_id % (workers_per_port as usize);
+        net_context.add_pipeline_to_core(
+            core,
+            Arc::new(
+                move |ports, sib_port, scheduler: &mut StandaloneScheduler| {
+                    setup_worker(
+                        &cfg.clone(),
+                        scheduler,
+                        ports,
+                        sib_port,
+                        cqueue.clone(),
+                        csib_queue.clone(),
+                        creset.clone(),
+                        cmanager.clone(),
+                        worker_id,
+                    )
+                },
+            ),
+        );
+    }
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    net_context.execute();
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+    }
+}
+
+/*
+fn main() {
+    db::env_logger::init().expect("ERROR: failed to initialize logger!");
+    // TODO
+    let config: ComputeConfig = config::load("compute.toml");
     warn!("Starting up compute node with config {:?}", config);
 
     let mut master = Master::new(0, 0, 0);
@@ -331,3 +445,4 @@ fn main() {
     // Stop the client.
     // net_context.stop();
 }
+*/

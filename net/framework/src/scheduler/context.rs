@@ -35,9 +35,9 @@ impl<'a> BarrierHandle<'a> {
 #[derive(Default)]
 pub struct NetBricksContext {
     pub ports: HashMap<String, Arc<PmdPort>>,
-    pub rx_queues: HashMap<i32, Vec<CacheAligned<PortQueue>>>,
+    pub core2queues: HashMap<i32, Vec<CacheAligned<PortQueue>>>,
     pub active_cores: Vec<i32>,
-    pub siblings: HashMap<i32, CacheAligned<PortQueue>>,
+    pub siblings: HashMap<i32, Option<CacheAligned<PortQueue>>>,
     pub virtual_ports: HashMap<i32, Arc<VirtualPort>>,
     scheduler_channels: HashMap<i32, SyncSender<SchedulerCommand>>,
     scheduler_handles: HashMap<i32, JoinHandle<()>>,
@@ -72,19 +72,21 @@ impl NetBricksContext {
     /// Run a function (which installs a pipeline) on all schedulers in the system.
     pub fn add_pipeline_to_run<T>(&mut self, run: Arc<T>)
     where
-        T: Fn(Vec<AlignedPortQueue>, &mut StandaloneScheduler, i32, AlignedPortQueue) + Send + Sync + 'static,
+        T: Fn(Vec<AlignedPortQueue>, Option<AlignedPortQueue>, &mut StandaloneScheduler) + Send + Sync + 'static,
+        // T: Fn(Vec<AlignedPortQueue>, &mut StandaloneScheduler, i32, AlignedPortQueue) + Send + Sync + 'static,
     {
         for (core, channel) in &self.scheduler_channels {
-            let ports = match self.rx_queues.get(core) {
+            let ports = match self.core2queues.get(core) {
                 Some(v) => v.clone(),
                 None => vec![],
             };
-            let id = *core;
+            // let id = *core;
             let sibling = self.siblings.get(core).unwrap().clone();
             let boxed_run = run.clone();
             channel
                 .send(SchedulerCommand::Run(Arc::new(move |s| {
-                    boxed_run(ports.clone(), s, id, sibling.clone())
+                    boxed_run(ports.clone(), sibling.clone(), s)
+                    // boxed_run(ports.clone(), s, id, sibling.clone())
                 })))
                 .unwrap();
         }
@@ -130,14 +132,16 @@ impl NetBricksContext {
 
     /// Install a pipeline on a particular core.
     pub fn add_pipeline_to_core<
-        T: Fn(Vec<AlignedPortQueue>, &mut StandaloneScheduler, i32, AlignedPortQueue) + Send + Sync + 'static,
+        T: Fn(Vec<AlignedPortQueue>, Option<AlignedPortQueue>, &mut StandaloneScheduler) + Send + Sync + 'static,
+        // T: Fn(Vec<AlignedPortQueue>, &mut StandaloneScheduler, i32, AlignedPortQueue) + Send + Sync + 'static,
     >(
         &mut self,
         core: i32,
         run: Arc<T>,
     ) -> Result<()> {
         if let Some(channel) = self.scheduler_channels.get(&core) {
-            let ports = match self.rx_queues.get(&core) {
+            // NOTE: for now, only one core is configured
+            let ports = match self.core2queues.get(&core) {
                 Some(v) => v.clone(),
                 None => vec![],
             };
@@ -145,7 +149,8 @@ impl NetBricksContext {
             let boxed_run = run.clone();
             channel
                 .send(SchedulerCommand::Run(Arc::new(move |s| {
-                    boxed_run(ports.clone(), s, core, sibling.clone())
+                    boxed_run(ports.clone(), sibling.clone(), s)
+                    // boxed_run(ports.clone(), s, core, sibling.clone())
                 })))
                 .unwrap();
             Ok(())
@@ -218,7 +223,7 @@ impl NetBricksContext {
 pub fn initialize_system(configuration: &NetbricksConfiguration) -> Result<NetBricksContext> {
     init_system(configuration);
     let mut ctx: NetBricksContext = Default::default();
-    let mut cores: HashSet<_> = configuration.cores.iter().cloned().collect();
+    // let mut cores: HashSet<_> = configuration.cores.iter().cloned().collect();
     for port in &configuration.ports {
         if ctx.ports.contains_key(&port.name) {
             println!("Port {} appears twice in specification", port.name);
@@ -240,56 +245,91 @@ pub fn initialize_system(configuration: &NetbricksConfiguration) -> Result<NetBr
             }
 
             let port_instance = &ctx.ports[&port.name];
-
-            for (rx_q, core) in port.rx_queues.iter().enumerate() {
-                let rx_q = rx_q as i32;
-                match PmdPort::new_queue_pair(port_instance, rx_q, rx_q) {
+            let nrxq = port.rx_queues.len();
+            let ntxq = port.tx_queues.len();
+            for (core_id, &core) in configuration.cores.iter().enumerate() {
+                let rx_q = port.rx_queues[core_id % nrxq];
+                let tx_q = port.tx_queues[core_id % ntxq];
+                match PmdPort::new_queue_pair(port_instance, rx_q, tx_q) {
                     Ok(q) => {
-                        ctx.rx_queues.entry(*core).or_insert_with(|| vec![]).push(q);
+                        ctx.core2queues.entry(core).or_insert_with(|| vec![]).push(q);
                     }
                     Err(e) => {
                         return Err(ErrorKind::ConfigurationError(format!(
-                            "Queue {} on port {} could not be \
-                             initialized {:?}",
-                            rx_q, port.name, e
+                            "port {} queue {:?} on core {} could not be \
+                                initialized {:?}",
+                            port.name,
+                            (rx_q, tx_q),
+                            core,
+                            e
                         ))
                         .into())
                     }
                 }
             }
+            // for (rx_q, core) in port.rx_queues.iter().enumerate() {
+            //     let rx_q = rx_q as i32;
+            //     match PmdPort::new_queue_pair(port_instance, rx_q, rx_q) {
+            //         Ok(q) => {
+            //             // ctx.rx_queues.entry(*core).or_insert_with(|| vec![]).push(q);
+            //         }
+            //         Err(e) => {
+            //             return Err(ErrorKind::ConfigurationError(format!(
+            //                 "Queue {} on port {} could not be \
+            //                  initialized {:?}",
+            //                 rx_q, port.name, e
+            //             ))
+            //             .into())
+            //         }
+            //     }
+            // }
         }
     }
-    if configuration.strict {
-        let other_cores: HashSet<_> = ctx.rx_queues.keys().cloned().collect();
-        let core_diff: Vec<_> = other_cores.difference(&cores).map(|c| c.to_string()).collect();
-        if !core_diff.is_empty() {
-            let missing_str = core_diff.join(", ");
-            return Err(ErrorKind::ConfigurationError(format!(
-                "Strict configuration selected but core(s) {} appear \
-                 in port configuration but not in cores",
-                missing_str
-            ))
-            .into());
-        }
-    } else {
-        cores.extend(ctx.rx_queues.keys());
-    };
-    ctx.active_cores = cores.into_iter().collect();
-    ctx.active_cores.sort();
-
+    // if configuration.strict {
+    //     let other_cores: HashSet<_> = ctx.rx_queues.keys().cloned().collect();
+    //     let core_diff: Vec<_> = other_cores.difference(&cores).map(|c| c.to_string()).collect();
+    //     if !core_diff.is_empty() {
+    //         let missing_str = core_diff.join(", ");
+    //         return Err(ErrorKind::ConfigurationError(format!(
+    //             "Strict configuration selected but core(s) {} appear \
+    //              in port configuration but not in cores",
+    //             missing_str
+    //         ))
+    //         .into());
+    //     }
+    // } else {
+    //     cores.extend(ctx.rx_queues.keys());
+    // };
+    // ctx.active_cores = cores.into_iter().collect();
+    // ctx.active_cores.sort();
+    ctx.active_cores = configuration.cores.clone();
     // Populate every core's sibling receive queue.
-    for idx in 0..(ctx.active_cores.len() - 1) {
-        // A core's sibling is it's neighbour.
-        let sibling = ctx.rx_queues.get(&ctx.active_cores[idx + 1]).unwrap();
-        ctx.siblings.insert(ctx.active_cores[idx], sibling[0].clone());
+    let num_cores = ctx.active_cores.len();
+    for core_id in 0..num_cores {
+        let sib_id = (core_id + 1) % num_cores;
+        let sibling = if sib_id != core_id {
+            Some(ctx.core2queues.get(&ctx.active_cores[sib_id]).unwrap()[0].clone())
+        } else {
+            None
+        };
+        ctx.siblings.insert(ctx.active_cores[core_id], sibling);
+        // let sibling = ctx.core2queues.get(&ctx.active_cores[sib_id]).unwrap();
+        // ctx.siblings.insert(ctx.active_cores[core_id], sibling[0].clone());
     }
 
-    // The last core's sibling is the first core's receive queue.
-    {
-        let last = ctx.active_cores.len() - 1;
-        let sibling = ctx.rx_queues.get(&ctx.active_cores[0]).unwrap();
-        ctx.siblings.insert(ctx.active_cores[last], sibling[0].clone());
-    }
+    // // Populate every core's sibling receive queue.
+    // for idx in 0..(ctx.active_cores.len() - 1) {
+    //     // A core's sibling is it's neighbour.
+    //     let sibling = ctx.rx_queues.get(&ctx.active_cores[idx + 1]).unwrap();
+    //     ctx.siblings.insert(ctx.active_cores[idx], sibling[0].clone());
+    // }
+
+    // // The last core's sibling is the first core's receive queue.
+    // {
+    //     let last = ctx.active_cores.len() - 1;
+    //     let sibling = ctx.rx_queues.get(&ctx.active_cores[0]).unwrap();
+    //     ctx.siblings.insert(ctx.active_cores[last], sibling[0].clone());
+    // }
 
     Ok(ctx)
 }

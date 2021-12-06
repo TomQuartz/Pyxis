@@ -32,7 +32,7 @@ fn get_default_netbricks_config(nic_pci: String, num_ports: u16) -> NetbricksCon
     let net_config_name = String::from("client");
     let dpdk_secondary: bool = false;
     let net_primary_core: i32 = 19;
-    let net_cores: Vec<i32> = (0..16).collect();
+    let net_cores: Vec<i32> = (0..1).collect();
     let net_strict_cores: bool = true;
     let net_pool_size: u32 = 16384 - 1;
     let net_cache_size: u32 = 512;
@@ -42,8 +42,8 @@ fn get_default_netbricks_config(nic_pci: String, num_ports: u16) -> NetbricksCon
     let net_port_name = nic_pci;
     let net_port_rx_queues: Vec<i32> = net_cores.clone();
     let net_port_tx_queues: Vec<i32> = net_cores.clone();
-    let net_port_rxd: i32 = 256;
-    let net_port_txd: i32 = 256;
+    let net_port_rxd: i32 = 8192;
+    let net_port_txd: i32 = 8192;
     let net_port_loopback: bool = false;
     let net_port_tcp_tso: bool = false;
     let net_port_csum_offload: bool = false;

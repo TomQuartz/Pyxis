@@ -39,6 +39,7 @@ use e2d2::allocators::CacheAligned;
 use e2d2::interface::{PacketTx, PortQueue};
 use std::rc::Rc;
 
+use super::dispatch::{Dispatcher, PacketHeaders, Queue, Receiver};
 use config::{self, NetConfig, StorageConfig};
 use e2d2::interface::*;
 use e2d2::scheduler::Executable;
@@ -89,259 +90,7 @@ const CREDIT_LIMIT_US: f64 = 0.5f64;
 //     }
 // }
 
-struct PacketHeaders {
-    /// The UDP header that will be appended to every response packet (cached
-    /// here to avoid wasting time creating a new one for every response
-    /// packet).
-    udp_header: UdpHeader,
-
-    /// The IP header that will be appended to every response packet (cached
-    /// here to avoid creating a new one for every response packet).
-    ip_header: IpHeader,
-
-    /// The MAC header that will be appended to every response packet (cached
-    /// here to avoid creating a new one for every response packet).
-    mac_header: MacHeader,
-}
-
-impl PacketHeaders {
-    fn new(src: &NetConfig, dst: &NetConfig) -> PacketHeaders {
-        // Create a common udp header for response packets.
-        let mut udp_header: UdpHeader = UdpHeader::new();
-        udp_header.set_length(common::PACKET_UDP_LEN);
-        udp_header.set_checksum(common::PACKET_UDP_CHECKSUM);
-        udp_header.set_src_port(common::DEFAULT_UDP_PORT);
-        udp_header.set_dst_port(common::DEFAULT_UDP_PORT); // will be changed by the rng of sender
-                                                           // Create a common ip header for response packets.
-        let mut ip_header: IpHeader = IpHeader::new();
-        ip_header.set_ttl(common::PACKET_IP_TTL);
-        ip_header.set_version(common::PACKET_IP_VER);
-        ip_header.set_ihl(common::PACKET_IP_IHL);
-        ip_header.set_length(common::PACKET_IP_LEN);
-        ip_header.set_protocol(0x11);
-        if let Ok(ip_src_addr) = Ipv4Addr::from_str(&src.ip_addr) {
-            ip_header.set_src(u32::from(ip_src_addr));
-        }
-        if let Ok(ip_dst_addr) = Ipv4Addr::from_str(&dst.ip_addr) {
-            ip_header.set_dst(u32::from(ip_dst_addr));
-        }
-
-        // Create a common mac header for response packets.
-        let mut mac_header: MacHeader = MacHeader::new();
-        mac_header.set_etype(common::PACKET_ETYPE);
-        if let Ok(mac_src_addr) = config::parse_mac(&src.mac_addr) {
-            mac_header.src = mac_src_addr;
-        }
-        if let Ok(mac_dst_addr) = config::parse_mac(&dst.mac_addr) {
-            mac_header.dst = mac_dst_addr;
-        }
-        PacketHeaders {
-            udp_header: udp_header,
-            ip_header: ip_header,
-            mac_header: mac_header,
-        }
-    }
-    fn create_hdr(src: &NetConfig, src_udp_port: u16, dst: &NetConfig) -> PacketHeaders {
-        let mut pkthdr = PacketHeaders::new(src, dst);
-        // we need to fix the src port for req_hdrs, which is used as the dst port in resp_hdr at rpc endpoint
-        pkthdr.udp_header.set_src_port(src_udp_port);
-        pkthdr
-    }
-    fn create_hdrs(
-        src: &NetConfig,
-        src_udp_port: u16,
-        endpoints: &Vec<NetConfig>,
-    ) -> Vec<PacketHeaders> {
-        let mut pkthdrs = vec![];
-        for dst in endpoints.iter() {
-            pkthdrs.push(Self::create_hdr(src, src_udp_port, dst));
-        }
-        pkthdrs
-    }
-}
-
-struct Receiver {
-    // The network interface over which responses will be received from.
-    net_port: CacheAligned<PortQueue>,
-    // Sibling port
-    sib_port: Option<CacheAligned<PortQueue>>,
-    // stealing
-    stealing: bool,
-    // The maximum number of packets that can be received from the network port in one shot.
-    max_rx_packets: usize,
-    // ip_addr
-    ip_addr: u32,
-    // // The total number of responses received.
-    // responses_recv: Cell<u64>,
-}
-
-// Implementation of methods on Receiver.
-impl Receiver {
-    pub fn new(
-        net_port: CacheAligned<PortQueue>,
-        max_rx_packets: usize,
-        ip_addr: &str,
-    ) -> Receiver {
-        Receiver {
-            net_port: net_port,
-            sib_port: None,
-            stealing: false,
-            max_rx_packets: max_rx_packets,
-            ip_addr: u32::from(Ipv4Addr::from_str(ip_addr).expect("missing src ip for LB")),
-        }
-    }
-    // TODO: makesure src ip is properly set
-    // return pkt and (src ip, src udp port)
-    pub fn recv(&self) -> Option<Vec<(Packet<UdpHeader, EmptyMetadata>, (u32, u16))>> {
-        // Allocate a vector of mutable MBuf pointers into which raw packets will be received.
-        let mut mbuf_vector = Vec::with_capacity(self.max_rx_packets);
-
-        // This unsafe block is needed in order to populate mbuf_vector with a bunch of pointers,
-        // and subsequently manipulate these pointers. DPDK will take care of assigning these to
-        // actual MBuf's.
-        unsafe {
-            mbuf_vector.set_len(self.max_rx_packets);
-
-            // Try to receive packets from the network port.
-            let mut recvd = self
-                .net_port
-                .recv(&mut mbuf_vector[..])
-                .expect("Error on packet receive") as usize;
-
-            // Return if packets weren't available for receive.
-            if recvd == 0 && self.stealing {
-                recvd = self
-                    .sib_port
-                    .as_ref()
-                    .unwrap()
-                    .recv(&mut mbuf_vector[..])
-                    .expect("Error on packet receive") as usize;
-            }
-            if recvd == 0 {
-                return None;
-            }
-            trace!("port {} recv {} raw pkts", self.net_port.rxq(), recvd);
-            // // Update the number of responses received.
-            // let r = self.responses_recv.get();
-            // // if r & 0xffffff == 0 {
-            // //     info!("Received many responses...");
-            // // }
-            // self.responses_recv.set(r + 1);
-
-            // Clear out any dangling pointers in mbuf_vector.
-            mbuf_vector.drain(recvd..self.max_rx_packets);
-
-            // Vector to hold packets parsed from mbufs.
-            let mut packets = Vec::with_capacity(mbuf_vector.len());
-
-            // Wrap up the received Mbuf's into Packets. The refcount on the mbuf's were set by
-            // DPDK, and do not need to be bumped up here. Hence, the call to
-            // packet_from_mbuf_no_increment().
-            for mbuf in mbuf_vector.iter_mut() {
-                let packet = packet_from_mbuf_no_increment(*mbuf, 0);
-                if let Some(packet) = self.check_mac(packet) {
-                    if let Some((packet, src_ip)) = self.check_ip(packet) {
-                        if let Some((packet, src_port)) = self.check_udp(packet) {
-                            packets.push((packet, (src_ip, src_port)));
-                            continue;
-                        }
-                    }
-                }
-            }
-
-            return Some(packets);
-        }
-    }
-
-    #[inline]
-    fn check_mac(
-        &self,
-        packet: Packet<NullHeader, EmptyMetadata>,
-    ) -> Option<Packet<MacHeader, EmptyMetadata>> {
-        let packet = packet.parse_header::<MacHeader>();
-        // The following block borrows the MAC header from the parsed
-        // packet, and checks if the ethertype on it matches what the
-        // server expects.
-        if packet.get_header().etype().eq(&common::PACKET_ETYPE) {
-            Some(packet)
-        } else {
-            trace!("mac check failed");
-            packet.free_packet();
-            None
-        }
-    }
-
-    #[inline]
-    fn check_ip(
-        &self,
-        packet: Packet<MacHeader, EmptyMetadata>,
-    ) -> Option<(Packet<IpHeader, EmptyMetadata>, u32)> {
-        let packet = packet.parse_header::<IpHeader>();
-        // The following block borrows the Ip header from the parsed
-        // packet, and checks if it is valid. A packet is considered
-        // valid if:
-        //      - It is an IPv4 packet,
-        //      - It's TTL (time to live) is greater than zero,
-        //      - It is not long enough,
-        //      - It's destination Ip address matches that of the server.
-        const MIN_LENGTH_IP: u16 = common::PACKET_IP_LEN + 2;
-        let ip_header: &IpHeader = packet.get_header();
-        if (ip_header.version() == 4)
-            && (ip_header.ttl() > 0)
-            && (ip_header.length() >= MIN_LENGTH_IP)
-            && (ip_header.dst() == self.ip_addr)
-        {
-            let src_ip = ip_header.src();
-            trace!("recv from ip {}", src_ip);
-            Some((packet, src_ip))
-        } else {
-            trace!(
-                "ip check failed, dst {} local {}",
-                ip_header.dst(),
-                self.ip_addr
-            );
-            packet.free_packet();
-            None
-        }
-    }
-
-    #[inline]
-    fn check_udp(
-        &self,
-        packet: Packet<IpHeader, EmptyMetadata>,
-    ) -> Option<(Packet<UdpHeader, EmptyMetadata>, u16)> {
-        let packet = packet.parse_header::<UdpHeader>();
-        // This block borrows the UDP header from the parsed packet, and
-        // checks if it is valid. A packet is considered valid if:
-        //      - It is not long enough,
-        const MIN_LENGTH_UDP: u16 = common::PACKET_UDP_LEN + 2;
-        let udp_header: &UdpHeader = packet.get_header();
-        if udp_header.length() >= MIN_LENGTH_UDP {
-            let src_port = udp_header.src_port();
-            Some((packet, src_port))
-        } else {
-            trace!("udp check failed");
-            packet.free_packet();
-            None
-        }
-    }
-}
-
-pub struct Queue {
-    pub queue: std::sync::RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>,
-    /// length is set by Dispatcher, and cleared by the first worker in that round
-    // LB will only update those with positive queue length, thus reducing update frequency and variance
-    pub length: AtomicF64,
-}
-impl Queue {
-    pub fn new(capacity: usize) -> Queue {
-        Queue {
-            queue: std::sync::RwLock::new(VecDeque::with_capacity(capacity)),
-            length: AtomicF64::new(-1.0),
-        }
-    }
-}
-
+/*
 pub struct Dispatcher {
     receiver: Receiver,
     queue: Arc<Queue>,
@@ -357,7 +106,7 @@ impl Dispatcher {
         net_port: CacheAligned<PortQueue>,
         queue: Arc<Queue>,
         reset: Vec<Arc<AtomicBool>>,
-        moving_exp: f64,
+        // moving_exp: f64,
     ) -> Dispatcher {
         Dispatcher {
             receiver: Receiver::new(net_port, max_rx_packets, ip_addr),
@@ -397,6 +146,9 @@ impl Dispatcher {
     pub fn poll(&self) -> Option<Packet<UdpHeader, EmptyMetadata>> {
         self.queue.queue.write().unwrap().pop_front()
     }
+    pub fn queue_length(&self) -> f64 {
+        self.queue.length.swap(-1.0, Ordering::Relaxed)
+    }
 }
 impl Executable for Dispatcher {
     fn execute(&mut self) {
@@ -406,65 +158,74 @@ impl Executable for Dispatcher {
         vec![]
     }
 }
+*/
 
 struct TaskManager {
     master_service: Arc<Master>,
-    resp_hdr: PacketHeaders,
-    // pub ready: VecDeque<Box<Task>>,
-    responses: Vec<Packet<IpHeader, EmptyMetadata>>,
+    // resp_hdr: PacketHeaders,
+    // // pub ready: VecDeque<Box<Task>>,
+    // responses: Vec<Packet<IpHeader, EmptyMetadata>>,
 }
 impl TaskManager {
-    fn new(master_service: Arc<Master>, resp_hdr: PacketHeaders) -> TaskManager {
+    fn new(master_service: Arc<Master>) -> TaskManager {
         TaskManager {
             master_service: master_service,
-            resp_hdr: resp_hdr,
+            // resp_hdr: resp_hdr,
             // ready: VecDeque::with_capacity(32),
-            responses: vec![],
+            // responses: vec![],
         }
     }
     fn create_response(
         &self,
+        resp_hdr: &PacketHeaders,
         request: &Packet<UdpHeader, EmptyMetadata>,
     ) -> Option<Packet<UdpHeader, EmptyMetadata>> {
         if let Some(response) = new_packet() {
             let mut response = response
-                .push_header(&self.resp_hdr.mac_header)
+                .push_header(&resp_hdr.mac_header)
                 .expect("ERROR: Failed to add response MAC header")
-                .push_header(&self.resp_hdr.ip_header)
+                .push_header(&resp_hdr.ip_header)
                 .expect("ERROR: Failed to add response IP header")
-                .push_header(&self.resp_hdr.udp_header)
+                .push_header(&resp_hdr.udp_header)
                 .expect("ERROR: Failed to add response UDP header");
 
             // Set the destination port on the response UDP header.
             // response
             //     .get_mut_header()
             //     .set_src_port(request.get_header().dst_port());
-            response
-                .get_mut_header()
-                .set_dst_port(request.get_header().src_port());
+            // response
+            //     .get_mut_header()
+            //     .set_dst_port(request.get_header().src_port());
             Some(response)
         } else {
             warn!("Failed to allocate packet for response");
             None
         }
     }
-    fn create_task(&mut self, mut request: Packet<UdpHeader, EmptyMetadata>) -> Option<Box<Task>> {
+    fn create_task(
+        &mut self,
+        resp_hdr: &mut PacketHeaders,
+        mut request: Packet<UdpHeader, EmptyMetadata>,
+    ) -> Option<(Box<Task>, OpCode)> {
+        resp_hdr
+            .udp_header
+            .set_dst_port(request.get_header().src_port());
         let ip = request.deparse_header(common::IP_HDR_LEN);
         // self.resp_hdr.ip_header.set_src(ip.get_header().dst());
-        self.resp_hdr.ip_header.set_dst(ip.get_header().src());
+        resp_hdr.ip_header.set_dst(ip.get_header().src());
 
         // Set the destination mac address on the response MAC header.
         let mac = ip.deparse_header(common::MAC_HDR_LEN);
         // self.resp_hdr.mac_header.set_src(mac.get_header().dst());
-        self.resp_hdr.mac_header.set_dst(mac.get_header().src());
+        resp_hdr.mac_header.set_dst(mac.get_header().src());
 
         let request = mac.parse_header::<IpHeader>().parse_header::<UdpHeader>();
         if parse_rpc_service(&request) == wireformat::Service::MasterService {
             match parse_rpc_opcode(&request) {
-                OpCode::SandstormInvokeRpc => {
-                    let response = self.create_response(&request).unwrap();
+                op @ OpCode::SandstormInvokeRpc => {
+                    let response = self.create_response(resp_hdr, &request).unwrap();
                     match self.master_service.dispatch_invoke(request, response) {
-                        Ok(task) => Some(task), // self.ready.push_back(task),
+                        Ok(task) => Some((task, op)), // self.ready.push_back(task),
                         Err((req, res)) => {
                             // Master returned an error. The allocated request and response packets
                             // need to be freed up.
@@ -474,15 +235,15 @@ impl TaskManager {
                         }
                     }
                 }
-                OpCode::SandstormGetRpc => {
+                op @ OpCode::SandstormGetRpc => {
                     let num_responses =
                         self.master_service.value_len / self.master_service.record_len;
                     let mut responses = vec![];
                     for _ in 0..num_responses {
-                        responses.push(self.create_response(&request).unwrap());
+                        responses.push(self.create_response(resp_hdr, &request).unwrap());
                     }
                     match self.master_service.get(request, responses) {
-                        Ok(task) => Some(task), // self.ready.push_back(task),
+                        Ok(task) => Some((task, op)), // self.ready.push_back(task),
                         Err((req, resps)) => {
                             // Master returned an error. The allocated request and response packets
                             // need to be freed up.
@@ -519,21 +280,33 @@ impl TaskManager {
         }
     }
     // TODO: profile overhead in dispatch
-    fn run_task(&mut self, mut task: Box<Task>, mut queue_len: f64, task_duration_cv: f64) {
+    fn run_task(
+        &mut self,
+        mut task: Box<Task>,
+        mut queue_len: f64,
+        task_duration_cv: f64,
+    ) -> Option<Vec<Packet<IpHeader, EmptyMetadata>>> {
         if task.run().0 == COMPLETED {
             // The task finished execution, check for request and response packets. If they
             // exist, then free the request packet, and enqueue the response packet.
             if let Some((req, resps)) = unsafe { task.tear(&mut queue_len, task_duration_cv) } {
                 trace!("task complete");
                 req.free_packet();
-                for resp in resps.into_iter() {
-                    self.responses.push(rpc::fixup_header_length_fields(resp));
-                }
+                return Some(
+                    resps
+                        .into_iter()
+                        .map(|resp| rpc::fixup_header_length_fields(resp))
+                        .collect::<Vec<_>>(),
+                );
+                // for resp in resps.into_iter() {
+                //     self.responses.push(rpc::fixup_header_length_fields(resp));
+                // }
                 // self.responses
                 //     .write()
                 //     .push(rpc::fixup_header_length_fields(res));
             }
         }
+        None
     }
 }
 
@@ -550,88 +323,102 @@ impl CoeffOfVar {
             E_x2: 0.0,
         }
     }
-    fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.counter = 0.0;
         self.E_x = 0.0;
         self.E_x2 = 0.0;
     }
-    fn update(&mut self, delta: f64) {
+    pub fn update(&mut self, delta: f64) {
         self.counter += 1.0;
         self.E_x = self.E_x * ((self.counter - 1.0) / self.counter) + delta / self.counter;
         self.E_x2 =
             self.E_x2 * ((self.counter - 1.0) / self.counter) + delta * delta / self.counter;
     }
-    fn mean(&self) -> f64 {
+    pub fn mean(&self) -> f64 {
         self.E_x
     }
-    fn std(&self) -> f64 {
+    pub fn std(&self) -> f64 {
         (self.E_x2 - self.E_x * self.E_x).sqrt()
         // ((self.E_x2 - self.E_x * self.E_x) * (self.counter / (self.counter - 1.0))).sqrt()
     }
-    fn cv(&self) -> f64 {
+    pub fn cv(&self) -> f64 {
         (self.E_x2 - self.E_x * self.E_x) / (self.E_x * self.E_x + 1e-6)
         // * (self.counter / (self.counter - 1.0))
     }
 }
 
 pub struct StorageNodeWorker {
-    net_port: CacheAligned<PortQueue>,
-    queue: Arc<Queue>,
-    reset: Arc<AtomicBool>,
+    // use the common port common across all workers
+    dispatcher: Dispatcher,
     // task_duration_cv: Arc<std::sync::RwLock<CoeffOfVar>>,
     task_duration_cv: CoeffOfVar,
     manager: TaskManager,
+    resp_hdr: PacketHeaders,
+    // NOTE: this is not net_port.txq()
+    id: usize,
 }
 impl StorageNodeWorker {
     pub fn new(
         config: &StorageConfig,
+        // dispatcher
         net_port: CacheAligned<PortQueue>,
-        masterservice: Arc<Master>,
+        sib_port: Option<CacheAligned<PortQueue>>,
         queue: Arc<Queue>,
-        reset: Arc<AtomicBool>,
+        sib_queue: Option<Arc<Queue>>,
+        reset: Vec<Arc<AtomicBool>>,
+        // worker
+        // tx_port: CacheAligned<PortQueue>,
+        masterservice: Arc<Master>,
+        id: usize,
         // task_duration_cv: Arc<std::sync::RwLock<CoeffOfVar>>,
     ) -> StorageNodeWorker {
-        let resp_hdr =
-            PacketHeaders::create_hdr(&config.src, net_port.txq() as u16, &NetConfig::default());
         StorageNodeWorker {
-            net_port: net_port,
-            queue: queue,
-            reset: reset,
+            resp_hdr: PacketHeaders::create_hdr(
+                &config.storage.server,
+                net_port.rxq() as u16,
+                &NetConfig::default(),
+            ),
+            dispatcher: Dispatcher::new(
+                net_port,
+                sib_port,
+                &config.storage.server,
+                &vec![],
+                config.storage.max_rx_packets,
+                queue,
+                sib_queue,
+                reset,
+            ),
             task_duration_cv: CoeffOfVar::new(),
-            manager: TaskManager::new(masterservice, resp_hdr),
+            manager: TaskManager::new(masterservice),
+            id: id,
         }
     }
-    fn send_response(&mut self) {
-        let responses = &mut self.manager.responses;
-        unsafe {
-            let mut mbufs = vec![];
-            let num_packets = responses.len();
-            let mut to_send = num_packets;
-
-            // Extract Mbuf's from the batch of packets.
-            while let Some(packet) = responses.pop() {
-                mbufs.push(packet.get_mbuf());
+    // fn send_response(&mut self) {
+    //     let responses = &mut self.manager.responses;
+    //     self.dispatcher.sender.send_pkts(responses);
+    // }
+    fn handle_request(&mut self, mut request: Packet<UdpHeader, EmptyMetadata>) {
+        let start = cycles::rdtsc();
+        if let Some((task, op)) = self.manager.create_task(&mut self.resp_hdr, request) {
+            let cv = self.task_duration_cv.cv();
+            // TODO: add dispatch overhead to task time
+            // NOTE: we do not report the queue len of sib queue
+            let mut ql: f64 = -1.0;
+            if op == OpCode::SandstormInvokeRpc {
+                ql = self.dispatcher.queue_length();
             }
-
-            // Send out the above MBuf's.
-            loop {
-                let sent = self.net_port.send(&mut mbufs).unwrap() as usize;
-                // if sent == 0 {
-                //     warn!(
-                //         "Was able to send only {} of {} packets.",
-                //         num_packets - to_send,
-                //         num_packets
-                //     );
-                //     break;
-                // }
-                if sent < to_send {
-                    // warn!("Was able to send only {} of {} packets.", sent, num_packets);
-                    to_send -= sent;
-                    mbufs.drain(0..sent as usize);
-                } else {
-                    break;
-                }
+            // TODO: add multi-packet transmission overhead in send_response
+            if let Some(mut resps) = self.manager.run_task(task, ql, cv) {
+                self.dispatcher.sender.send_pkts(&mut resps);
             }
+            let end = cycles::rdtsc();
+            let duration = (end - start) as f64;
+            if self.dispatcher.reset[self.id].load(Ordering::Relaxed) {
+                self.task_duration_cv.reset();
+                self.dispatcher.reset[self.id].store(false, Ordering::Relaxed);
+            }
+            self.task_duration_cv.update(duration);
+            // self.task_duration_cv.write().unwrap().update(duration);
         }
     }
 }
@@ -644,33 +431,13 @@ impl Executable for StorageNodeWorker {
         //     let request = queue.pop_front();
         //     (request, queue_len)
         // };
-        let request = self.queue.queue.write().unwrap().pop_front();
-        if let Some(request) = request {
-            if let Some(task) = self.manager.create_task(request) {
-                // reset rpc
-                // if task.is_none() {
-                //     self.task_duration_cv.reset();
-                //     // TODO: reset queue
-                //     // self.queue.reset()
-                //     return;
-                // }
-                let cv = self.task_duration_cv.cv();
-                // let cv = self.task_duration_cv.read().unwrap().cv();
-                // TODO: add dispatch overhead to task time
-                // TODO: smooth queue_len here
-                let queue_len = self.queue.length.swap(-1.0, Ordering::Relaxed) as f64;
-                let start = cycles::rdtsc();
-                self.manager.run_task(task, queue_len, cv);
-                // TODO: add multi-packet transmission overhead in send_response
-                self.send_response();
-                let end = cycles::rdtsc();
-                let duration = (end - start) as f64;
-                if self.reset.load(Ordering::Relaxed) {
-                    self.task_duration_cv.reset();
-                    self.reset.store(false, Ordering::Relaxed);
-                }
-                self.task_duration_cv.update(duration);
-                // self.task_duration_cv.write().unwrap().update(duration);
+        if let Some(request) = self.dispatcher.poll_self() {
+            self.handle_request(request);
+        } else if let Some(request) = self.dispatcher.poll_sib() {
+            self.handle_request(request);
+        } else if let Err(_) = self.dispatcher.recv() {
+            if self.dispatcher.receiver.stealing {
+                self.dispatcher.steal();
             }
         }
     }

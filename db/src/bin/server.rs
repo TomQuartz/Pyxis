@@ -33,7 +33,7 @@ use db::e2d2::scheduler::Executable;
 use db::e2d2::scheduler::NetBricksContext as NetbricksContext;
 use db::e2d2::scheduler::*;
 
-use db::config;
+use db::config::{self, *};
 use db::cycles::*;
 use db::dispatch::{Dispatch, FAST_PATH};
 use db::install::Installer;
@@ -51,9 +51,10 @@ use util::model::{insert_model, MODEL};
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use db::dispatch::{Dispatcher, Queue};
 use db::e2d2::common::EmptyMetadata;
 use db::e2d2::headers::UdpHeader;
-use db::sched::{CoeffOfVar, Dispatcher, Queue, StorageNodeWorker};
+use db::sched::{CoeffOfVar, StorageNodeWorker};
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::Write;
@@ -104,45 +105,47 @@ impl Executable for Server {
     }
 }
 
-fn setup_dispatcher(
-    config: &config::StorageConfig,
-    ports: Vec<CacheAligned<PortQueue>>,
-    scheduler: &mut StandaloneScheduler,
-    queue: Arc<Queue>,
-    // task_duration_cv: Arc<RwLock<CoeffOfVar>>,
-    reset_vec: Vec<Arc<AtomicBool>>,
-    moving_exp: f64,
-) {
-    match scheduler.add_task(Dispatcher::new(
-        &config.src.ip_addr,
-        config.max_rx_packets,
-        ports[0].clone(),
-        queue,
-        reset_vec,
-        // task_duration_cv,
-        moving_exp,
-    )) {
-        Ok(_) => {
-            info!(
-                "Successfully added storage node dispatcher with rx-tx queue {}.",
-                ports[0].rxq()
-            );
-        }
-        Err(ref err) => {
-            error!("Error while adding to Netbricks pipeline {}", err);
-            std::process::exit(1);
-        }
-    }
-}
+// fn setup_dispatcher(
+//     config: &config::StorageConfig,
+//     ports: Vec<CacheAligned<PortQueue>>,
+//     scheduler: &mut StandaloneScheduler,
+//     queue: Arc<Queue>,
+//     // task_duration_cv: Arc<RwLock<CoeffOfVar>>,
+//     reset_vec: Vec<Arc<AtomicBool>>,
+//     moving_exp: f64,
+// ) {
+//     match scheduler.add_task(Dispatcher::new(
+//         &config.src.ip_addr,
+//         config.max_rx_packets,
+//         ports[0].clone(),
+//         queue,
+//         reset_vec,
+//         // task_duration_cv,
+//         moving_exp,
+//     )) {
+//         Ok(_) => {
+//             info!(
+//                 "Successfully added storage node dispatcher with rx-tx queue {}.",
+//                 ports[0].rxq()
+//             );
+//         }
+//         Err(ref err) => {
+//             error!("Error while adding to Netbricks pipeline {}", err);
+//             std::process::exit(1);
+//         }
+//     }
+// }
 
 fn setup_worker(
     config: &config::StorageConfig,
-    ports: Vec<CacheAligned<PortQueue>>,
     scheduler: &mut StandaloneScheduler,
-    master: Arc<Master>,
+    ports: Vec<CacheAligned<PortQueue>>,
+    sib_port: Option<CacheAligned<PortQueue>>,
     queue: Arc<Queue>,
-    // task_duration_cv: Arc<RwLock<CoeffOfVar>>,
-    reset: Arc<AtomicBool>,
+    sib_queue: Option<Arc<Queue>>,
+    reset: Vec<Arc<AtomicBool>>,
+    master: Arc<Master>,
+    id: usize,
 ) {
     if ports.len() != 1 {
         error!("Client should be configured with exactly 1 port!");
@@ -151,9 +154,12 @@ fn setup_worker(
     match scheduler.add_task(StorageNodeWorker::new(
         config,
         ports[0].clone(),
-        master,
+        sib_port,
         queue,
+        sib_queue,
         reset,
+        master,
+        id,
         // task_duration_cv,
     )) {
         Ok(_) => {
@@ -169,6 +175,40 @@ fn setup_worker(
     }
 }
 
+// fn setup_worker(
+//     config: &config::StorageConfig,
+//     ports: Vec<CacheAligned<PortQueue>>,
+//     scheduler: &mut StandaloneScheduler,
+//     master: Arc<Master>,
+//     queue: Arc<Queue>,
+//     // task_duration_cv: Arc<RwLock<CoeffOfVar>>,
+//     reset: Arc<AtomicBool>,
+// ) {
+//     if ports.len() != 1 {
+//         error!("Client should be configured with exactly 1 port!");
+//         std::process::exit(1);
+//     }
+//     match scheduler.add_task(StorageNodeWorker::new(
+//         config,
+//         ports[0].clone(),
+//         master,
+//         queue,
+//         reset,
+//         // task_duration_cv,
+//     )) {
+//         Ok(_) => {
+//             info!(
+//                 "Successfully added storage node worker with rx-tx queue {}.",
+//                 ports[0].rxq()
+//             );
+//         }
+//         Err(ref err) => {
+//             error!("Error while adding to Netbricks pipeline {}", err);
+//             std::process::exit(1);
+//         }
+//     }
+// }
+/*
 /// This function sets up a Sandstorm server's dispatch thread on top
 /// of Netbricks.
 fn setup_server<S>(
@@ -267,23 +307,31 @@ fn setup_server<S>(
 /// receive descriptors, and 256 transmit descriptors will be made available to
 /// Netbricks. Loopback, hardware transmit segementation offload, and hardware
 /// checksum offload will be disabled on this port.
-fn get_default_netbricks_config(config: &config::StorageConfig) -> NetbricksConfiguration {
+fn get_default_netbricks_config(config: &config::ServerConfig) -> NetbricksConfiguration {
+    // assert!(
+    //     (config.server.num_ports as u32).is_power_of_two(),
+    //     "the number of ports should be power of two"
+    // );
+    assert!(
+        config.num_cores % config.server.num_ports == 0,
+        "the number of server cores should be multiples of the number of ports"
+    );
     // General arguments supplied to netbricks.
     let net_config_name = String::from("storage");
     let dpdk_secondary: bool = false;
     let net_primary_core: i32 = 19;
-    let net_cores: Vec<i32> = (0..8).collect();
-    let net_strict_cores: bool = true;
+    let net_queues: Vec<i32> = (0..config.server.num_ports).collect();
+    let net_strict_cores: bool = false;
     let net_pool_size: u32 = 16384 - 1;
     let net_cache_size: u32 = 512;
     let net_dpdk_args: Option<String> = None;
 
     // Port configuration. Required to configure the physical network interface.
     let net_port_name = config.nic_pci.clone();
-    let net_port_rx_queues: Vec<i32> = net_cores.clone();
-    let net_port_tx_queues: Vec<i32> = net_cores.clone();
-    let net_port_rxd: i32 = 1024;
-    let net_port_txd: i32 = 1024;
+    let net_port_rx_queues: Vec<i32> = net_queues.clone();
+    let net_port_tx_queues: Vec<i32> = net_queues.clone();
+    let net_port_rxd: i32 = 8192 / config.server.num_ports;
+    let net_port_txd: i32 = 8192 / config.server.num_ports;
     let net_port_loopback: bool = false;
     let net_port_tcp_tso: bool = false;
     let net_port_csum_offload: bool = false;
@@ -301,7 +349,7 @@ fn get_default_netbricks_config(config: &config::StorageConfig) -> NetbricksConf
 
     // The set of ports used by netbricks.
     let net_ports: Vec<PortConfiguration> = vec![net_port_config];
-
+    let net_cores: Vec<i32> = (0..config.num_cores).collect();
     NetbricksConfiguration {
         name: net_config_name,
         secondary: dpdk_secondary,
@@ -320,7 +368,7 @@ fn get_default_netbricks_config(config: &config::StorageConfig) -> NetbricksConf
 ///
 /// Returns a Netbricks context which can be used to setup and start the
 /// server/client.
-fn config_and_init_netbricks(config: &config::StorageConfig) -> NetbricksContext {
+fn config_and_init_netbricks(config: &config::ServerConfig) -> NetbricksContext {
     let net_config: NetbricksConfiguration = get_default_netbricks_config(config);
 
     // Initialize Netbricks and return a handle.
@@ -336,6 +384,7 @@ fn config_and_init_netbricks(config: &config::StorageConfig) -> NetbricksContext
         }
     }
 }
+*/
 
 /// Custom signal handler for stack overflows.
 extern "C" fn handle_sigsegv(
@@ -390,7 +439,7 @@ fn main() {
 
     print_info();
 
-    let config: config::StorageConfig = config::load("storage.toml");
+    let config: StorageConfig = config::load("storage.toml");
     info!("Starting up storage with config {:?}", config);
 
     let mut master = Master::new(config.key_len, config.value_len, config.record_len);
@@ -408,62 +457,99 @@ fn main() {
         _ => {}
     }
     let master = Arc::new(master);
-    // let queue = Arc::new(RwLock::new(VecDeque::with_capacity(config.max_rx_packets)));
-    let queue = Arc::new(Queue::new(config.max_rx_packets));
-    // let task_duration_cv = Arc::new(RwLock::new(CoeffOfVar::new()));
-    let mut reset_vec = vec![];
-    for _ in 0..config.src.num_ports {
-        reset_vec.push(Arc::new(AtomicBool::new(false)));
-    }
-
-    let mut net_context: NetbricksContext = config_and_init_netbricks(&config);
+    let mut net_context: NetbricksContext = config_and_init_netbricks(&config.storage);
     net_context.start_schedulers();
-    // setup dispatcher
-    let cfg = config.clone();
-    let cqueue = queue.clone();
-    // let ctask_duration_cv = task_duration_cv.clone();
-    let creset_vec = reset_vec.clone();
-    net_context.add_pipeline_to_core(
-        0,
-        Arc::new(
-            move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
-                setup_dispatcher(
-                    // &config::load::<config::ComputeConfig>("compute.toml"),
-                    &cfg,
-                    ports,
-                    scheduler,
-                    cqueue.clone(),
-                    // ctask_duration_cv.clone(),
-                    creset_vec.clone(),
-                    cfg.moving_exp,
-                )
-            },
-        ),
-    );
+    // setup shared data
+    let num_ports = config.storage.server.num_ports;
+    let workers_per_port = config.storage.num_cores / num_ports;
+    let mut queues = vec![];
+    for _ in 0..config.storage.server.num_ports {
+        queues.push(Arc::new(Queue::new(config.storage.max_rx_packets)));
+    }
+    // let queue = Arc::new(Queue::new(config.max_rx_packets));
+    let mut reset_vec = vec![];
+    for _ in 0..config.storage.server.num_ports {
+        let mut reset = vec![];
+        for _ in 0..workers_per_port {
+            reset.push(Arc::new(AtomicBool::new(false)));
+        }
+        reset_vec.push(reset);
+    }
     // setup worker
-    for core_id in 1..=config.src.num_ports {
+    for (core_id, &core) in net_context.active_cores.clone().iter().enumerate() {
+        let cfg = config.clone();
+        let port_id = core_id % (num_ports as usize);
+        let sib_id = (port_id + 1) % (num_ports as usize);
+        let cqueue = queues[port_id].clone();
+        let csib_queue = Some(queues[sib_id].clone());
+        let creset = reset_vec[port_id].clone();
         let cmaster = master.clone();
-        let cqueue = queue.clone();
-        // let ctask_duration_cv = task_duration_cv.clone();
-        let creset = reset_vec[core_id as usize - 1].clone();
+        let worker_id = core_id % (workers_per_port as usize);
         net_context.add_pipeline_to_core(
-            core_id as i32,
+            core,
             Arc::new(
-                move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
+                move |ports, sib_port, scheduler: &mut StandaloneScheduler| {
                     setup_worker(
-                        &config::load::<config::StorageConfig>("storage.toml"),
-                        ports,
+                        &cfg.clone(),
                         scheduler,
-                        cmaster.clone(),
+                        ports,
+                        sib_port,
                         cqueue.clone(),
-                        // ctask_duration_cv.clone(),
+                        csib_queue.clone(),
                         creset.clone(),
+                        cmaster.clone(),
+                        worker_id,
                     )
                 },
             ),
         );
     }
-
+    // // setup dispatcher
+    // let cfg = config.clone();
+    // let cqueue = queue.clone();
+    // // let ctask_duration_cv = task_duration_cv.clone();
+    // let creset_vec = reset_vec.clone();
+    // net_context.add_pipeline_to_core(
+    //     0,
+    //     Arc::new(
+    //         move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
+    //             setup_dispatcher(
+    //                 // &config::load::<config::ComputeConfig>("compute.toml"),
+    //                 &cfg,
+    //                 ports,
+    //                 scheduler,
+    //                 cqueue.clone(),
+    //                 // ctask_duration_cv.clone(),
+    //                 creset_vec.clone(),
+    //                 cfg.moving_exp,
+    //             )
+    //         },
+    //     ),
+    // );
+    // // setup worker
+    // for core_id in 1..=config.src.num_ports {
+    //     let cmaster = master.clone();
+    //     let cqueue = queue.clone();
+    //     // let ctask_duration_cv = task_duration_cv.clone();
+    //     let creset = reset_vec[core_id as usize - 1].clone();
+    //     net_context.add_pipeline_to_core(
+    //         core_id as i32,
+    //         Arc::new(
+    //             move |ports, scheduler: &mut StandaloneScheduler, _core: i32, _sibling| {
+    //                 setup_worker(
+    //                     &config::load::<config::StorageConfig>("storage.toml"),
+    //                     ports,
+    //                     scheduler,
+    //                     cmaster.clone(),
+    //                     cqueue.clone(),
+    //                     // ctask_duration_cv.clone(),
+    //                     creset.clone(),
+    //                 )
+    //             },
+    //         ),
+    //     );
+    // }
+    sleep(std::time::Duration::from_secs(2));
     net_context.execute();
     loop {
         sleep(Duration::from_millis(1000));

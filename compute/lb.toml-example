@@ -6,7 +6,7 @@ n_keys = 1000000
 put_pct = 0
 skew = 0.99
 tenant_skew = 0.1
-num_reqs = 64000000
+num_reqs = 64000
 
 multi_kv = [4,0]
 multi_ord = [0,25600]
@@ -14,8 +14,8 @@ multi_ratio = [12,88]
 multi_rpc = false
 
 learnable = false
-partition = 50
-max_out = 32
+partition = 100
+max_out = 24
 
 # queue
 ql_diff_thresh = 50
@@ -36,13 +36,15 @@ xloop_factor = 800
 moving_exp = 0
 invoke_p = 100
 bimodal = false
-output_factor = 200
+output_factor = 0
 
 ############################### LB N/W CONFIG ##############################
 
+[lb]
 max_rx_packets = 32
 nic_pci = "0000:03:00.1"
-[src]
+num_cores = 8
+[lb.server]
 num_ports = 8
 ip_addr = "10.10.1.1"
 mac_addr = "9c:dc:71:56:fd:c5"

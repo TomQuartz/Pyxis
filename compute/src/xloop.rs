@@ -66,7 +66,7 @@ pub struct ServerLoad {
 impl ServerLoad {
     pub fn new(
         cluster_name: &str,
-        ip_and_ports: Vec<(&String, u16)>,
+        ip_and_ports: Vec<(&String, i32)>,
         moving_exp: f64,
     ) -> ServerLoad {
         let mut ip2load = HashMap::new();

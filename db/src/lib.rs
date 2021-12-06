@@ -38,6 +38,7 @@ pub extern crate env_logger;
 #[macro_use]
 pub extern crate log;
 extern crate atomic_float;
+extern crate rand;
 
 mod alloc;
 mod container;

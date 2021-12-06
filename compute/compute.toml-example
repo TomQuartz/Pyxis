@@ -1,9 +1,10 @@
 moving_exp = 0.8
+[compute]
 max_rx_packets = 64
 nic_pci = "0000:03:00.1"
-
-[src]
-num_ports = 8
+num_cores = 8
+[compute.server]
+num_ports = 1
 ip_addr = "10.10.1.2"
 mac_addr = "9c:dc:71:56:af:b5"
 

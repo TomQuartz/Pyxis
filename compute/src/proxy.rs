@@ -26,12 +26,18 @@ use sandstorm::db::DB;
 
 use super::dispatch::*;
 
+use db::dispatch::Sender;
 use db::e2d2::common::EmptyMetadata;
 use db::e2d2::interface::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::RwLock;
 
 extern crate bytes;
 use self::bytes::{Bytes, BytesMut};
 use util::model::Model;
+
+const NSEGMENTS: usize = 32;
+const NBYTES: usize = 1024;
 
 /// This struct represents a record for a read/write set. Each record in the read/write set will
 /// be of this type.
@@ -107,9 +113,10 @@ pub struct ProxyDB {
     // The model for a given extension which is stored based on the name of the extension.
     model: Option<Arc<Model>>,
     // // This maintains the read-write records accessed by the extension.
-    kv_buffer: RefCell<Vec<u8>>,
-    /// number of responses to wait for
-    pub pending_resps: Cell<usize>,
+    kv_buffer: RwLock<Vec<RefCell<Vec<u8>>>>,
+    /// number of responses to wait for, protected by the rwlock above
+    // pub pending_resps: Cell<usize>,
+    pending_resps: AtomicUsize,
 
     // the key_len for each table
     // TODO: make this a hashmap indexed by table_id
@@ -146,6 +153,10 @@ impl ProxyDB {
         sender_service: Rc<Sender>,
         model: Option<Arc<Model>>,
     ) -> ProxyDB {
+        let mut kv_buffer = vec![];
+        for _ in 0..NSEGMENTS {
+            kv_buffer.push(RefCell::new(Vec::with_capacity(NBYTES)));
+        }
         ProxyDB {
             tenant: tenant_id,
             parent_id: id,
@@ -160,8 +171,9 @@ impl ProxyDB {
             model: model,
             // commit_payload: RefCell::new(Vec::new()),
             key_len: Cell::new(0),
-            kv_buffer: RefCell::new(Vec::with_capacity(1024)),
-            pending_resps: Cell::new(0),
+            kv_buffer: RwLock::new(kv_buffer),
+            // pending_resps: Cell::new(0),
+            pending_resps: AtomicUsize::new(0),
         }
     }
 
@@ -213,26 +225,55 @@ impl ProxyDB {
         let (version, entry) = record.split_at(8);
         let (key, value) = entry.split_at(key_len);
         let value_len = value.len();
-        if self.pending_resps.get() == 0 {
-            let capacity = value_len * num_segments;
-            self.kv_buffer.borrow_mut().resize(capacity, 0);
-            self.pending_resps.set(num_segments);
+
+        self.pending_resps
+            .compare_exchange(0, num_segments, Ordering::SeqCst, Ordering::Acquire);
+        if self.kv_buffer.read().unwrap().len() < num_segments {
+            let mut kv_buffer = self.kv_buffer.write().unwrap();
+            kv_buffer.resize_with(num_segments, || RefCell::new(Vec::with_capacity(NBYTES)));
         }
-        let mut kv_buffer = self.kv_buffer.borrow_mut();
-        kv_buffer[segment_id * value_len..(segment_id + 1) * value_len].copy_from_slice(value);
-        let mut pending_resps = self.pending_resps.get();
-        pending_resps -= 1;
-        self.pending_resps.set(pending_resps);
-        if pending_resps == 0 {
-            self.readset.borrow_mut().push(KV::new(
-                Bytes::from(version),
-                Bytes::from(key),
-                Bytes::from(&kv_buffer[..]),
-            ));
+        // invariant: kv buffer has at least num_segments elements
+        // wrapped in brackets because refcell.borrow_mut returns a RAII guard
+        if let Ok(kv_buffer) = self.kv_buffer.read() {
+            // let kv_buffer = self.kv_buffer.read().unwrap();
+            let mut segment = kv_buffer[segment_id].borrow_mut();
+            if segment.len() < value_len {
+                segment.resize(value_len, 0);
+            }
+            segment[..value_len].copy_from_slice(value);
+        }
+        // check if this is the last segment
+        if self.pending_resps.fetch_sub(1, Ordering::Relaxed) == 1 {
+            // if we are here, then the mut ref to refcell of all segments must have gone out of scope
+            let version = Bytes::from(version);
+            let key = Bytes::from(key);
+            let mut value = Bytes::with_capacity(num_segments * value_len);
+            for segment_id in 0..num_segments {
+                if let Ok(kv_buffer) = self.kv_buffer.read() {
+                    let segment = kv_buffer[segment_id].borrow();
+                    value.extend_from_slice(&segment[..value_len]);
+                }
+            }
+            self.readset.borrow_mut().push(KV::new(version, key, value));
             true
         } else {
             false
         }
+        // let mut kv_buffer = self.kv_buffer.borrow_mut();
+        // kv_buffer[segment_id * value_len..(segment_id + 1) * value_len].copy_from_slice(value);
+        // let mut pending_resps = self.pending_resps.get();
+        // pending_resps -= 1;
+        // self.pending_resps.set(pending_resps);
+        // if pending_resps == 0 {
+        //     self.readset.borrow_mut().push(KV::new(
+        //         Bytes::from(version),
+        //         Bytes::from(key),
+        //         Bytes::from(&kv_buffer[..]),
+        //     ));
+        //     true
+        // } else {
+        //     false
+        // }
     }
 
     /// This method is used to add a record to the write set. The return value of put()
