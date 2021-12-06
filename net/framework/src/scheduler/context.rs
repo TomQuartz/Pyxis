@@ -37,7 +37,7 @@ pub struct NetBricksContext {
     pub ports: HashMap<String, Arc<PmdPort>>,
     pub core2queues: HashMap<i32, Vec<CacheAligned<PortQueue>>>,
     pub active_cores: Vec<i32>,
-    pub siblings: HashMap<i32, Option<CacheAligned<PortQueue>>>,
+    pub siblings: HashMap<i32, CacheAligned<PortQueue>>,
     pub virtual_ports: HashMap<i32, Arc<VirtualPort>>,
     scheduler_channels: HashMap<i32, SyncSender<SchedulerCommand>>,
     scheduler_handles: HashMap<i32, JoinHandle<()>>,
@@ -81,7 +81,10 @@ impl NetBricksContext {
                 None => vec![],
             };
             // let id = *core;
-            let sibling = self.siblings.get(core).unwrap().clone();
+            let sibling = match self.siblings.get(core) {
+                Some(v) => Some(v.clone()),
+                None => None,
+            };
             let boxed_run = run.clone();
             channel
                 .send(SchedulerCommand::Run(Arc::new(move |s| {
@@ -145,7 +148,10 @@ impl NetBricksContext {
                 Some(v) => v.clone(),
                 None => vec![],
             };
-            let sibling = self.siblings.get(&core).unwrap().clone();
+            let sibling = match self.siblings.get(&core) {
+                Some(v) => Some(v.clone()),
+                None => None,
+            };
             let boxed_run = run.clone();
             channel
                 .send(SchedulerCommand::Run(Arc::new(move |s| {
@@ -218,7 +224,70 @@ impl NetBricksContext {
         self.stop()
     }
 }
+/// Initialize the system from a configuration.
+pub fn initialize_system(configuration: &NetbricksConfiguration) -> Result<NetBricksContext> {
+    init_system(configuration);
+    let mut ctx: NetBricksContext = Default::default();
+    ctx.active_cores = configuration.cores.clone();
+    // let mut cores: HashSet<_> = configuration.cores.iter().cloned().collect();
+    assert_eq!(
+        configuration.ports.len(),
+        1,
+        "only a single port configuration is supported for now"
+    );
+    let port = &configuration.ports[0];
+    if ctx.ports.contains_key(&port.name) {
+        println!("Port {} appears twice in specification", port.name);
+        return Err(ErrorKind::ConfigurationError(format!("Port {} appears twice in specification", port.name)).into());
+    } else {
+        match PmdPort::new_port_from_configuration(port) {
+            Ok(p) => {
+                ctx.ports.insert(port.name.clone(), p);
+            }
+            Err(e) => {
+                return Err(ErrorKind::ConfigurationError(format!(
+                    "Port {} could not be initialized {:?}",
+                    port.name, e
+                ))
+                .into())
+            }
+        }
 
+        let port_instance = &ctx.ports[&port.name];
+        let nrxq = port.rx_queues.len();
+        let ntxq = port.tx_queues.len();
+        for (core_id, &core) in configuration.cores.iter().enumerate() {
+            let rx_q = port.rx_queues[core_id % nrxq];
+            let tx_q = port.tx_queues[core_id % ntxq];
+            match PmdPort::new_queue_pair(port_instance, rx_q, tx_q) {
+                Ok(q) => {
+                    ctx.core2queues.entry(core).or_insert_with(|| vec![]).push(q);
+                }
+                Err(e) => {
+                    return Err(ErrorKind::ConfigurationError(format!(
+                        "port {} queue {:?} on core {} could not be \
+                            initialized {:?}",
+                        port.name,
+                        (rx_q, tx_q),
+                        core,
+                        e
+                    ))
+                    .into())
+                }
+            }
+        }
+        let num_cores = ctx.active_cores.len();
+        if nrxq > 1 {
+            for core_id in 0..num_cores {
+                let sib_id = (core_id + 1) % num_cores;
+                let sibling = ctx.core2queues.get(&ctx.active_cores[sib_id]).unwrap()[0].clone();
+                ctx.siblings.insert(ctx.active_cores[core_id], sibling);
+            }
+        }
+    }
+    Ok(ctx)
+}
+/*
 /// Initialize the system from a configuration.
 pub fn initialize_system(configuration: &NetbricksConfiguration) -> Result<NetBricksContext> {
     init_system(configuration);
@@ -252,7 +321,8 @@ pub fn initialize_system(configuration: &NetbricksConfiguration) -> Result<NetBr
                 let tx_q = port.tx_queues[core_id % ntxq];
                 match PmdPort::new_queue_pair(port_instance, rx_q, tx_q) {
                     Ok(q) => {
-                        ctx.core2queues.entry(core).or_insert_with(|| vec![]).push(q);
+                        // ctx.core2queues.entry(core).or_insert_with(|| vec![]).push(q);
+                        ctx.core2queues.entry(core).or_insert(Some(q));
                     }
                     Err(e) => {
                         return Err(ErrorKind::ConfigurationError(format!(
@@ -306,7 +376,9 @@ pub fn initialize_system(configuration: &NetbricksConfiguration) -> Result<NetBr
     // Populate every core's sibling receive queue.
     let num_cores = ctx.active_cores.len();
     for core_id in 0..num_cores {
-        let sib_id = (core_id + 1) % num_cores;
+        let sib_id =
+        let rxq = ctx.core2queues.get(&ctx.active_cores[sib_id]).unwrap();
+        let sib_rxq = (core_id + 1) % num_cores;
         let sibling = if sib_id != core_id {
             Some(ctx.core2queues.get(&ctx.active_cores[sib_id]).unwrap()[0].clone())
         } else {
@@ -333,3 +405,4 @@ pub fn initialize_system(configuration: &NetbricksConfiguration) -> Result<NetBr
 
     Ok(ctx)
 }
+*/
