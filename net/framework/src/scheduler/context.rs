@@ -256,7 +256,12 @@ pub fn initialize_system(configuration: &NetbricksConfiguration) -> Result<NetBr
         let port_instance = &ctx.ports[&port.name];
         let nrxq = port.rx_queues.len();
         let ntxq = port.tx_queues.len();
-        for (core_id, &core) in configuration.cores.iter().enumerate() {
+        let num_cores = ctx.active_cores.len();
+        assert!(
+            num_cores <= ntxq,
+            "we do not implement a lock for each txq, thus each thread must be mapped to a unique txq"
+        );
+        for (core_id, &core) in ctx.active_cores.iter().enumerate() {
             let rx_q = port.rx_queues[core_id % nrxq];
             let tx_q = port.tx_queues[core_id % ntxq];
             match PmdPort::new_queue_pair(port_instance, rx_q, tx_q) {
@@ -276,7 +281,6 @@ pub fn initialize_system(configuration: &NetbricksConfiguration) -> Result<NetBr
                 }
             }
         }
-        let num_cores = ctx.active_cores.len();
         if nrxq > 1 {
             for core_id in 0..num_cores {
                 let sib_id = (core_id + 1) % num_cores;

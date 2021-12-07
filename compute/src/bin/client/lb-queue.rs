@@ -1019,7 +1019,10 @@ fn setup_lb(
         finished,
     )) {
         Ok(_) => {
-            info!("Successfully added LB with rx-tx queue {}.", ports[0].rxq());
+            info!(
+                "Successfully added LB with rx-tx queue {:?}.",
+                (ports[0].rxq(), ports[0].txq()),
+            )
         }
 
         Err(ref err) => {
@@ -1043,12 +1046,12 @@ fn main() {
     let storage_servers: Vec<_> = config
         .storage
         .iter()
-        .map(|x| (&x.ip_addr, x.num_ports))
+        .map(|x| (&x.ip_addr, x.rx_queues))
         .collect();
     let compute_servers: Vec<_> = config
         .compute
         .iter()
-        .map(|x| (&x.ip_addr, x.num_ports))
+        .map(|x| (&x.ip_addr, x.rx_queues))
         .collect();
     let storage_load = Arc::new(ServerLoad::new(
         "storage",

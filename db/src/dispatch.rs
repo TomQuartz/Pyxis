@@ -163,7 +163,7 @@ impl Sender {
             req_hdrs: PacketHeaders::create_hdrs(src, net_port.txq() as u16, endpoints),
             net_port: net_port, //.clone()
             // TODO: make this a vector, different number of ports for each storage endpoint
-            dst_ports: endpoints.iter().map(|x| x.num_ports as u16).collect(),
+            dst_ports: endpoints.iter().map(|x| x.rx_queues as u16).collect(),
             rng: {
                 let seed: [u32; 4] = rand::random::<[u32; 4]>();
                 RefCell::new(XorShiftRng::from_seed(seed))
@@ -842,8 +842,7 @@ pub struct Dispatcher {
     pub receiver: Receiver,
     // for all ports
     queue: Arc<Queue>,
-    sib_queue: Option<Arc<Queue>>,
-    rxq: i32,
+    pub sib_queue: Option<Arc<Queue>>,
     // for all workers using this port
     pub reset: Vec<Arc<AtomicBool>>,
     // time_avg: MovingTimeAvg,
@@ -862,7 +861,6 @@ impl Dispatcher {
         // moving_exp: f64,
     ) -> Dispatcher {
         Dispatcher {
-            rxq: net_port.rxq(),
             sender: Rc::new(Sender::new(net_port.clone(), src, endpoints)),
             receiver: Receiver::new(net_port, sib_port, max_rx_packets, &src.ip_addr),
             queue: queue,
@@ -882,7 +880,6 @@ impl Dispatcher {
         self.queue.queue.write().unwrap().pop_front()
     }
     pub fn poll_sib(&self) -> Option<Packet<UdpHeader, EmptyMetadata>> {
-        // reset by sib port
         if let Some(sib_queue) = &self.sib_queue {
             sib_queue.queue.write().unwrap().pop_front()
         } else {
@@ -942,13 +939,18 @@ impl Dispatcher {
         Err(())
     }
     pub fn steal(&mut self) -> Result<(), ()> {
-        if let Ok(_) =
-            self.queue
-                .rx_lock
-                .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
-        {
+        if let Ok(_) = self.sib_queue.as_ref().unwrap().rx_lock.compare_exchange(
+            false,
+            true,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
             let packets = self.receiver.steal();
-            self.queue.rx_lock.store(false, Ordering::Relaxed);
+            self.sib_queue
+                .as_ref()
+                .unwrap()
+                .rx_lock
+                .store(false, Ordering::Relaxed);
             if let Some(mut packets) = packets {
                 trace!("dispatcher steal {} packets", packets.len());
                 if packets.len() > 0 {

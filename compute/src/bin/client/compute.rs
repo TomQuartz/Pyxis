@@ -170,8 +170,8 @@ fn setup_worker(
     )) {
         Ok(_) => {
             info!(
-                "Successfully added compute node worker with rx-tx queue {}.",
-                ports[0].rxq()
+                "Successfully added compute node worker with rx-tx queue {:?}.",
+                (ports[0].rxq(),ports[0].txq()),
             );
         }
         Err(ref err) => {
@@ -199,15 +199,15 @@ fn main() {
     let mut net_context: NetbricksContext = config_and_init_netbricks(&config.compute);
     net_context.start_schedulers();
     // setup shared data
-    let num_ports = config.compute.server.num_ports;
-    let workers_per_port = config.compute.num_cores / num_ports;
+    let rx_queues = config.compute.server.rx_queues as usize;
+    let workers_per_port = config.compute.num_cores as usize / rx_queues;
     let mut queues = vec![];
-    for _ in 0..config.compute.server.num_ports {
+    for _ in 0..rx_queues {
         queues.push(Arc::new(Queue::new(config.compute.max_rx_packets)));
     }
     // let queue = Arc::new(Queue::new(config.max_rx_packets));
     let mut reset_vec = vec![];
-    for _ in 0..config.compute.server.num_ports {
+    for _ in 0..rx_queues {
         let mut reset = vec![];
         for _ in 0..workers_per_port {
             reset.push(Arc::new(AtomicBool::new(false)));
@@ -219,10 +219,16 @@ fn main() {
     // setup worker
     for (core_id, &core) in net_context.active_cores.clone().iter().enumerate() {
         let cfg = config.clone();
-        let port_id = core_id % (num_ports as usize);
-        let sib_id = (port_id + 1) % (num_ports as usize);
+        let port_id = core_id % rx_queues;
+        // alternatively
+        // let sib_id = (core_id + 1) % rx_queues;
+        let sib_id = (port_id + 1) % rx_queues;
         let cqueue = queues[port_id].clone();
-        let csib_queue = Some(queues[sib_id].clone());
+        let csib_queue = if port_id != sib_id {
+            Some(queues[sib_id].clone())
+        } else {
+            None
+        };
         let creset = reset_vec[port_id].clone();
         let cmanager = manager.clone();
         let worker_id = core_id % (workers_per_port as usize);

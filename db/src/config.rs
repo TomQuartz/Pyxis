@@ -354,7 +354,7 @@ where
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
 pub struct NetConfig {
-    pub num_ports: i32,
+    pub rx_queues: i32,
     pub ip_addr: String,
     pub mac_addr: String,
 }
@@ -443,18 +443,18 @@ pub struct StorageConfig {
 
 pub fn get_default_netbricks_config(config: &ServerConfig) -> NetbricksConfiguration {
     // assert!(
-    //     (config.server.num_ports as u32).is_power_of_two(),
+    //     (config.server.rx_queues as u32).is_power_of_two(),
     //     "the number of ports should be power of two"
     // );
     assert!(
-        config.num_cores % config.server.num_ports == 0,
+        config.num_cores % config.server.rx_queues == 0,
         "the number of server cores should be multiples of the number of ports"
     );
     // General arguments supplied to netbricks.
     let net_config_name = String::from("storage");
     let dpdk_secondary: bool = false;
     let net_primary_core: i32 = 19;
-    let net_queues: Vec<i32> = (0..config.server.num_ports).collect();
+    // let net_queues: Vec<i32> = (0..config.server.num_ports).collect();
     let net_strict_cores: bool = false;
     let net_pool_size: u32 = 16384 - 1;
     let net_cache_size: u32 = 512;
@@ -462,10 +462,12 @@ pub fn get_default_netbricks_config(config: &ServerConfig) -> NetbricksConfigura
 
     // Port configuration. Required to configure the physical network interface.
     let net_port_name = config.nic_pci.clone();
-    let net_port_rx_queues: Vec<i32> = net_queues.clone();
-    let net_port_tx_queues: Vec<i32> = net_queues.clone();
-    let net_port_rxd: i32 = 8192 / config.server.num_ports;
-    let net_port_txd: i32 = 8192 / config.server.num_ports;
+    let net_port_rx_queues: Vec<i32> = (0..config.server.rx_queues).collect();
+    // let net_port_rx_queues: Vec<i32> = net_queues.clone();
+    let net_port_tx_queues: Vec<i32> = (0..config.num_cores).collect();
+    // let net_port_tx_queues: Vec<i32> = net_queues.clone();
+    let net_port_rxd: i32 = 8192 / config.server.rx_queues;
+    let net_port_txd: i32 = 8192 / config.num_cores;
     let net_port_loopback: bool = false;
     let net_port_tcp_tso: bool = false;
     let net_port_csum_offload: bool = false;
