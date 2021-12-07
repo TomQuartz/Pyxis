@@ -437,7 +437,7 @@ impl Executable for StorageNodeWorker {
             self.handle_request(request);
         } else if let Err(_) = self.dispatcher.recv() {
             if self.dispatcher.receiver.stealing {
-                self.dispatcher.steal();
+                // self.dispatcher.steal();
             }
         }
     }

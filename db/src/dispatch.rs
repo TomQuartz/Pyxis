@@ -819,7 +819,8 @@ impl Receiver {
 }
 
 pub struct Queue {
-    pub queue: RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>,
+    // pub queue: RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>,
+    pub queue: VecDeque<Packet<UdpHeader, EmptyMetadata>>,
     /// length is set by Dispatcher, and cleared by the first worker in that round
     // LB will only update those with positive queue length, thus reducing update frequency and variance
     pub length: AtomicF64,
@@ -829,7 +830,8 @@ pub struct Queue {
 impl Queue {
     pub fn new(capacity: usize) -> Queue {
         Queue {
-            queue: RwLock::new(VecDeque::with_capacity(capacity)),
+            // queue: RwLock::new(VecDeque::with_capacity(capacity)),
+            queue: VecDeque::with_capacity(capacity),
             length: AtomicF64::new(-1.0),
             reset: AtomicBool::new(false),
             rx_lock: AtomicBool::new(false),
@@ -841,7 +843,7 @@ pub struct Dispatcher {
     pub sender: Rc<Sender>,
     pub receiver: Receiver,
     // for all ports
-    queue: Arc<Queue>,
+    queue: Queue,
     pub sib_queue: Option<Arc<Queue>>,
     // for all workers using this port
     pub reset: Vec<Arc<AtomicBool>>,
@@ -863,7 +865,8 @@ impl Dispatcher {
         Dispatcher {
             sender: Rc::new(Sender::new(net_port.clone(), src, endpoints)),
             receiver: Receiver::new(net_port, sib_port, max_rx_packets, &src.ip_addr),
-            queue: queue,
+            // queue: queue,
+            queue: Queue::new(64),
             sib_queue: sib_queue,
             reset: reset,
             // time_avg: MovingTimeAvg::new(moving_exp),
@@ -871,17 +874,19 @@ impl Dispatcher {
         }
     }
     /// get a packet from common queue
-    pub fn poll_self(&self) -> Option<Packet<UdpHeader, EmptyMetadata>> {
+    pub fn poll_self(&mut self) -> Option<Packet<UdpHeader, EmptyMetadata>> {
         // reset by sib port
         if self.queue.reset.load(Ordering::Relaxed) {
             self.queue.reset.store(false, Ordering::Relaxed);
             self.reset_workers();
         }
-        self.queue.queue.write().unwrap().pop_front()
+        // self.queue.queue.write().unwrap().pop_front()
+        self.queue.queue.pop_front()
     }
     pub fn poll_sib(&self) -> Option<Packet<UdpHeader, EmptyMetadata>> {
         if let Some(sib_queue) = &self.sib_queue {
-            sib_queue.queue.write().unwrap().pop_front()
+            // sib_queue.queue.write().unwrap().pop_front()
+            None
         } else {
             None
         }
@@ -902,82 +907,111 @@ impl Dispatcher {
     // a wrapper around Receiver.recv
     // mainly for reset and queue length
     pub fn recv(&mut self) -> Result<(), ()> {
-        if let Ok(_) =
-            self.queue
-                .rx_lock
-                .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
-        {
-            // NOTE: the rx_lock is immediately released after calling recv
-            // but it is not useful since few packets would arrive within a short interval
-            let packets = self.receiver.recv();
-            self.queue.rx_lock.store(false, Ordering::Relaxed);
-            if let Some(mut packets) = packets {
-                trace!("dispatcher recv {} packets", packets.len());
-                if packets.len() > 0 {
-                    // let current_time = cycles::rdtsc();
-                    let mut queue = self.queue.queue.write().unwrap();
-                    while let Some((packet, _)) = packets.pop() {
-                        if parse_rpc_opcode(&packet) == OpCode::ResetRpc {
-                            // reset
-                            // this will create bottleneck since all workers attempts to write
-                            // self.task_duration_cv.write().unwrap().reset();
-                            self.reset_workers();
-                            // TODO: reset queue
-                            packet.free_packet();
-                        } else {
-                            queue.push_back(packet);
-                        }
+        // if let Ok(_) =
+        //     self.queue
+        //         .rx_lock
+        //         .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+        // {
+        //     // NOTE: the rx_lock is immediately released after calling recv
+        //     // but it is not useful since few packets would arrive within a short interval
+        //     let packets = self.receiver.recv();
+        //     self.queue.rx_lock.store(false, Ordering::Relaxed);
+        //     if let Some(mut packets) = packets {
+        //         trace!("dispatcher recv {} packets", packets.len());
+        //         if packets.len() > 0 {
+        //             // let current_time = cycles::rdtsc();
+        //             let mut queue = self.queue.queue.write().unwrap();
+        //             while let Some((packet, _)) = packets.pop() {
+        //                 if parse_rpc_opcode(&packet) == OpCode::ResetRpc {
+        //                     // reset
+        //                     // this will create bottleneck since all workers attempts to write
+        //                     // self.task_duration_cv.write().unwrap().reset();
+        //                     self.reset_workers();
+        //                     // TODO: reset queue
+        //                     packet.free_packet();
+        //                 } else {
+        //                     queue.push_back(packet);
+        //                 }
+        //             }
+        //             // NOTE: we only update queue len upon receiving packets
+        //             let queue_len = queue.len() as f64;
+        //             // self.time_avg.update(current_time, queue_len);
+        //             self.queue.length.store(queue_len, Ordering::Relaxed);
+        //             return Ok(());
+        //         }
+        //     }
+        // }
+        // Err(())
+        let packets = self.receiver.recv();
+        self.queue.rx_lock.store(false, Ordering::Relaxed);
+        if let Some(mut packets) = packets {
+            trace!("dispatcher recv {} packets", packets.len());
+            if packets.len() > 0 {
+                // let current_time = cycles::rdtsc();
+                // let mut queue = self.queue.queue.write().unwrap();
+                while let Some((packet, _)) = packets.pop() {
+                    if parse_rpc_opcode(&packet) == OpCode::ResetRpc {
+                        // reset
+                        // this will create bottleneck since all workers attempts to write
+                        // self.task_duration_cv.write().unwrap().reset();
+                        self.reset_workers();
+                        // TODO: reset queue
+                        packet.free_packet();
+                    } else {
+                        // queue.push_back(packet);
+                        self.queue.queue.push_back(packet);
                     }
-                    // NOTE: we only update queue len upon receiving packets
-                    let queue_len = queue.len() as f64;
-                    // self.time_avg.update(current_time, queue_len);
-                    self.queue.length.store(queue_len, Ordering::Relaxed);
-                    return Ok(());
                 }
+                // NOTE: we only update queue len upon receiving packets
+                // let queue_len = queue.len() as f64;
+                let queue_len = self.queue.queue.len() as f64;
+                // self.time_avg.update(current_time, queue_len);
+                self.queue.length.store(queue_len, Ordering::Relaxed);
+                return Ok(());
             }
         }
         Err(())
     }
-    pub fn steal(&mut self) -> Result<(), ()> {
-        if let Ok(_) = self.sib_queue.as_ref().unwrap().rx_lock.compare_exchange(
-            false,
-            true,
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-        ) {
-            let packets = self.receiver.steal();
-            self.sib_queue
-                .as_ref()
-                .unwrap()
-                .rx_lock
-                .store(false, Ordering::Relaxed);
-            if let Some(mut packets) = packets {
-                trace!("dispatcher steal {} packets", packets.len());
-                if packets.len() > 0 {
-                    // let current_time = cycles::rdtsc();
-                    let sib_queue = self.sib_queue.as_ref().unwrap();
-                    let mut queue = sib_queue.queue.write().unwrap();
-                    while let Some((packet, _)) = packets.pop() {
-                        if parse_rpc_opcode(&packet) == OpCode::ResetRpc {
-                            // reset
-                            // this will create bottleneck since all workers attempts to write
-                            // self.task_duration_cv.write().unwrap().reset();
-                            sib_queue.reset.store(true, Ordering::Relaxed);
-                            // TODO: reset queue
-                            packet.free_packet();
-                        } else {
-                            queue.push_back(packet);
-                        }
-                    }
-                    let queue_len = queue.len() as f64;
-                    // self.time_avg.update(current_time, queue_len);
-                    sib_queue.length.store(queue_len, Ordering::Relaxed);
-                    return Ok(());
-                }
-            }
-        }
-        Err(())
-    }
+    // pub fn steal(&mut self) -> Result<(), ()> {
+    //     if let Ok(_) = self.sib_queue.as_ref().unwrap().rx_lock.compare_exchange(
+    //         false,
+    //         true,
+    //         Ordering::Relaxed,
+    //         Ordering::Relaxed,
+    //     ) {
+    //         let packets = self.receiver.steal();
+    //         self.sib_queue
+    //             .as_ref()
+    //             .unwrap()
+    //             .rx_lock
+    //             .store(false, Ordering::Relaxed);
+    //         if let Some(mut packets) = packets {
+    //             trace!("dispatcher steal {} packets", packets.len());
+    //             if packets.len() > 0 {
+    //                 // let current_time = cycles::rdtsc();
+    //                 let sib_queue = self.sib_queue.as_ref().unwrap();
+    //                 let mut queue = sib_queue.queue.write().unwrap();
+    //                 while let Some((packet, _)) = packets.pop() {
+    //                     if parse_rpc_opcode(&packet) == OpCode::ResetRpc {
+    //                         // reset
+    //                         // this will create bottleneck since all workers attempts to write
+    //                         // self.task_duration_cv.write().unwrap().reset();
+    //                         sib_queue.reset.store(true, Ordering::Relaxed);
+    //                         // TODO: reset queue
+    //                         packet.free_packet();
+    //                     } else {
+    //                         queue.push_back(packet);
+    //                     }
+    //                 }
+    //                 let queue_len = queue.len() as f64;
+    //                 // self.time_avg.update(current_time, queue_len);
+    //                 sib_queue.length.store(queue_len, Ordering::Relaxed);
+    //                 return Ok(());
+    //             }
+    //         }
+    //     }
+    //     Err(())
+    // }
 }
 
 /// This type stores the cycle counter variable for various parts in dispatch stage.
