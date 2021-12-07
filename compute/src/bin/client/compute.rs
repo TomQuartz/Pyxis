@@ -161,11 +161,9 @@ fn setup_worker(
     match scheduler.add_task(ComputeNodeWorker::new(
         config,
         ports[0].clone(),
-        // sib_port,
-        None,
+        sib_port,
         queue,
-        // sib_queue,
-        None,
+        sib_queue,
         reset,
         manager,
         id,
@@ -173,7 +171,7 @@ fn setup_worker(
         Ok(_) => {
             info!(
                 "Successfully added compute node worker with rx-tx queue {:?}.",
-                (ports[0].rxq(), ports[0].txq()),
+                (ports[0].rxq(),ports[0].txq()),
             );
         }
         Err(ref err) => {

@@ -850,11 +850,11 @@ impl Executable for ComputeNodeWorker {
     fn execute(&mut self) {
         if let Some(packet) = self.dispatcher.poll_self() {
             self.handle_rpc(packet);
-        // } else if let Some(packet) = self.dispatcher.poll_sib() {
-        //     self.handle_rpc(packet);
+        } else if let Some(packet) = self.dispatcher.poll_sib() {
+            self.handle_rpc(packet);
         } else if let Err(_) = self.dispatcher.recv() {
             if self.dispatcher.receiver.stealing {
-                // self.dispatcher.steal();
+                self.dispatcher.steal();
             }
         }
     }
