@@ -140,10 +140,10 @@ fn setup_worker(
     config: &config::StorageConfig,
     scheduler: &mut StandaloneScheduler,
     ports: Vec<CacheAligned<PortQueue>>,
-    sib_port: Option<CacheAligned<PortQueue>>,
+    // sib_port: Option<CacheAligned<PortQueue>>,
     queue: Arc<Queue>,
     sib_queue: Option<Arc<Queue>>,
-    reset: Vec<Arc<AtomicBool>>,
+    // reset: Vec<Arc<AtomicBool>>,
     master: Arc<Master>,
     id: usize,
 ) {
@@ -154,10 +154,10 @@ fn setup_worker(
     match scheduler.add_task(StorageNodeWorker::new(
         config,
         ports[0].clone(),
-        sib_port,
+        // sib_port,
         queue,
         sib_queue,
-        reset,
+        // reset,
         master,
         id,
         // task_duration_cv,
@@ -165,7 +165,7 @@ fn setup_worker(
         Ok(_) => {
             info!(
                 "Successfully added storage node worker with rx-tx queue {:?}.",
-                (ports[0].rxq(),ports[0].txq()),
+                (ports[0].rxq(), ports[0].txq()),
             );
         }
         Err(ref err) => {
@@ -467,14 +467,14 @@ fn main() {
         queues.push(Arc::new(Queue::new(config.storage.max_rx_packets)));
     }
     // let queue = Arc::new(Queue::new(config.max_rx_packets));
-    let mut reset_vec = vec![];
-    for _ in 0..rx_queues {
-        let mut reset = vec![];
-        for _ in 0..workers_per_port {
-            reset.push(Arc::new(AtomicBool::new(false)));
-        }
-        reset_vec.push(reset);
-    }
+    // let mut reset_vec = vec![];
+    // for _ in 0..rx_queues {
+    //     let mut reset = vec![];
+    //     for _ in 0..workers_per_port {
+    //         reset.push(Arc::new(AtomicBool::new(false)));
+    //     }
+    //     reset_vec.push(reset);
+    // }
     // setup worker
     for (core_id, &core) in net_context.active_cores.clone().iter().enumerate() {
         let cfg = config.clone();
@@ -488,7 +488,7 @@ fn main() {
         } else {
             None
         };
-        let creset = reset_vec[port_id].clone();
+        // let creset = reset_vec[port_id].clone();
         let cmaster = master.clone();
         let worker_id = core_id % (workers_per_port as usize);
         net_context.add_pipeline_to_core(
@@ -499,10 +499,10 @@ fn main() {
                         &cfg.clone(),
                         scheduler,
                         ports,
-                        sib_port,
+                        // sib_port,
                         cqueue.clone(),
                         csib_queue.clone(),
-                        creset.clone(),
+                        // creset.clone(),
                         cmaster.clone(),
                         worker_id,
                     )

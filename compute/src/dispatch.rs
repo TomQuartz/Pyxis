@@ -759,7 +759,7 @@ impl LBDispatcher {
             ),
             receiver: Receiver::new(
                 net_port,
-                None,
+                // None,
                 config.lb.max_rx_packets,
                 &config.lb.server.ip_addr,
             )

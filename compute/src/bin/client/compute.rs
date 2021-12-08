@@ -147,10 +147,10 @@ fn setup_worker(
     config: &config::ComputeConfig,
     scheduler: &mut StandaloneScheduler,
     ports: Vec<CacheAligned<PortQueue>>,
-    sib_port: Option<CacheAligned<PortQueue>>,
+    // sib_port: Option<CacheAligned<PortQueue>>,
     queue: Arc<Queue>,
     sib_queue: Option<Arc<Queue>>,
-    reset: Vec<Arc<AtomicBool>>,
+    // reset: Vec<Arc<AtomicBool>>,
     // manager: Arc<TaskManager>,
     master: Arc<Master>,
     id: usize,
@@ -162,10 +162,10 @@ fn setup_worker(
     match scheduler.add_task(ComputeNodeWorker::new(
         config,
         ports[0].clone(),
-        sib_port,
+        // sib_port,
         queue,
         sib_queue,
-        reset,
+        // reset,
         // manager,
         master,
         id,
@@ -208,14 +208,14 @@ fn main() {
         queues.push(Arc::new(Queue::new(config.compute.max_rx_packets)));
     }
     // let queue = Arc::new(Queue::new(config.max_rx_packets));
-    let mut reset_vec = vec![];
-    for _ in 0..rx_queues {
-        let mut reset = vec![];
-        for _ in 0..workers_per_port {
-            reset.push(Arc::new(AtomicBool::new(false)));
-        }
-        reset_vec.push(reset);
-    }
+    // let mut reset_vec = vec![];
+    // for _ in 0..rx_queues {
+    //     let mut reset = vec![];
+    //     for _ in 0..workers_per_port {
+    //         reset.push(Arc::new(AtomicBool::new(false)));
+    //     }
+    //     reset_vec.push(reset);
+    // }
     // shared task manager
     // let manager = Arc::new(TaskManager::new(master));
     // setup worker
@@ -231,7 +231,7 @@ fn main() {
         } else {
             None
         };
-        let creset = reset_vec[port_id].clone();
+        // let creset = reset_vec[port_id].clone();
         // let cmanager = manager.clone();
         let cmaster = master.clone();
         let worker_id = core_id % (workers_per_port as usize);
@@ -243,10 +243,10 @@ fn main() {
                         &cfg.clone(),
                         scheduler,
                         ports,
-                        sib_port,
+                        // sib_port,
                         cqueue.clone(),
                         csib_queue.clone(),
-                        creset.clone(),
+                        // creset.clone(),
                         // cmanager.clone(),
                         cmaster.clone(),
                         worker_id,

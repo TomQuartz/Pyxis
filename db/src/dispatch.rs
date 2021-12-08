@@ -584,37 +584,39 @@ impl Sender {
 pub struct Receiver {
     // The network interface over which responses will be received from.
     net_port: CacheAligned<PortQueue>,
-    // Sibling port
-    sib_port: Option<CacheAligned<PortQueue>>,
-    // stealing
-    pub stealing: bool,
+    // // Sibling port
+    // sib_port: Option<CacheAligned<PortQueue>>,
+    // // stealing
+    // pub stealing: bool,
     // The maximum number of packets that can be received from the network port in one shot.
     max_rx_packets: usize,
     // ip_addr
     ip_addr: u32,
     // // The total number of responses received.
     // responses_recv: Cell<u64>,
+    pub reset: bool,
 }
 
 // Implementation of methods on Receiver.
 impl Receiver {
     pub fn new(
         net_port: CacheAligned<PortQueue>,
-        sib_port: Option<CacheAligned<PortQueue>>,
+        // sib_port: Option<CacheAligned<PortQueue>>,
         max_rx_packets: usize,
         ip_addr: &str,
     ) -> Receiver {
         Receiver {
-            stealing: !sib_port.is_none(),
+            reset: false,
+            // stealing: !sib_port.is_none(),
             net_port: net_port,
-            sib_port: sib_port,
+            // sib_port: sib_port,
             max_rx_packets: max_rx_packets,
             ip_addr: u32::from(Ipv4Addr::from_str(ip_addr).expect("missing src ip for LB")),
         }
     }
     // TODO: makesure src ip is properly set
     // return pkt and (src ip, src udp port)
-    pub fn recv(&self) -> Option<Vec<(Packet<UdpHeader, EmptyMetadata>, (u32, u16))>> {
+    pub fn recv(&mut self) -> Option<Vec<(Packet<UdpHeader, EmptyMetadata>, (u32, u16))>> {
         // Allocate a vector of mutable MBuf pointers into which raw packets will be received.
         let mut mbuf_vector = Vec::with_capacity(self.max_rx_packets);
 
@@ -631,14 +633,14 @@ impl Receiver {
                 .expect("Error on packet receive") as usize;
 
             // Return if packets weren't available for receive.
-            if recvd == 0 && self.stealing {
-                recvd = self
-                    .sib_port
-                    .as_ref()
-                    .unwrap()
-                    .recv(&mut mbuf_vector[..])
-                    .expect("Error on packet receive") as usize;
-            }
+            // if recvd == 0 && self.stealing {
+            //     recvd = self
+            //         .sib_port
+            //         .as_ref()
+            //         .unwrap()
+            //         .recv(&mut mbuf_vector[..])
+            //         .expect("Error on packet receive") as usize;
+            // }
             if recvd == 0 {
                 return None;
             }
@@ -664,8 +666,14 @@ impl Receiver {
                 if let Some(packet) = self.check_mac(packet) {
                     if let Some((packet, src_ip)) = self.check_ip(packet) {
                         if let Some((packet, src_port)) = self.check_udp(packet) {
-                            packets.push((packet, (src_ip, src_port)));
-                            continue;
+                            if parse_rpc_opcode(&packet) == OpCode::ResetRpc {
+                                self.reset = true;
+                                packet.free_packet();
+                            } else {
+                                packets.push((packet, (src_ip, src_port)));
+                            }
+                            // packets.push((packet, (src_ip, src_port)));
+                            // continue;
                         }
                     }
                 }
@@ -674,6 +682,7 @@ impl Receiver {
             return Some(packets);
         }
     }
+    /*
     // need to check self.stealing
     pub fn steal(&self) -> Option<Vec<(Packet<UdpHeader, EmptyMetadata>, (u32, u16))>> {
         assert!(self.stealing);
@@ -743,6 +752,7 @@ impl Receiver {
             Some(packets)
         }
     }
+    */
 
     #[inline]
     fn check_mac(
@@ -820,19 +830,19 @@ impl Receiver {
 
 pub struct Queue {
     pub queue: RwLock<VecDeque<Packet<UdpHeader, EmptyMetadata>>>,
-    /// length is set by Dispatcher, and cleared by the first worker in that round
+    // /// length is set by Dispatcher, and cleared by the first worker in that round
     // LB will only update those with positive queue length, thus reducing update frequency and variance
-    pub length: AtomicF64,
-    pub reset: AtomicBool,
-    pub rx_lock: AtomicBool,
+    // pub length: AtomicF64,
+    // pub reset: AtomicBool,
+    // pub rx_lock: AtomicBool,
 }
 impl Queue {
     pub fn new(capacity: usize) -> Queue {
         Queue {
             queue: RwLock::new(VecDeque::with_capacity(capacity)),
-            length: AtomicF64::new(-1.0),
-            reset: AtomicBool::new(false),
-            rx_lock: AtomicBool::new(false),
+            // length: AtomicF64::new(-1.0),
+            // reset: AtomicBool::new(false),
+            // rx_lock: AtomicBool::new(false),
         }
     }
 }
@@ -841,10 +851,10 @@ pub struct Dispatcher {
     pub sender: Rc<Sender>,
     pub receiver: Receiver,
     // for all ports
-    queue: Arc<Queue>,
+    pub queue: Arc<Queue>,
     pub sib_queue: Option<Arc<Queue>>,
     // for all workers using this port
-    pub reset: Vec<Arc<AtomicBool>>,
+    // pub reset: Vec<Arc<AtomicBool>>,
     // time_avg: MovingTimeAvg,
     pub length: f64,
 }
@@ -852,47 +862,55 @@ pub struct Dispatcher {
 impl Dispatcher {
     pub fn new(
         net_port: CacheAligned<PortQueue>,
-        sib_port: Option<CacheAligned<PortQueue>>,
+        // sib_port: Option<CacheAligned<PortQueue>>,
         src: &NetConfig,
         endpoints: &Vec<NetConfig>,
         max_rx_packets: usize,
         queue: Arc<Queue>,
         sib_queue: Option<Arc<Queue>>,
-        reset: Vec<Arc<AtomicBool>>,
+        // reset: Vec<Arc<AtomicBool>>,
         // moving_exp: f64,
     ) -> Dispatcher {
         Dispatcher {
             sender: Rc::new(Sender::new(net_port.clone(), src, endpoints)),
-            receiver: Receiver::new(net_port, sib_port, max_rx_packets, &src.ip_addr),
+            receiver: Receiver::new(net_port, /*sib_port, */ max_rx_packets, &src.ip_addr),
             queue: queue,
             sib_queue: sib_queue,
-            reset: reset,
+            // reset: reset,
             // time_avg: MovingTimeAvg::new(moving_exp),
             // queue: RwLock::new(VecDeque::with_capacity(config.max_rx_packets)),
             length: -1.0,
         }
     }
     /// get a packet from common queue
-    pub fn poll_self(&self) -> Option<Packet<UdpHeader, EmptyMetadata>> {
+    pub fn poll(&self) -> Option<Packet<UdpHeader, EmptyMetadata>> {
         // reset by sib port
-        if self.queue.reset.load(Ordering::Relaxed) {
-            self.queue.reset.store(false, Ordering::Relaxed);
-            self.reset_workers();
-        }
+        // if self.queue.reset.load(Ordering::Relaxed) {
+        //     self.queue.reset.store(false, Ordering::Relaxed);
+        //     self.reset_workers();
+        // }
         self.queue.queue.write().unwrap().pop_front()
+        // if let Some(packet,_) = self.queue.queue.write().unwrap().pop_front(){
+        //     Some(packet)
+        // }else{
+        //     None
+        // }
     }
     pub fn poll_sib(&self) -> Option<Packet<UdpHeader, EmptyMetadata>> {
         if let Some(sib_queue) = &self.sib_queue {
+            // if let Some(packet) = sib_queue.queue.write().unwrap().pop_front(){
+            //     return Some(packet);
+            // }
             sib_queue.queue.write().unwrap().pop_front()
         } else {
             None
         }
     }
-    pub fn reset_workers(&self) {
-        for reset in &self.reset {
-            reset.store(true, Ordering::Relaxed);
-        }
-    }
+    // pub fn reset_workers(&self) {
+    //     for reset in &self.reset {
+    //         reset.store(true, Ordering::Relaxed);
+    //     }
+    // }
     pub fn queue_length(&mut self) -> f64 {
         // self.queue.length.swap(-1.0, Ordering::Relaxed)
         let ql = self.length;
@@ -904,9 +922,28 @@ impl Dispatcher {
     //     let sib_queue = self.sib_queue.unwrap();
     //     sib_queue.length.swap(-1.0, Ordering::Relaxed);
     // }
+    pub fn recv(&mut self) {
+        if let Some(mut packets) = self.receiver.recv() {
+            if packets.len() > 0 {
+                let mut queue = self.queue.queue.write().unwrap();
+                queue.extend(packets.into_iter().map(|(packet, _)| packet));
+                self.length = queue.len() as f64;
+            }
+        }
+    }
+    pub fn reset(&mut self) -> bool {
+        if self.receiver.reset {
+            self.receiver.reset = false;
+            true
+        } else {
+            false
+        }
+    }
+    /*
     // a wrapper around Receiver.recv
     // mainly for reset and queue length
-    pub fn recv(&mut self) -> Option<Vec<Packet<UdpHeader, EmptyMetadata>>> {
+    // pub fn recv(&mut self) -> Option<Vec<Packet<UdpHeader, EmptyMetadata>>> {
+    pub fn recv(&mut self) -> Result<(), ()> {
         // if let Ok(_) =
         //     self.queue
         //         .rx_lock
@@ -920,8 +957,8 @@ impl Dispatcher {
                 trace!("dispatcher recv {} packets", packets.len());
                 if packets.len() > 0 {
                     // let current_time = cycles::rdtsc();
-                    // let mut queue = self.queue.queue.write().unwrap();
-                    let mut queue = vec![];
+                    let mut queue = self.queue.queue.write().unwrap();
+                    // let mut queue = vec![];
                     while let Some((packet, _)) = packets.pop() {
                         if parse_rpc_opcode(&packet) == OpCode::ResetRpc {
                             // reset
@@ -931,7 +968,8 @@ impl Dispatcher {
                             // TODO: reset queue
                             packet.free_packet();
                         } else {
-                            queue.push(packet);
+                            // queue.push(packet);
+                            queue.push_back(packet);
                         }
                     }
                     // NOTE: we only update queue len upon receiving packets
@@ -939,14 +977,16 @@ impl Dispatcher {
                     // self.time_avg.update(current_time, queue_len);
                     // self.queue.length.store(queue_len, Ordering::Relaxed);
                     self.length = queue_len;
-                    // return Ok(());
-                    return Some(queue);
+                    return Ok(());
+                    // return Some(queue);
                 }
             }
         }
-        // Err(())
-        None
+        Err(())
+        // None
     }
+    */
+    /*
     pub fn steal(&mut self) -> Result<(), ()> {
         if let Ok(_) = self.sib_queue.as_ref().unwrap().rx_lock.compare_exchange(
             false,
@@ -987,6 +1027,7 @@ impl Dispatcher {
         }
         Err(())
     }
+    */
 }
 
 /// This type stores the cycle counter variable for various parts in dispatch stage.

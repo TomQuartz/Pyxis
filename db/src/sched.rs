@@ -362,10 +362,10 @@ impl StorageNodeWorker {
         config: &StorageConfig,
         // dispatcher
         net_port: CacheAligned<PortQueue>,
-        sib_port: Option<CacheAligned<PortQueue>>,
+        // sib_port: Option<CacheAligned<PortQueue>>,
         queue: Arc<Queue>,
         sib_queue: Option<Arc<Queue>>,
-        reset: Vec<Arc<AtomicBool>>,
+        // reset: Vec<Arc<AtomicBool>>,
         // worker
         // tx_port: CacheAligned<PortQueue>,
         masterservice: Arc<Master>,
@@ -380,13 +380,13 @@ impl StorageNodeWorker {
             ),
             dispatcher: Dispatcher::new(
                 net_port,
-                sib_port,
+                // sib_port,
                 &config.storage.server,
                 &vec![],
                 config.storage.max_rx_packets,
                 queue,
                 sib_queue,
-                reset,
+                // reset,
             ),
             task_duration_cv: CoeffOfVar::new(),
             manager: TaskManager::new(masterservice),
@@ -413,10 +413,10 @@ impl StorageNodeWorker {
             }
             let end = cycles::rdtsc();
             let duration = (end - start) as f64;
-            if self.dispatcher.reset[self.id].load(Ordering::Relaxed) {
-                self.task_duration_cv.reset();
-                self.dispatcher.reset[self.id].store(false, Ordering::Relaxed);
-            }
+            // if self.dispatcher.reset[self.id].load(Ordering::Relaxed) {
+            //     self.task_duration_cv.reset();
+            //     self.dispatcher.reset[self.id].store(false, Ordering::Relaxed);
+            // }
             self.task_duration_cv.update(duration);
             // self.task_duration_cv.write().unwrap().update(duration);
         }
@@ -440,12 +440,23 @@ impl Executable for StorageNodeWorker {
         //         self.dispatcher.steal();
         //     }
         // }
-        loop{
-            if let Some(mut requests) = self.dispatcher.recv() {
-                while let Some(request) = requests.pop(){
-                    self.handle_request(request);
-                }
+        loop {
+            self.dispatcher.recv();
+            if self.dispatcher.reset() {
+                self.task_duration_cv.reset();
             }
+            if self.dispatcher.length > 0.0 {
+                while let Some(packet) = self.dispatcher.poll() {
+                    self.handle_request(packet);
+                }
+            } else if let Some(packet) = self.dispatcher.poll_sib() {
+                self.handle_request(packet);
+            }
+            // if let Some(mut requests) = self.dispatcher.recv() {
+            //     while let Some(request) = requests.pop(){
+            //         self.handle_request(request);
+            //     }
+            // }
         }
     }
     fn dependencies(&mut self) -> Vec<usize> {

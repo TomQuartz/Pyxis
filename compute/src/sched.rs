@@ -560,11 +560,11 @@ impl ComputeNodeWorker {
     pub fn new(
         config: &ComputeConfig,
         net_port: CacheAligned<PortQueue>,
-        sib_port: Option<CacheAligned<PortQueue>>,
+        // sib_port: Option<CacheAligned<PortQueue>>,
         queue: Arc<Queue>,
         sib_queue: Option<Arc<Queue>>,
         // reset: Arc<AtomicBool>,
-        reset: Vec<Arc<AtomicBool>>,
+        // reset: Vec<Arc<AtomicBool>>,
         masterservice: Arc<Master>,
         // manager: Arc<TaskManager>,
         // #[cfg(feature = "queue_len")] timestamp: Arc<RwLock<Vec<u64>>>,
@@ -580,13 +580,13 @@ impl ComputeNodeWorker {
             ),
             dispatcher: Dispatcher::new(
                 net_port,
-                sib_port,
+                // sib_port,
                 &config.compute.server,
                 &config.storage,
                 config.compute.max_rx_packets,
                 queue,
                 sib_queue,
-                reset,
+                // reset,
             ),
             task_duration_cv: CoeffOfVar::new(),
             // sender: Rc::new(Sender::new(
@@ -697,18 +697,18 @@ impl ComputeNodeWorker {
             self.send_response();
             let end = cycles::rdtsc();
             let duration = (end - start) as f64;
-            if self.dispatcher.reset[self.id].load(Ordering::Relaxed) {
-                self.task_duration_cv.reset();
-                self.dispatcher.reset[self.id].store(false, Ordering::Relaxed);
-            }
+            // if self.dispatcher.reset[self.id].load(Ordering::Relaxed) {
+            //     self.task_duration_cv.reset();
+            //     self.dispatcher.reset[self.id].store(false, Ordering::Relaxed);
+            // }
             self.task_duration_cv.update(duration);
         } else if op == OpCode::SandstormGetRpc {
             let end = cycles::rdtsc();
             let duration = (end - start) as f64;
-            if self.dispatcher.reset[self.id].load(Ordering::Relaxed) {
-                self.task_duration_cv.reset();
-                self.dispatcher.reset[self.id].store(false, Ordering::Relaxed);
-            }
+            // if self.dispatcher.reset[self.id].load(Ordering::Relaxed) {
+            //     self.task_duration_cv.reset();
+            //     self.dispatcher.reset[self.id].store(false, Ordering::Relaxed);
+            // }
             self.task_duration_cv.update(duration);
         }
     }
@@ -864,11 +864,34 @@ impl Executable for ComputeNodeWorker {
         //     }
         // }
         loop {
-            if let Some(mut packets) = self.dispatcher.recv() {
-                while let Some(packet) = packets.pop() {
+            // if let Some(mut packets) = self.dispatcher.recv() {
+            //     while let Some(packet) = packets.pop() {
+            //         self.handle_rpc(packet);
+            //     }
+            // }
+            self.dispatcher.recv();
+            if self.dispatcher.reset() {
+                self.task_duration_cv.reset();
+            }
+            if self.dispatcher.length > 0.0 {
+                while let Some(packet) = self.dispatcher.poll() {
                     self.handle_rpc(packet);
                 }
+            } else if let Some(packet) = self.dispatcher.poll_sib() {
+                self.handle_rpc(packet);
             }
+            // if let Ok(_) = self.dispatcher.recv() {
+            //     loop {
+            //         let packet = self.dispatcher.queue.queue.write().unwrap().pop_front();
+            //         if let Some(packet) = packet {
+            //             self.handle_rpc(packet);
+            //         } else {
+            //             break;
+            //         }
+            //     }
+            // } else if let Some(packet) = self.dispatcher.poll_sib() {
+            //     self.handle_rpc(packet);
+            // }
         }
     }
     /*
