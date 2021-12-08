@@ -431,13 +431,20 @@ impl Executable for StorageNodeWorker {
         //     let request = queue.pop_front();
         //     (request, queue_len)
         // };
-        if let Some(request) = self.dispatcher.poll_self() {
-            self.handle_request(request);
-        } else if let Some(request) = self.dispatcher.poll_sib() {
-            self.handle_request(request);
-        } else if let Err(_) = self.dispatcher.recv() {
-            if self.dispatcher.receiver.stealing {
-                self.dispatcher.steal();
+        // if let Some(request) = self.dispatcher.poll_self() {
+        //     self.handle_request(request);
+        // } else if let Some(request) = self.dispatcher.poll_sib() {
+        //     self.handle_request(request);
+        // } else if let Err(_) = self.dispatcher.recv() {
+        //     if self.dispatcher.receiver.stealing {
+        //         self.dispatcher.steal();
+        //     }
+        // }
+        loop{
+            if let Some(mut requests) = self.dispatcher.recv() {
+                while let Some(request) = requests.pop(){
+                    self.handle_request(request);
+                }
             }
         }
     }

@@ -13,7 +13,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::ops::{Generator, GeneratorState};
 use std::panic::*;
 use std::pin::Pin;
@@ -60,8 +60,7 @@ pub struct Container {
 
     // An execution context for the task that implements the DB trait. Required
     // for the task to interact with the database.
-    // NOTE: we need cell for task.tear to consume rc, which will call cell.replace(None) first
-    db: RefCell<Option<Rc<ProxyDB>>>,
+    db: Cell<Option<Rc<ProxyDB>>>,
 
     // A handle to the dynamically loaded extension. Required to initialize the
     // task, and ensure that the extension stays loaded for as long as the task
@@ -106,8 +105,7 @@ impl Container {
             priority: prio,
             time: 0,
             db_time: 0,
-            // db: Cell::new(Some(context)),
-            db: RefCell::new(Some(context)),
+            db: Cell::new(Some(context)),
             ext: ext,
             gen: Box::pin(|| {
                 yield 0;
@@ -128,12 +126,9 @@ impl Task for Container {
         // If the task has never run before, retrieve the generator for the
         // extension first.
         if self.state == INITIALIZED {
-            // let context = self.db.replace(None).unwrap();
-            // self.gen = self.ext.get(Rc::clone(&context) as Rc<DB>);
-            // self.db.set(Some(context));
-            if let Some(proxydb) = self.db.get_mut() {
-                self.gen = self.ext.get(proxydb.clone() as Rc<DB>);
-            }
+            let context = self.db.replace(None).unwrap();
+            self.gen = self.ext.get(Rc::clone(&context) as Rc<DB>);
+            self.db.set(Some(context));
         }
 
         // Resume the task if need be. The task needs to be run/resumed only
@@ -248,9 +243,8 @@ impl Task for Container {
     }
 
     /// Refer to the `Task` trait for Documentation.
-    fn update_cache(&self, record: &[u8], segment_id: usize, num_segments: usize) -> bool {
-        // if let Some(proxydb) = self.db.get_mut() {
-        if let Some(proxydb) = &*self.db.borrow() {
+    fn update_cache(&mut self, record: &[u8], segment_id: usize, num_segments: usize) -> bool {
+        if let Some(proxydb) = self.db.get_mut() {
             let keylen = proxydb.get_keylen();
             match parse_record_optype(record) {
                 OpType::SandstormRead => {

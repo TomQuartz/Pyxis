@@ -151,7 +151,8 @@ fn setup_worker(
     queue: Arc<Queue>,
     sib_queue: Option<Arc<Queue>>,
     reset: Vec<Arc<AtomicBool>>,
-    manager: Arc<TaskManager>,
+    // manager: Arc<TaskManager>,
+    master: Arc<Master>,
     id: usize,
 ) {
     if ports.len() != 1 {
@@ -165,13 +166,14 @@ fn setup_worker(
         queue,
         sib_queue,
         reset,
-        manager,
+        // manager,
+        master,
         id,
     )) {
         Ok(_) => {
             info!(
                 "Successfully added compute node worker with rx-tx queue {:?}.",
-                (ports[0].rxq(),ports[0].txq()),
+                (ports[0].rxq(), ports[0].txq()),
             );
         }
         Err(ref err) => {
@@ -195,7 +197,7 @@ fn main() {
         master.load_test(tenant);
     }
     // finished populating, now mark as immut
-    // let master = Arc::new(master);
+    let master = Arc::new(master);
     let mut net_context: NetbricksContext = config_and_init_netbricks(&config.compute);
     net_context.start_schedulers();
     // setup shared data
@@ -215,7 +217,7 @@ fn main() {
         reset_vec.push(reset);
     }
     // shared task manager
-    let manager = Arc::new(TaskManager::new(master));
+    // let manager = Arc::new(TaskManager::new(master));
     // setup worker
     for (core_id, &core) in net_context.active_cores.clone().iter().enumerate() {
         let cfg = config.clone();
@@ -230,7 +232,8 @@ fn main() {
             None
         };
         let creset = reset_vec[port_id].clone();
-        let cmanager = manager.clone();
+        // let cmanager = manager.clone();
+        let cmaster = master.clone();
         let worker_id = core_id % (workers_per_port as usize);
         net_context.add_pipeline_to_core(
             core,
@@ -244,7 +247,8 @@ fn main() {
                         cqueue.clone(),
                         csib_queue.clone(),
                         creset.clone(),
-                        cmanager.clone(),
+                        // cmanager.clone(),
+                        cmaster.clone(),
                         worker_id,
                     )
                 },

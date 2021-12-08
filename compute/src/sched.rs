@@ -43,7 +43,6 @@ use std::sync::RwLock;
 
 const TASK_BUCKETS: usize = 32;
 
-/*
 /// TaskManager handles the information for a pushed-back extension on the client side.
 pub struct TaskManager {
     // A ref counted pointer to a master service. The master service
@@ -100,7 +99,7 @@ impl TaskManager {
         tenant: u32,
         name_length: usize,
         sender_service: Rc<Sender>,
-    ) {
+    ) -> Option<Box<Task>> {
         let tenant_id: TenantId = tenant as TenantId;
         let name_length: usize = name_length as usize;
 
@@ -134,11 +133,13 @@ impl TaskManager {
             //     id,
             //     Box::new(Container::new(TaskPriority::REQUEST, db, ext, id)),
             // );
-            self.ready
-                .push_back(Box::new(Container::new(TaskPriority::REQUEST, db, ext, id)))
+            // self.ready
+            //     .push_back(Box::new(Container::new(TaskPriority::REQUEST, db, ext, id)))
+            return Some(Box::new(Container::new(TaskPriority::REQUEST, db, ext, id)));
         } else {
             info!("Unable to create a generator for this ext of name {}", name);
         }
+        None
     }
 
     /// Delete a waiting task from the scheduler.
@@ -173,7 +174,7 @@ impl TaskManager {
         recordlen: usize,
         segment_id: usize,
         num_segments: usize,
-    ) {
+    ) -> Option<Box<Task>> {
         if let Some(mut task) = self.waiting.remove(&id) {
             if cfg!(feature = "checksum") {
                 // let (keys, records) = records.split_at(377);
@@ -181,7 +182,7 @@ impl TaskManager {
                 // for record in records.chunks(recordlen) {
                 //     task.update_cache(record, keylen);
                 // }
-                self.ready.push_back(task);
+                // self.ready.push_back(task);
             } else {
                 let mut ready = false;
                 for record in records.chunks(recordlen) {
@@ -192,7 +193,8 @@ impl TaskManager {
                 }
                 if ready {
                     trace!("ext id {} all segments recvd", id);
-                    self.ready.push_back(task);
+                    // self.ready.push_back(task);
+                    return Some(task);
                 } else {
                     trace!("ext id {} still waiting for kv resps", id);
                     self.waiting.insert(id, task);
@@ -202,6 +204,7 @@ impl TaskManager {
         } else {
             info!("No waiting task with id {}", id);
         }
+        None
     }
     /*
     /// This method run the task associated with an extension. And on the completion
@@ -235,8 +238,8 @@ impl TaskManager {
         (taskstate, time)
     }
     */
-    pub fn execute_task(&mut self, mut queue_len: f64, task_duration_cv: f64) {
-        let mut task = self.ready.pop_front().unwrap();
+    pub fn execute_task(&mut self, mut task: Box<Task>, mut queue_len: f64, task_duration_cv: f64) {
+        // let mut task = self.ready.pop_front().unwrap();
         if task.run().0 == COMPLETED {
             trace!("task complete");
             if let Some((req, resps)) = unsafe { task.tear(&mut queue_len, task_duration_cv) } {
@@ -283,8 +286,8 @@ impl TaskManager {
     //     // (taskstate, time)
     // }
 }
-*/
 
+/*
 /// TaskManager handles the information for a pushed-back extension on the client side.
 pub struct TaskManager {
     // A ref counted pointer to a master service. The master service
@@ -528,7 +531,7 @@ impl TaskManager {
 
 unsafe impl Send for TaskManager {}
 unsafe impl Sync for TaskManager {}
-
+*/
 /// sender&receiver for compute node
 // 1. does not precompute mac and ip addr for LB and storage
 // 2. repeated parse and reparse header
@@ -537,7 +540,8 @@ pub struct ComputeNodeWorker {
     // this will bottleneck since all workers attempts to write
     // task_duration_cv: Arc<RwLock<CoeffOfVar>>,
     task_duration_cv: CoeffOfVar,
-    manager: Arc<TaskManager>,
+    // manager: Arc<TaskManager>,
+    manager: TaskManager,
     // this is dynamic, i.e. resp dst is set as req src upon recving new reqs
     resp_hdr: PacketHeaders,
     id: usize,
@@ -561,8 +565,8 @@ impl ComputeNodeWorker {
         sib_queue: Option<Arc<Queue>>,
         // reset: Arc<AtomicBool>,
         reset: Vec<Arc<AtomicBool>>,
-        // masterservice: Arc<Master>,
-        manager: Arc<TaskManager>,
+        masterservice: Arc<Master>,
+        // manager: Arc<TaskManager>,
         // #[cfg(feature = "queue_len")] timestamp: Arc<RwLock<Vec<u64>>>,
         // #[cfg(feature = "queue_len")] raw_length: Arc<RwLock<Vec<usize>>>,
         // #[cfg(feature = "queue_len")] terminate: Arc<AtomicBool>,
@@ -600,8 +604,8 @@ impl ComputeNodeWorker {
             //         Ipv4Addr::from_str(&config.src.ip_addr).expect("missing src ip for LB"),
             //     ),
             // },
-            // manager: TaskManager::new(Arc::clone(&masterservice)),
-            manager: manager,
+            manager: TaskManager::new(Arc::clone(&masterservice)),
+            // manager: manager,
             id: id,
             // last_run: 0,
             // #[cfg(feature = "queue_len")]
@@ -671,12 +675,12 @@ impl ComputeNodeWorker {
     //     self.manager.execute_tasks(queue_len);
     // }
 
-    // pub fn send_response(&mut self) {
-    //     let resps = &mut self.manager.responses;
-    //     if resps.len() > 0 {
-    //         self.sender.send_pkts(resps);
-    //     }
-    // }
+    pub fn send_response(&mut self) {
+        let resps = &mut self.manager.responses;
+        if resps.len() > 0 {
+            self.dispatcher.sender.send_pkts(resps);
+        }
+    }
     pub fn handle_rpc(&mut self, packet: Packet<UdpHeader, EmptyMetadata>) {
         let start = cycles::rdtsc();
         let (task, op) = self.dispatch(packet);
@@ -686,9 +690,11 @@ impl ComputeNodeWorker {
             // NOTE: we do not report the queue len of sib queue
             let ql = self.dispatcher.queue_length();
             // TODO: add multi-packet transmission overhead in send_response
-            if let Some(mut resps) = self.manager.execute_task(task, ql, cv) {
-                self.dispatcher.sender.send_pkts(&mut resps);
-            }
+            // if let Some(mut resps) = self.manager.execute_task(task, ql, cv) {
+            //     self.dispatcher.sender.send_pkts(&mut resps);
+            // }
+            self.manager.execute_task(task, ql, cv);
+            self.send_response();
             let end = cycles::rdtsc();
             let duration = (end - start) as f64;
             if self.dispatcher.reset[self.id].load(Ordering::Relaxed) {
@@ -848,13 +854,20 @@ impl ComputeNodeWorker {
 
 impl Executable for ComputeNodeWorker {
     fn execute(&mut self) {
-        if let Some(packet) = self.dispatcher.poll_self() {
-            self.handle_rpc(packet);
-        } else if let Some(packet) = self.dispatcher.poll_sib() {
-            self.handle_rpc(packet);
-        } else if let Err(_) = self.dispatcher.recv() {
-            if self.dispatcher.receiver.stealing {
-                self.dispatcher.steal();
+        // if let Some(packet) = self.dispatcher.poll_self() {
+        //     self.handle_rpc(packet);
+        // } else if let Some(packet) = self.dispatcher.poll_sib() {
+        //     self.handle_rpc(packet);
+        // } else if let Err(_) = self.dispatcher.recv() {
+        //     if self.dispatcher.receiver.stealing {
+        //         self.dispatcher.steal();
+        //     }
+        // }
+        loop {
+            if let Some(mut packets) = self.dispatcher.recv() {
+                while let Some(packet) = packets.pop() {
+                    self.handle_rpc(packet);
+                }
             }
         }
     }
