@@ -898,8 +898,8 @@ impl Executable for ComputeNodeWorker {
                 while let Some(packet) = self.dispatcher.poll() {
                     self.handle_rpc(packet, &mut queue_length);
                 }
-            } else if let Some(packet) = self.dispatcher.poll_sib() {
-                self.handle_rpc(packet, &mut queue_length);
+            // } else if let Some(packet) = self.dispatcher.poll_sib() {
+            //     self.handle_rpc(packet, &mut queue_length);
             }
             // if let Ok(_) = self.dispatcher.recv() {
             //     loop {

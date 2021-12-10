@@ -585,8 +585,8 @@ impl Executable for StorageNodeWorker {
                 while let Some(packet) = self.dispatcher.poll() {
                     self.handle_request(packet, &mut moving_avg);
                 }
-            } else if let Some(packet) = self.dispatcher.poll_sib() {
-                self.handle_request(packet, &mut moving_avg);
+            // } else if let Some(packet) = self.dispatcher.poll_sib() {
+            //     self.handle_request(packet, &mut moving_avg);
             }
             // if let Some(mut requests) = self.dispatcher.recv() {
             //     while let Some(request) = requests.pop(){
