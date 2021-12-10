@@ -456,7 +456,7 @@ pub fn get_default_netbricks_config(config: &ServerConfig) -> NetbricksConfigura
     let net_primary_core: i32 = 19;
     // let net_queues: Vec<i32> = (0..config.server.num_ports).collect();
     let net_strict_cores: bool = false;
-    let net_pool_size: u32 = 16384 - 1;
+    let net_pool_size: u32 = 32768 - 1;
     let net_cache_size: u32 = 512;
     let net_dpdk_args: Option<String> = None;
 

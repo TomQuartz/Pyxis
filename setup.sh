@@ -39,7 +39,7 @@ cp net/native/libzcsi.so net/target/native/libzcsi.so
 source ../.bashrc
 make
 
-sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=""/GRUB_CMDLINE_LINUX_DEFAULT="default_hugepagesz=1G hugepagesz=1G hugepages=16 intel_idle.max_cstate=0 idle=halt"/g' /etc/default/grub
+sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=""/GRUB_CMDLINE_LINUX_DEFAULT="default_hugepagesz=1G hugepagesz=1G hugepages=32 intel_idle.max_cstate=0 idle=halt"/g' /etc/default/grub
 sudo update-grub
 
 # PCI=$(python ./net/3rdparty/dpdk/usertools/dpdk-devbind.py --status-dev=net | grep ens1f1 | grep Active | tail -1 | awk '{ print $1 }')
