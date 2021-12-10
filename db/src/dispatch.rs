@@ -46,6 +46,7 @@ use rand::{Rng, SeedableRng, XorShiftRng};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::fmt;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::RwLock;
@@ -432,15 +433,17 @@ impl Sender {
 
     pub fn send_reset(&self) {
         for endpoint in 0..self.num_endpoints {
-            let mut request = rpc::create_reset_rpc(
-                &self.req_hdrs[endpoint].mac_header,
-                &self.req_hdrs[endpoint].ip_header,
-                &self.req_hdrs[endpoint].udp_header,
-                self.get_dst_port(endpoint),
-                // self.get_dst_port_by_type(type_id),
-                // (id & 0xffff) as u16 & (self.dst_ports - 1),
-            );
-            self.send_pkt(request);
+            for port in 0..self.dst_ports[endpoint] {
+                let mut request = rpc::create_reset_rpc(
+                    &self.req_hdrs[endpoint].mac_header,
+                    &self.req_hdrs[endpoint].ip_header,
+                    &self.req_hdrs[endpoint].udp_header,
+                    port,
+                    // self.get_dst_port_by_type(type_id),
+                    // (id & 0xffff) as u16 & (self.dst_ports - 1),
+                );
+                self.send_pkt(request);
+            }
         }
     }
 
@@ -880,6 +883,7 @@ impl Dispatcher {
             // time_avg: MovingTimeAvg::new(moving_exp),
             // queue: RwLock::new(VecDeque::with_capacity(config.max_rx_packets)),
             length: -1.0,
+            // length: MovingTimeAvg::new(moving_exp),
         }
     }
     /// get a packet from common queue
@@ -911,25 +915,27 @@ impl Dispatcher {
     //         reset.store(true, Ordering::Relaxed);
     //     }
     // }
-    pub fn queue_length(&mut self) -> f64 {
-        // self.queue.length.swap(-1.0, Ordering::Relaxed)
-        let ql = self.length;
-        self.length = -1.0;
-        ql
-    }
+    // pub fn queue_length(&mut self) -> f64 {
+    //     // self.queue.length.swap(-1.0, Ordering::Relaxed)
+    //     self.length.avg()
+    // }
     // do not report the queue len of sib queue
     // pub fn queue_length_sib(&self) -> f64 {
     //     let sib_queue = self.sib_queue.unwrap();
     //     sib_queue.length.swap(-1.0, Ordering::Relaxed);
     // }
     pub fn recv(&mut self) {
+        let current = cycles::rdtsc();
         if let Some(mut packets) = self.receiver.recv() {
             if packets.len() > 0 {
                 let mut queue = self.queue.queue.write().unwrap();
                 queue.extend(packets.into_iter().map(|(packet, _)| packet));
+                // queue_length = queue.len() as f64;
                 self.length = queue.len() as f64;
+                return;
             }
         }
+        self.length = 0.0;
     }
     pub fn reset(&mut self) -> bool {
         if self.receiver.reset {

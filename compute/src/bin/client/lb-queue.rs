@@ -212,185 +212,6 @@ impl XInterface for Partition {
     }
 }
 
-#[cfg(feature = "server_stats")]
-struct Avg {
-    counter: f64,
-    lastest: f64,
-    E_x: f64,
-    E_x2: f64,
-}
-#[cfg(feature = "server_stats")]
-impl Avg {
-    fn new() -> Avg {
-        Avg {
-            counter: 0.0,
-            lastest: 0.0,
-            E_x: 0.0,
-            E_x2: 0.0,
-        }
-    }
-    fn update(&mut self, delta: f64) {
-        self.counter += 1.0;
-        self.lastest = delta;
-        self.E_x = self.E_x * ((self.counter - 1.0) / self.counter) + delta / self.counter;
-        self.E_x2 =
-            self.E_x2 * ((self.counter - 1.0) / self.counter) + delta * delta / self.counter;
-    }
-    fn avg(&self) -> f64 {
-        self.lastest
-    }
-}
-#[cfg(feature = "server_stats")]
-impl fmt::Display for Avg {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let std =
-            ((self.E_x2 - self.E_x * self.E_x) * (self.counter / (self.counter - 1.0))).sqrt();
-        write!(
-            f,
-            "mean {} std {} latest {} counter {}",
-            self.E_x.round(),
-            std.round(),
-            self.lastest,
-            self.counter
-        )
-    }
-}
-
-struct MovingAvg {
-    moving: f64,
-    exp_decay: f64,
-    norm: f64,
-    #[cfg(feature = "server_stats")]
-    avg: Avg,
-}
-impl MovingAvg {
-    fn new(exp_decay: f64) -> MovingAvg {
-        MovingAvg {
-            moving: 0.0,
-            exp_decay: exp_decay,
-            norm: 0.0,
-            #[cfg(feature = "server_stats")]
-            avg: Avg::new(),
-        }
-    }
-    fn update(&mut self, delta: f64) {
-        self.norm = self.norm * self.exp_decay + (1.0 - self.exp_decay);
-        self.moving = self.moving * self.exp_decay + delta * (1.0 - self.exp_decay);
-        #[cfg(feature = "server_stats")]
-        self.avg.update(delta);
-    }
-    fn avg(&self) -> f64 {
-        self.moving / self.norm
-    }
-}
-#[cfg(feature = "server_stats")]
-impl fmt::Display for MovingAvg {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "moving {} ", self.avg().round())?;
-        write!(f, "{}", self.avg)
-    }
-}
-
-// struct ServerLoad {
-//     cluster_name: String,
-//     ip2load: HashMap<u32, Vec<RwLock<MovingAvg>>>,
-//     #[cfg(feature = "server_stats")]
-//     load_trace: HashMap<u32, Vec<RwLock<Vec<(u64, f64)>>>>,
-// }
-
-// impl ServerLoad {
-//     fn new(cluster_name: &str, ip_and_ports: Vec<(&String, u16)>, exp_decay: f64) -> ServerLoad {
-//         let mut ip2load = HashMap::new();
-//         for (ip, num_ports) in ip_and_ports {
-//             let mut server_load = vec![];
-//             for _ in 0..num_ports {
-//                 server_load.push(RwLock::new(MovingAvg::new(exp_decay)));
-//             }
-//             let ip = u32::from(Ipv4Addr::from_str(ip).unwrap());
-//             ip2load.insert(ip, server_load);
-//         }
-//         #[cfg(feature = "server_stats")]
-//         let mut load_trace = HashMap::new();
-//         #[cfg(feature = "server_stats")]
-//         for (ip, num_ports) in ip_and_ports {
-//             let mut server_trace = vec![];
-//             for _ in 0..num_ports {
-//                 server_trace.push(RwLock::new(vec![]));
-//             }
-//             let ip = u32::from(Ipv4Addr::from_str(ip).unwrap());
-//             load_trace.insert(ip, server_trace);
-//         }
-//         ServerLoad {
-//             cluster_name: cluster_name.to_string(),
-//             ip2load: ip2load,
-//             #[cfg(feature = "server_stats")]
-//             load_trace: load_trace,
-//         }
-//     }
-//     fn update(&self, src_ip: u32, src_port: u16, delta: f64) -> Result<(), ()> {
-//         if let Some(server_load) = self.ip2load.get(&src_ip) {
-//             server_load[src_port as usize]
-//                 .write()
-//                 .unwrap()
-//                 .update(delta);
-//             Ok(())
-//         } else {
-//             Err(())
-//         }
-//     }
-//     #[cfg(feature = "server_stats")]
-//     fn update_trace(&self, src_ip: u32, src_port: u16, curr_rdtsc: u64, delta: f64) {
-//         if let Some(server_trace) = self.load_trace.get(&src_ip) {
-//             server_trace[src_port as usize]
-//                 .write()
-//                 .unwrap()
-//                 .push((curr_rdtsc, delta));
-//         }
-//     }
-//     fn avg_server(&self, ip: u32) -> f64 {
-//         let server_load = self.ip2load.get(&ip).unwrap();
-//         let num_cores = server_load.len() as f64;
-//         let mut total = 0f64;
-//         for core_load in server_load.iter() {
-//             total += core_load.read().unwrap().avg();
-//         }
-//         total / num_cores
-//     }
-//     fn avg_all(&self) -> f64 {
-//         let mut total = 0f64;
-//         let num_servers = self.ip2load.len() as f64;
-//         for &ip in self.ip2load.keys() {
-//             total += self.avg_server(ip);
-//         }
-//         total / num_servers
-//     }
-//     #[cfg(feature = "server_stats")]
-//     fn write_trace(&self){
-//         let load_trace = self.load_trace.read()
-//     }
-// }
-// #[cfg(feature = "server_stats")]
-// impl fmt::Display for ServerLoad {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         writeln!(f, "#######{}#######", self.cluster_name)?;
-//         for &ip in self.ip2load.keys() {
-//             writeln!(f, "ip {}", ip)?;
-//             let server_load = self.ip2load.get(&ip).unwrap();
-//             // let mut server_total = 0f64;
-//             // let mut server_total_moving = 0f64;
-//             // let num_cores = server_load.len() as f64;
-//             for (i, core_load) in server_load.iter().enumerate() {
-//                 let core_load = core_load.read().unwrap();
-//                 // server_total += core_load.avg.E_x;
-//                 // server_total_moving += core_load.avg();
-//                 writeln!(f, "    core {} {}", i, *core_load)?;
-//             }
-//             // writeln!(f,"    ip {} avg {} moving {}", ip,server_total/num_cores,server_total_moving/num_cores)?;
-//         }
-//         Ok(())
-//     }
-// }
-
 #[derive(Default)]
 struct Slot {
     counter: usize,
@@ -743,41 +564,43 @@ impl LoadBalancer {
         &self,
         src_ip: u32,
         src_port: u16,
-        curr_rdtsc: u64,
-        server_load: f64,
+        // curr_rdtsc: u64,
+        queue_length: f64,
         task_duration_cv: f64,
     ) {
         // set to -1 after the first rpc resp packet in that round
-        if server_load < 0.0 || task_duration_cv == 0.0 {
+        if queue_length < 0.0 || task_duration_cv == 0.0 {
             return;
         }
-        if let Ok(_) =
-            self.xloop
-                .storage_load
-                .update(src_ip, src_port, curr_rdtsc - self.start, server_load)
+        if let Ok(_) = self
+            .xloop
+            .storage_load
+            // .update(src_ip, src_port, curr_rdtsc - self.start, server_load)
+            .update_load(src_ip, src_port, queue_length, task_duration_cv)
         {
-            #[cfg(feature = "server_stats")]
-            self.xloop.storage_load.update_trace(
-                src_ip,
-                src_port,
-                curr_rdtsc,
-                server_load,
-                task_duration_cv,
-                self.id,
-            );
+            // #[cfg(feature = "server_stats")]
+            // self.xloop.storage_load.update_trace(
+            //     src_ip,
+            //     src_port,
+            //     curr_rdtsc,
+            //     server_load,
+            //     task_duration_cv,
+            //     self.id,
+            // );
         } else {
             self.xloop
                 .compute_load
-                .update(src_ip, src_port, curr_rdtsc - self.start, server_load);
-            #[cfg(feature = "server_stats")]
-            self.xloop.compute_load.update_trace(
-                src_ip,
-                src_port,
-                curr_rdtsc,
-                server_load,
-                task_duration_cv,
-                self.id,
-            );
+                // .update(src_ip, src_port, curr_rdtsc - self.start, server_load);
+                .update_load(src_ip, src_port, queue_length, task_duration_cv);
+            // #[cfg(feature = "server_stats")]
+            // self.xloop.compute_load.update_trace(
+            //     src_ip,
+            //     src_port,
+            //     curr_rdtsc,
+            //     server_load,
+            //     task_duration_cv,
+            //     self.id,
+            // );
         }
     }
 
@@ -816,7 +639,7 @@ impl LoadBalancer {
                                     self.update_load(
                                         src_ip,
                                         src_port,
-                                        curr_rdtsc,
+                                        // curr_rdtsc,
                                         hdr.server_load,
                                         hdr.task_duration_cv,
                                         // #[cfg(feature = "server_stats")]
@@ -857,6 +680,9 @@ impl LoadBalancer {
                         // let ql_storage = self.storage_load.avg_all();
                         // let ql_compute = self.compute_load.avg_all();
                         self.xloop.update_x(&self.partition, curr_rdtsc);
+                        // reset even if not updated
+                        self.dispatcher.sender2storage.send_reset();
+                        self.dispatcher.sender2compute.send_reset();
                         // self.xloop
                         //     .xloop(&self.partition, curr_rdtsc, ql_storage, ql_compute);
                     }
@@ -906,13 +732,13 @@ impl LoadBalancer {
             if !already_finished {
                 self.tput = self.global_recvd.load(Ordering::Relaxed) as f64
                     / cycles::to_seconds(self.stop - self.start);
+                self.dispatcher.sender2storage.send_reset();
+                self.dispatcher.sender2compute.send_reset();
             }
             // #[cfg(feature = "queue_len")]
             // self.dispatcher.sender2compute.send_terminate();
             // #[cfg(feature = "queue_len")]
             // self.dispatcher.sender2storage.send_terminate();
-            self.dispatcher.sender2storage.send_reset();
-            self.dispatcher.sender2compute.send_reset();
         }
     }
 }
@@ -1127,12 +953,18 @@ fn main() {
     // Stop the client.
     net_context.stop();
 
-    #[cfg(feature = "server_stats")]
-    storage_load.print_trace();
-    // storage_load.write_trace();
-    #[cfg(feature = "server_stats")]
-    compute_load.print_trace();
-    // compute_load.write_trace();
+    let (ql_storage_raw, cv_storage) = storage_load.avg_all();
+    let (ql_compute_raw, cv_compute) = compute_load.avg_all();
+    print!("{}", storage_load);
+    println!("storage summary ql {} cv {}", ql_storage_raw, cv_storage);
+    print!("{}", compute_load);
+    println!("compute summary ql {} cv {}", ql_compute_raw, cv_compute);
+    // #[cfg(feature = "server_stats")]
+    // storage_load.print_trace();
+    // // storage_load.write_trace();
+    // #[cfg(feature = "server_stats")]
+    // compute_load.print_trace();
+    // // compute_load.write_trace();
 }
 
 // #[cfg(test)]

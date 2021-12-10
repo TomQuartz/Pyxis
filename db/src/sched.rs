@@ -47,6 +47,8 @@ use master::Master;
 use rpc::*;
 use sandstorm::common;
 use service::Service;
+use std::fmt;
+use std::fmt::Write;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -164,7 +166,7 @@ struct TaskManager {
     master_service: Arc<Master>,
     // resp_hdr: PacketHeaders,
     // // pub ready: VecDeque<Box<Task>>,
-    // responses: Vec<Packet<IpHeader, EmptyMetadata>>,
+    responses: Vec<Packet<IpHeader, EmptyMetadata>>,
 }
 impl TaskManager {
     fn new(master_service: Arc<Master>) -> TaskManager {
@@ -172,7 +174,7 @@ impl TaskManager {
             master_service: master_service,
             // resp_hdr: resp_hdr,
             // ready: VecDeque::with_capacity(32),
-            // responses: vec![],
+            responses: vec![],
         }
     }
     fn create_response(
@@ -283,30 +285,103 @@ impl TaskManager {
     fn run_task(
         &mut self,
         mut task: Box<Task>,
-        mut queue_len: f64,
+        queue_len: &mut f64,
         task_duration_cv: f64,
-    ) -> Option<Vec<Packet<IpHeader, EmptyMetadata>>> {
+        // ) -> Option<Vec<Packet<IpHeader, EmptyMetadata>>> {
+    ) {
         if task.run().0 == COMPLETED {
             // The task finished execution, check for request and response packets. If they
             // exist, then free the request packet, and enqueue the response packet.
-            if let Some((req, resps)) = unsafe { task.tear(&mut queue_len, task_duration_cv) } {
+            if let Some((req, resps)) = unsafe { task.tear(queue_len, task_duration_cv) } {
                 trace!("task complete");
                 req.free_packet();
-                return Some(
-                    resps
-                        .into_iter()
-                        .map(|resp| rpc::fixup_header_length_fields(resp))
-                        .collect::<Vec<_>>(),
-                );
-                // for resp in resps.into_iter() {
-                //     self.responses.push(rpc::fixup_header_length_fields(resp));
-                // }
+                // return Some(
+                //     resps
+                //         .into_iter()
+                //         .map(|resp| rpc::fixup_header_length_fields(resp))
+                //         .collect::<Vec<_>>(),
+                // );
+                for resp in resps.into_iter() {
+                    self.responses.push(rpc::fixup_header_length_fields(resp));
+                }
                 // self.responses
                 //     .write()
                 //     .push(rpc::fixup_header_length_fields(res));
             }
         }
-        None
+        // None
+    }
+}
+
+pub struct MovingTimeAvg {
+    moving_avg: f64,
+    elapsed: f64,
+    latest: f64,
+    last_time: u64,
+    moving_exp: f64,
+    counter: f64,
+    E_x: f64,
+    E_x2: f64,
+    // #[cfg(feature = "queue_len")]
+    // avg: Avg,
+}
+impl MovingTimeAvg {
+    pub fn new(moving_exp: f64) -> MovingTimeAvg {
+        MovingTimeAvg {
+            moving_avg: 0.0,
+            elapsed: 0.0,
+            latest: 0.0,
+            last_time: 0,
+            moving_exp: moving_exp,
+            counter: 0.0,
+            E_x: 0.0,
+            E_x2: 0.0,
+            // #[cfg(feature = "queue_len")]
+            // avg: Avg::new(),
+        }
+    }
+    // reset after xloop changes parition
+    pub fn reset(&mut self) {
+        self.moving_avg = 0.0;
+        self.elapsed = 0.0;
+        self.counter = 0.0;
+        self.E_x = 0.0;
+        self.E_x2 = 0.0;
+    }
+    pub fn update(&mut self, current_time: u64, new: f64) {
+        if self.elapsed > 0.0 || new > 0.0 {
+            let elapsed = (current_time - self.last_time) as f64;
+            self.elapsed = self.elapsed * self.moving_exp + elapsed;
+            let update_ratio = elapsed / self.elapsed;
+            let interval_avg = (self.latest + new) / 2.0;
+            self.moving_avg = self.moving_avg * (1.0 - update_ratio) + interval_avg * update_ratio;
+            // mean
+            self.counter += 1.0;
+            self.E_x =
+                self.E_x * ((self.counter - 1.0) / self.counter) + interval_avg / self.counter;
+            self.E_x2 = self.E_x2 * ((self.counter - 1.0) / self.counter)
+                + interval_avg * interval_avg / self.counter;
+            self.latest = new;
+        }
+        // sync
+        self.last_time = current_time;
+        // #[cfg(feature = "queue_len")]
+        // self.avg.update(delta_avg);
+    }
+    pub fn avg(&self) -> f64 {
+        self.moving_avg
+    }
+}
+impl fmt::Display for MovingTimeAvg {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "moving {:.2} elapsed {:.2} mean {:.2} std {:.2} ",
+            self.moving_avg,
+            self.elapsed,
+            self.E_x,
+            (self.E_x2 - self.E_x * self.E_x).sqrt()
+        )
     }
 }
 
@@ -314,21 +389,69 @@ pub struct CoeffOfVar {
     counter: f64,
     E_x: f64,
     E_x2: f64,
+    // counter_type: Vec<f64>,
+    // E_x_type: Vec<f64>,
+    // E_x2_type: Vec<f64>,
+    // ql: f64,
+    // counter_ql: f64,
 }
 impl CoeffOfVar {
+    // pub fn update_ql(&mut self, ql: f64) {
+    //     if self.counter == 0.0 {
+    //         return;
+    //     }
+    //     self.counter_ql += 1.0;
+    //     self.ql = self.ql * ((self.counter_ql - 1.0) / self.counter_ql) + ql / self.counter_ql;
+    // }
     pub fn new() -> CoeffOfVar {
         CoeffOfVar {
             counter: 0.0,
             E_x: 0.0,
             E_x2: 0.0,
+            // counter_type: vec![0.0, 0.0],
+            // E_x_type: vec![0.0, 0.0],
+            // E_x2_type: vec![0.0, 0.0],
+            // counter_ql: 0.0,
+            // ql: 0.0,
         }
     }
     pub fn reset(&mut self) {
+        let mut s = String::new();
+        // writeln!(s, "#########################");
+        // writeln!(s, "ql counter {:.0} ql {:.2}", self.counter_ql, self.ql);
+        // self.counter_ql = 0.0;
+        // self.ql = 0.0;
+        // for i in 0..self.counter_type.len() {
+        //     writeln!(
+        //         s,
+        //         "counter {:.2} mean {:.2} std {:.2}",
+        //         self.counter_type[i],
+        //         self.E_x_type[i],
+        //         self.E_x2_type[i].sqrt()
+        //     );
+        // }
+        // self.counter_type.clear();
+        // self.E_x_type.clear();
+        // self.E_x2_type.clear();
+        // writeln!(s, "    mean {:.2} std {:.2}", self.E_x, self.E_x2.sqrt());
         self.counter = 0.0;
         self.E_x = 0.0;
         self.E_x2 = 0.0;
+        // println!("{}", s);
     }
-    pub fn update(&mut self, delta: f64) {
+    pub fn update(&mut self, delta: f64 /*, type_id: usize*/) {
+        // while type_id >= self.counter_type.len() {
+        //     self.counter_type.push(0.0);
+        //     self.E_x_type.push(0.0);
+        //     self.E_x2_type.push(0.0);
+        // }
+        // self.counter_type[type_id] += 1.0;
+        // self.E_x_type[type_id] = self.E_x_type[type_id]
+        //     * ((self.counter_type[type_id] - 1.0) / self.counter_type[type_id])
+        //     + delta / self.counter_type[type_id];
+        // self.E_x2_type[type_id] = self.E_x2_type[type_id]
+        //     * ((self.counter_type[type_id] - 1.0) / self.counter_type[type_id])
+        //     + delta * delta / self.counter_type[type_id];
         self.counter += 1.0;
         self.E_x = self.E_x * ((self.counter - 1.0) / self.counter) + delta / self.counter;
         self.E_x2 =
@@ -352,6 +475,7 @@ pub struct StorageNodeWorker {
     dispatcher: Dispatcher,
     // task_duration_cv: Arc<std::sync::RwLock<CoeffOfVar>>,
     task_duration_cv: CoeffOfVar,
+    queue_length: MovingTimeAvg,
     manager: TaskManager,
     resp_hdr: PacketHeaders,
     // NOTE: this is not net_port.txq()
@@ -389,35 +513,43 @@ impl StorageNodeWorker {
                 // reset,
             ),
             task_duration_cv: CoeffOfVar::new(),
+            queue_length: MovingTimeAvg::new(config.moving_exp),
             manager: TaskManager::new(masterservice),
             id: id,
         }
     }
-    // fn send_response(&mut self) {
-    //     let responses = &mut self.manager.responses;
-    //     self.dispatcher.sender.send_pkts(responses);
-    // }
-    fn handle_request(&mut self, mut request: Packet<UdpHeader, EmptyMetadata>) {
+    fn send_response(&mut self) {
+        let responses = &mut self.manager.responses;
+        self.dispatcher.sender.send_pkts(responses);
+    }
+    fn handle_request(
+        &mut self,
+        mut request: Packet<UdpHeader, EmptyMetadata>,
+        queue_length: &mut f64,
+    ) {
         let start = cycles::rdtsc();
         if let Some((task, op)) = self.manager.create_task(&mut self.resp_hdr, request) {
             let cv = self.task_duration_cv.cv();
             // TODO: add dispatch overhead to task time
             // NOTE: we do not report the queue len of sib queue
-            let mut ql: f64 = -1.0;
-            if op == OpCode::SandstormInvokeRpc {
-                ql = self.dispatcher.queue_length();
-            }
             // TODO: add multi-packet transmission overhead in send_response
-            if let Some(mut resps) = self.manager.run_task(task, ql, cv) {
-                self.dispatcher.sender.send_pkts(&mut resps);
-            }
+            // if let Some(mut resps) = self.manager.run_task(task, queue_length, cv) {
+            //     self.dispatcher.sender.send_pkts(&mut resps);
+            // }
+            self.manager.run_task(task, queue_length, cv);
+            self.send_response();
             let end = cycles::rdtsc();
             let duration = (end - start) as f64;
             // if self.dispatcher.reset[self.id].load(Ordering::Relaxed) {
             //     self.task_duration_cv.reset();
             //     self.dispatcher.reset[self.id].store(false, Ordering::Relaxed);
             // }
-            self.task_duration_cv.update(duration);
+            // let type_id = if op == OpCode::SandstormInvokeRpc {
+            //     0
+            // } else {
+            //     1
+            // };
+            self.task_duration_cv.update(duration /*, type_id*/);
             // self.task_duration_cv.write().unwrap().update(duration);
         }
     }
@@ -444,13 +576,17 @@ impl Executable for StorageNodeWorker {
             self.dispatcher.recv();
             if self.dispatcher.reset() {
                 self.task_duration_cv.reset();
+                self.queue_length.reset();
             }
-            if self.dispatcher.length > 0.0 {
+            let ql = self.dispatcher.length;
+            self.queue_length.update(cycles::rdtsc(), ql);
+            let mut moving_avg = self.queue_length.avg();
+            if ql > 0.0 {
                 while let Some(packet) = self.dispatcher.poll() {
-                    self.handle_request(packet);
+                    self.handle_request(packet, &mut moving_avg);
                 }
             } else if let Some(packet) = self.dispatcher.poll_sib() {
-                self.handle_request(packet);
+                self.handle_request(packet, &mut moving_avg);
             }
             // if let Some(mut requests) = self.dispatcher.recv() {
             //     while let Some(request) = requests.pop(){

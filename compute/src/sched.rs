@@ -22,7 +22,7 @@ use super::dispatch::*;
 use super::proxy::ProxyDB;
 
 use db::config::{ComputeConfig, NetConfig};
-use db::dispatch::{Dispatcher, PacketHeaders, Queue, Sender};
+use db::dispatch::{PacketHeaders, Queue, Sender};
 use db::master::Master;
 use db::task::{Task, TaskPriority, TaskState, TaskState::*};
 
@@ -36,7 +36,7 @@ use db::e2d2::headers::*;
 use db::e2d2::interface::*;
 use db::e2d2::scheduler::Executable;
 use db::rpc::{self, *};
-use db::sched::CoeffOfVar;
+use db::sched::{CoeffOfVar, MovingTimeAvg};
 use db::wireformat::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::RwLock;
@@ -238,11 +238,16 @@ impl TaskManager {
         (taskstate, time)
     }
     */
-    pub fn execute_task(&mut self, mut task: Box<Task>, mut queue_len: f64, task_duration_cv: f64) {
+    pub fn execute_task(
+        &mut self,
+        mut task: Box<Task>,
+        queue_len: &mut f64,
+        task_duration_cv: f64,
+    ) {
         // let mut task = self.ready.pop_front().unwrap();
         if task.run().0 == COMPLETED {
             trace!("task complete");
-            if let Some((req, resps)) = unsafe { task.tear(&mut queue_len, task_duration_cv) } {
+            if let Some((req, resps)) = unsafe { task.tear(queue_len, task_duration_cv) } {
                 req.free_packet();
                 trace!("push resps");
                 for resp in resps.into_iter() {
@@ -545,6 +550,7 @@ pub struct ComputeNodeWorker {
     // this is dynamic, i.e. resp dst is set as req src upon recving new reqs
     resp_hdr: PacketHeaders,
     id: usize,
+    length: MovingTimeAvg,
     // reset: Arc<AtomicBool>,
     // last_run: u64,
     // #[cfg(feature = "queue_len")]
@@ -607,6 +613,7 @@ impl ComputeNodeWorker {
             manager: TaskManager::new(Arc::clone(&masterservice)),
             // manager: manager,
             id: id,
+            length: MovingTimeAvg::new(config.moving_exp),
             // last_run: 0,
             // #[cfg(feature = "queue_len")]
             // timestamp: timestamp,
@@ -681,19 +688,18 @@ impl ComputeNodeWorker {
             self.dispatcher.sender.send_pkts(resps);
         }
     }
-    pub fn handle_rpc(&mut self, packet: Packet<UdpHeader, EmptyMetadata>) {
+    pub fn handle_rpc(&mut self, packet: Packet<UdpHeader, EmptyMetadata>, queue_length: &mut f64) {
         let start = cycles::rdtsc();
         let (task, op) = self.dispatch(packet);
         if let Some(task) = task {
             let cv = self.task_duration_cv.cv();
             // TODO: add dispatch overhead to task time
             // NOTE: we do not report the queue len of sib queue
-            let ql = self.dispatcher.queue_length();
             // TODO: add multi-packet transmission overhead in send_response
             // if let Some(mut resps) = self.manager.execute_task(task, ql, cv) {
             //     self.dispatcher.sender.send_pkts(&mut resps);
             // }
-            self.manager.execute_task(task, ql, cv);
+            self.manager.execute_task(task, queue_length, cv);
             self.send_response();
             let end = cycles::rdtsc();
             let duration = (end - start) as f64;
@@ -701,7 +707,12 @@ impl ComputeNodeWorker {
             //     self.task_duration_cv.reset();
             //     self.dispatcher.reset[self.id].store(false, Ordering::Relaxed);
             // }
-            self.task_duration_cv.update(duration);
+            // let type_id = if op == OpCode::SandstormInvokeRpc {
+            //     0
+            // } else {
+            //     2
+            // };
+            self.task_duration_cv.update(duration /*, type_id*/);
         } else if op == OpCode::SandstormGetRpc {
             let end = cycles::rdtsc();
             let duration = (end - start) as f64;
@@ -709,7 +720,7 @@ impl ComputeNodeWorker {
             //     self.task_duration_cv.reset();
             //     self.dispatcher.reset[self.id].store(false, Ordering::Relaxed);
             // }
-            self.task_duration_cv.update(duration);
+            self.task_duration_cv.update(duration /*, 1*/);
         }
     }
 
@@ -863,22 +874,32 @@ impl Executable for ComputeNodeWorker {
         //         self.dispatcher.steal();
         //     }
         // }
+        // TODO: put only invoke req in queue
         loop {
             // if let Some(mut packets) = self.dispatcher.recv() {
             //     while let Some(packet) = packets.pop() {
             //         self.handle_rpc(packet);
             //     }
             // }
-            self.dispatcher.recv();
+            let get_resps = self.dispatcher.recv();
             if self.dispatcher.reset() {
                 self.task_duration_cv.reset();
+                self.length.reset();
             }
-            if self.dispatcher.length > 0.0 {
+            let ql = self.dispatcher.length;
+            self.length.update(cycles::rdtsc(), ql);
+            let mut queue_length = self.length.avg();
+            if let Some(resps) = get_resps {
+                for resp in resps.into_iter() {
+                    self.handle_rpc(resp, &mut queue_length);
+                }
+            }
+            if ql > 0.0 {
                 while let Some(packet) = self.dispatcher.poll() {
-                    self.handle_rpc(packet);
+                    self.handle_rpc(packet, &mut queue_length);
                 }
             } else if let Some(packet) = self.dispatcher.poll_sib() {
-                self.handle_rpc(packet);
+                self.handle_rpc(packet, &mut queue_length);
             }
             // if let Ok(_) = self.dispatcher.recv() {
             //     loop {

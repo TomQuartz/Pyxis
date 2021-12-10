@@ -39,11 +39,205 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use atomic_float::AtomicF64;
-use db::dispatch::{Receiver, Sender};
+use db::sched::MovingTimeAvg;
+use db::dispatch::{Queue, Receiver, Sender};
 use db::e2d2::scheduler::Executable;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
 use std::sync::RwLock;
+
+pub struct Dispatcher {
+    pub sender: Rc<Sender>,
+    pub receiver: Receiver,
+    // for all ports
+    pub queue: Arc<Queue>,
+    pub sib_queue: Option<Arc<Queue>>,
+    // for all workers using this port
+    // pub reset: Vec<Arc<AtomicBool>>,
+    // time_avg: MovingTimeAvg,
+    pub length: f64,
+}
+
+impl Dispatcher {
+    pub fn new(
+        net_port: CacheAligned<PortQueue>,
+        // sib_port: Option<CacheAligned<PortQueue>>,
+        src: &NetConfig,
+        endpoints: &Vec<NetConfig>,
+        max_rx_packets: usize,
+        queue: Arc<Queue>,
+        sib_queue: Option<Arc<Queue>>,
+        // reset: Vec<Arc<AtomicBool>>,
+        // moving_exp: f64,
+    ) -> Dispatcher {
+        Dispatcher {
+            sender: Rc::new(Sender::new(net_port.clone(), src, endpoints)),
+            receiver: Receiver::new(net_port, /*sib_port, */ max_rx_packets, &src.ip_addr),
+            queue: queue,
+            sib_queue: sib_queue,
+            // reset: reset,
+            // time_avg: MovingTimeAvg::new(moving_exp),
+            // queue: RwLock::new(VecDeque::with_capacity(config.max_rx_packets)),
+            length: -1.0,
+        }
+    }
+    /// get a packet from common queue
+    pub fn poll(&self) -> Option<Packet<UdpHeader, EmptyMetadata>> {
+        // reset by sib port
+        // if self.queue.reset.load(Ordering::Relaxed) {
+        //     self.queue.reset.store(false, Ordering::Relaxed);
+        //     self.reset_workers();
+        // }
+        self.queue.queue.write().unwrap().pop_front()
+        // if let Some(packet,_) = self.queue.queue.write().unwrap().pop_front(){
+        //     Some(packet)
+        // }else{
+        //     None
+        // }
+    }
+    pub fn poll_sib(&self) -> Option<Packet<UdpHeader, EmptyMetadata>> {
+        if let Some(sib_queue) = &self.sib_queue {
+            // if let Some(packet) = sib_queue.queue.write().unwrap().pop_front(){
+            //     return Some(packet);
+            // }
+            sib_queue.queue.write().unwrap().pop_front()
+        } else {
+            None
+        }
+    }
+    // pub fn reset_workers(&self) {
+    //     for reset in &self.reset {
+    //         reset.store(true, Ordering::Relaxed);
+    //     }
+    // }
+    // pub fn queue_length(&mut self) -> f64 {
+    //     // self.queue.length.swap(-1.0, Ordering::Relaxed)
+    //     self.length.avg()
+    // }
+    // do not report the queue len of sib queue
+    // pub fn queue_length_sib(&self) -> f64 {
+    //     let sib_queue = self.sib_queue.unwrap();
+    //     sib_queue.length.swap(-1.0, Ordering::Relaxed);
+    // }
+    pub fn recv(&mut self) -> Option<Vec<Packet<UdpHeader, EmptyMetadata>>> {
+        if let Some(mut packets) = self.receiver.recv() {
+            let num_recvd = packets.len();
+            if num_recvd > 0 {
+                let mut queue = self.queue.queue.write().unwrap();
+                let mut get_resps = vec![];
+                for (packet, _) in packets.into_iter() {
+                    if rpc::parse_rpc_opcode(&packet) == OpCode::SandstormGetRpc {
+                        get_resps.push(packet);
+                    } else {
+                        queue.push_back(packet);
+                    }
+                }
+                // queue.extend(packets.into_iter().map(|(packet, _)| packet));
+                self.length = num_recvd as f64;
+                return Some(get_resps);
+            }
+        }
+        self.length = 0.0;
+        None
+    }
+    pub fn reset(&mut self) -> bool {
+        if self.receiver.reset {
+            self.receiver.reset = false;
+            true
+        } else {
+            false
+        }
+    }
+    /*
+    // a wrapper around Receiver.recv
+    // mainly for reset and queue length
+    // pub fn recv(&mut self) -> Option<Vec<Packet<UdpHeader, EmptyMetadata>>> {
+    pub fn recv(&mut self) -> Result<(), ()> {
+        // if let Ok(_) =
+        //     self.queue
+        //         .rx_lock
+        //         .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+        {
+            // NOTE: the rx_lock is immediately released after calling recv
+            // but it is not useful since few packets would arrive within a short interval
+            let packets = self.receiver.recv();
+            // self.queue.rx_lock.store(false, Ordering::Relaxed);
+            if let Some(mut packets) = packets {
+                trace!("dispatcher recv {} packets", packets.len());
+                if packets.len() > 0 {
+                    // let current_time = cycles::rdtsc();
+                    let mut queue = self.queue.queue.write().unwrap();
+                    // let mut queue = vec![];
+                    while let Some((packet, _)) = packets.pop() {
+                        if parse_rpc_opcode(&packet) == OpCode::ResetRpc {
+                            // reset
+                            // this will create bottleneck since all workers attempts to write
+                            // self.task_duration_cv.write().unwrap().reset();
+                            self.reset_workers();
+                            // TODO: reset queue
+                            packet.free_packet();
+                        } else {
+                            // queue.push(packet);
+                            queue.push_back(packet);
+                        }
+                    }
+                    // NOTE: we only update queue len upon receiving packets
+                    let queue_len = queue.len() as f64;
+                    // self.time_avg.update(current_time, queue_len);
+                    // self.queue.length.store(queue_len, Ordering::Relaxed);
+                    self.length = queue_len;
+                    return Ok(());
+                    // return Some(queue);
+                }
+            }
+        }
+        Err(())
+        // None
+    }
+    */
+    /*
+    pub fn steal(&mut self) -> Result<(), ()> {
+        if let Ok(_) = self.sib_queue.as_ref().unwrap().rx_lock.compare_exchange(
+            false,
+            true,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            let packets = self.receiver.steal();
+            self.sib_queue
+                .as_ref()
+                .unwrap()
+                .rx_lock
+                .store(false, Ordering::Relaxed);
+            if let Some(mut packets) = packets {
+                trace!("dispatcher steal {} packets", packets.len());
+                if packets.len() > 0 {
+                    // let current_time = cycles::rdtsc();
+                    let sib_queue = self.sib_queue.as_ref().unwrap();
+                    let mut queue = sib_queue.queue.write().unwrap();
+                    while let Some((packet, _)) = packets.pop() {
+                        if parse_rpc_opcode(&packet) == OpCode::ResetRpc {
+                            // reset
+                            // this will create bottleneck since all workers attempts to write
+                            // self.task_duration_cv.write().unwrap().reset();
+                            sib_queue.reset.store(true, Ordering::Relaxed);
+                            // TODO: reset queue
+                            packet.free_packet();
+                        } else {
+                            queue.push_back(packet);
+                        }
+                    }
+                    let queue_len = queue.len() as f64;
+                    // self.time_avg.update(current_time, queue_len);
+                    sib_queue.length.store(queue_len, Ordering::Relaxed);
+                    return Ok(());
+                }
+            }
+        }
+        Err(())
+    }
+    */
+}
 
 // /// A simple RPC request generator for Sandstorm.
 // // TODO: the dst_ports available for each endpoint may be different, make dst_ports a vec
@@ -792,57 +986,6 @@ impl LBDispatcher {
 //     }
 // }
 
-struct MovingTimeAvg {
-    moving_avg: f64,
-    elapsed: f64,
-    latest: f64,
-    last_time: u64,
-    moving_exp: f64,
-    // #[cfg(feature = "queue_len")]
-    // avg: Avg,
-}
-impl MovingTimeAvg {
-    fn new(moving_exp: f64) -> MovingTimeAvg {
-        MovingTimeAvg {
-            moving_avg: 0.0,
-            elapsed: 0.0,
-            latest: 0.0,
-            last_time: 0,
-            moving_exp: moving_exp,
-            // #[cfg(feature = "queue_len")]
-            // avg: Avg::new(),
-        }
-    }
-    // reset after xloop changes parition
-    fn reset(&mut self) {
-        self.moving_avg = 0.0;
-        self.elapsed = 0.0;
-    }
-    fn update(&mut self, current_time: u64, new: f64) {
-        let elapsed = (current_time - self.last_time) as f64;
-        self.elapsed = self.elapsed * self.moving_exp + elapsed;
-        let update_ratio = elapsed / self.elapsed;
-        let interval_avg = (self.latest + new) / 2.0;
-        self.moving_avg = self.moving_avg * (1.0 - update_ratio) + interval_avg * update_ratio;
-        // sync
-        self.last_time = current_time;
-        self.latest = new;
-        // #[cfg(feature = "queue_len")]
-        // self.avg.update(delta_avg);
-    }
-    fn avg(&self) -> f64 {
-        self.moving_avg
-    }
-}
-// impl fmt::Display for MovingTimeAvg {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         write!(
-//             f,
-//             "moving {:.2} elapsed {:.2} latest {:.2}",
-//             self.moving_avg, self.elapsed, self.latest
-//         )
-//     }
-// }
 /*
 pub struct Dispatcher {
     receiver: Receiver,
