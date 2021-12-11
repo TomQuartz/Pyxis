@@ -16,6 +16,84 @@ pub trait XInterface {
     fn update(&self, delta_x: Self::X);
     fn get(&self) -> Self::X;
 }
+struct MovingTimeAvg {
+    moving_avg: f64,
+    elapsed: f64,
+    latest: f64,
+    last_time: u64,
+    moving_exp: f64,
+    counter: f64,
+    E_x: f64,
+    E_x2: f64,
+    // #[cfg(feature = "queue_len")]
+    // avg: Avg,
+}
+impl MovingTimeAvg {
+    fn new(/*moving_exp: f64*/) -> MovingTimeAvg {
+        MovingTimeAvg {
+            moving_avg: 0.0,
+            elapsed: 0.0,
+            latest: 0.0,
+            last_time: 0,
+            moving_exp: 1.0,
+            counter: 0.0,
+            E_x: 0.0,
+            E_x2: 0.0,
+            // #[cfg(feature = "queue_len")]
+            // avg: Avg::new(),
+        }
+    }
+    // reset after xloop changes parition
+    fn reset(&mut self) {
+        self.moving_avg = 0.0;
+        self.elapsed = 0.0;
+        self.counter = 0.0;
+        self.E_x = 0.0;
+        self.E_x2 = 0.0;
+    }
+    fn update(&mut self, current_time: u64, new: f64) {
+        if self.elapsed > 0.0 || new > 0.0 {
+            let elapsed = (current_time - self.last_time) as f64;
+            self.elapsed = self.elapsed * self.moving_exp + elapsed;
+            let update_ratio = elapsed / self.elapsed;
+            let interval_avg = (self.latest + new) / 2.0;
+            self.moving_avg = self.moving_avg * (1.0 - update_ratio) + interval_avg * update_ratio;
+            // mean
+            self.counter += 1.0;
+            self.E_x =
+                self.E_x * ((self.counter - 1.0) / self.counter) + interval_avg / self.counter;
+            self.E_x2 = self.E_x2 * ((self.counter - 1.0) / self.counter)
+                + interval_avg * interval_avg / self.counter;
+            self.latest = new;
+        }
+        // sync
+        self.last_time = current_time;
+        // #[cfg(feature = "queue_len")]
+        // self.avg.update(delta_avg);
+    }
+    fn avg(&self) -> f64 {
+        self.moving_avg
+    }
+    fn mean(&self)->f64{
+        self.E_x
+    }
+    fn std(&self) -> f64 {
+        (self.E_x2 - self.E_x * self.E_x).sqrt()
+    }
+}
+impl fmt::Display for MovingTimeAvg {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "moving {:.2} elapsed {:.2} mean {:.2} std {:.2} counter {}",
+            self.moving_avg,
+            self.elapsed,
+            self.E_x,
+            self.std(),
+            self.counter as usize,
+        )
+    }
+}
 /*
 struct TimeAvg {
     time_avg: f64,
@@ -37,6 +115,10 @@ impl TimeAvg {
             // avg: Avg::new(),
         }
     }
+    fn reset(&mut self){
+        self.time_avg = 0.0;
+        self.elapsed = 0.0;
+    }
     fn update(&mut self, current_time: u64, new: f64) {
         let elapsed = (current_time - self.last_time) as f64;
         self.elapsed += elapsed;
@@ -54,7 +136,6 @@ impl TimeAvg {
     }
 }
 */
-
 struct Avg {
     counter: f64,
     lastest: f64,
@@ -103,18 +184,18 @@ impl fmt::Display for Avg {
 }
 
 struct CoreLoad {
-    queue_length: Avg,
+    queue_length: MovingTimeAvg,
     task_duration_cv: Avg,
 }
 impl CoreLoad {
     fn new() -> CoreLoad {
         CoreLoad {
-            queue_length: Avg::new(),
+            queue_length: MovingTimeAvg::new(),
             task_duration_cv: Avg::new(),
         }
     }
-    fn update_load(&mut self, queue_length: f64, task_duration_cv: f64) {
-        self.queue_length.update(queue_length);
+    fn update_load(&mut self, current_time: u64, queue_length: f64, task_duration_cv: f64) {
+        self.queue_length.update(current_time, queue_length);
         self.task_duration_cv.update(task_duration_cv);
     }
     fn avg(&self) -> (f64, f64) {
@@ -124,25 +205,30 @@ impl CoreLoad {
         self.queue_length.reset();
         self.task_duration_cv.reset();
     }
+    fn mean(&self)->(f64,f64){
+        (self.queue_length.mean(),self.task_duration_cv.avg())
+    }
 }
 impl fmt::Display for CoreLoad {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "ql (mean {:.2} std {:.2} latest {:.2} counter {}) ",
-            self.queue_length.E_x,
-            self.queue_length.std(),
-            self.queue_length.lastest,
-            self.queue_length.counter as usize,
-        )?;
-        write!(
-            f,
-            "cv (mean {:.2} std {:.2} latest {:.2} counter {}) ",
-            self.task_duration_cv.E_x,
-            self.task_duration_cv.std(),
-            self.task_duration_cv.lastest,
-            self.task_duration_cv.counter as usize,
-        )
+        write!(f,"ql ({})",self.queue_length)?;
+        write!(f,"cv ({})",self.task_duration_cv)
+        // write!(
+        //     f,
+        //     "ql (mean {:.2} std {:.2} latest {:.2} counter {}) ",
+        //     self.queue_length.E_x,
+        //     self.queue_length.std(),
+        //     self.queue_length.lastest,
+        //     self.queue_length.counter as usize,
+        // )?;
+        // write!(
+        //     f,
+        //     "cv (mean {:.2} std {:.2} latest {:.2} counter {}) ",
+        //     self.task_duration_cv.E_x,
+        //     self.task_duration_cv.std(),
+        //     self.task_duration_cv.lastest,
+        //     self.task_duration_cv.counter as usize,
+        // )
     }
 }
 
@@ -193,19 +279,19 @@ impl ServerLoad {
         &self,
         src_ip: u32,
         src_port: u16,
-        // curr_rdtsc: u64,
+        curr_rdtsc: u64,
         queue_length: f64,
         task_duration_cv: f64,
     ) -> Result<(), ()> {
         if let Some(server_load) = self.ip2load.get(&src_ip) {
-            // server_load
-            //     .write()
-            //     .unwrap()
-            //     .update(curr_rdtsc, delta);
             server_load[src_port as usize]
                 .write()
                 .unwrap()
-                .update_load(queue_length, task_duration_cv);
+                .update_load(curr_rdtsc, queue_length, task_duration_cv);
+            // server_load[src_port as usize]
+            //     .write()
+            //     .unwrap()
+            //     .update_load(queue_length, task_duration_cv);
             Ok(())
         } else {
             Err(())
@@ -251,6 +337,33 @@ impl ServerLoad {
             total_cv += cv;
         }
         (total_ql / num_servers, total_cv / num_servers)
+    }
+    pub fn mean_server(&self, ip: u32) -> f64 {
+        let server_load = self.ip2load.get(&ip).unwrap();
+        let num_cores = server_load.len() as f64;
+        let mut total_ql = 0f64;
+        // let mut total_cv = 0f64;
+        for core_load in server_load.iter() {
+            let (ql, cv) = core_load.read().unwrap().mean();
+            total_ql += ql;
+            // total_cv += cv;
+        }
+        total_ql / num_cores
+        // (total_ql / num_cores, total_cv / num_cores)
+        // server_load.read().unwrap().avg()
+    }
+    pub fn mean_all(&self) -> f64 {
+        let mut total_ql = 0f64;
+        // let mut total_cv = 0f64;
+        let num_servers = self.ip2load.len() as f64;
+        for &ip in self.ip2load.keys() {
+            // let (ql, cv) = self.avg_server(ip);
+            let ql = self.mean_server(ip);
+            total_ql += ql;
+            // total_cv += cv;
+        }
+        total_ql / num_servers
+        // (total_ql / num_servers, total_cv / num_servers)
     }
     pub fn reset(&self) {
         for &ip in self.ip2load.keys() {

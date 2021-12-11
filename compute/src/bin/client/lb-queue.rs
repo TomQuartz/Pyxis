@@ -564,7 +564,7 @@ impl LoadBalancer {
         &self,
         src_ip: u32,
         src_port: u16,
-        // curr_rdtsc: u64,
+        curr_rdtsc: u64,
         queue_length: f64,
         task_duration_cv: f64,
     ) {
@@ -572,11 +572,14 @@ impl LoadBalancer {
         if queue_length < 0.0 || task_duration_cv == 0.0 {
             return;
         }
-        if let Ok(_) = self
-            .xloop
-            .storage_load
-            // .update(src_ip, src_port, curr_rdtsc - self.start, server_load)
-            .update_load(src_ip, src_port, queue_length, task_duration_cv)
+        if let Ok(_) = self.xloop.storage_load.update_load(
+            src_ip,
+            src_port,
+            curr_rdtsc - self.start,
+            queue_length,
+            task_duration_cv,
+        )
+        // .update_load(src_ip, src_port, queue_length, task_duration_cv)
         {
             // #[cfg(feature = "server_stats")]
             // self.xloop.storage_load.update_trace(
@@ -588,10 +591,14 @@ impl LoadBalancer {
             //     self.id,
             // );
         } else {
-            self.xloop
-                .compute_load
-                // .update(src_ip, src_port, curr_rdtsc - self.start, server_load);
-                .update_load(src_ip, src_port, queue_length, task_duration_cv);
+            self.xloop.compute_load.update_load(
+                src_ip,
+                src_port,
+                curr_rdtsc - self.start,
+                queue_length,
+                task_duration_cv,
+            );
+            // .update_load(src_ip, src_port, queue_length, task_duration_cv);
             // #[cfg(feature = "server_stats")]
             // self.xloop.compute_load.update_trace(
             //     src_ip,
@@ -630,8 +637,8 @@ impl LoadBalancer {
                             RpcStatus::StatusOk => {
                                 let timestamp = hdr.common_header.stamp;
                                 if let Some(&slot_id) = self.outstanding_reqs.get(&timestamp) {
-                                    trace!("req finished");
                                     let type_id = self.slots[slot_id].type_id;
+                                    trace!("req type {} finished", type_id);
                                     packet_recvd_signal = true;
                                     self.recvd += 1;
                                     self.global_recvd.fetch_add(1, Ordering::Relaxed);
@@ -639,7 +646,7 @@ impl LoadBalancer {
                                     self.update_load(
                                         src_ip,
                                         src_port,
-                                        // curr_rdtsc,
+                                        curr_rdtsc,
                                         hdr.server_load,
                                         hdr.task_duration_cv,
                                         // #[cfg(feature = "server_stats")]
@@ -953,12 +960,20 @@ fn main() {
     // Stop the client.
     net_context.stop();
 
-    let (ql_storage_raw, cv_storage) = storage_load.avg_all();
-    let (ql_compute_raw, cv_compute) = compute_load.avg_all();
+    let (ql_storage_moving, cv_storage) = storage_load.avg_all();
+    let ql_storage_mean = storage_load.mean_all();
+    let (ql_compute_moving, cv_compute) = compute_load.avg_all();
+    let ql_compute_mean = compute_load.mean_all();
     print!("{}", storage_load);
-    println!("storage summary ql {} cv {}", ql_storage_raw, cv_storage);
+    println!(
+        "storage summary ql {:.2} mean {:.2} cv {:.2}",
+        ql_storage_moving, ql_storage_mean, cv_storage
+    );
     print!("{}", compute_load);
-    println!("compute summary ql {} cv {}", ql_compute_raw, cv_compute);
+    println!(
+        "compute summary ql {:.2} mean {:.2} cv {:.2}",
+        ql_compute_moving, ql_compute_mean, cv_compute
+    );
     // #[cfg(feature = "server_stats")]
     // storage_load.print_trace();
     // // storage_load.write_trace();

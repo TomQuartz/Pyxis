@@ -165,7 +165,7 @@ impl Executable for Dispatcher {
 struct TaskManager {
     master_service: Arc<Master>,
     // resp_hdr: PacketHeaders,
-    // // pub ready: VecDeque<Box<Task>>,
+    pub ready: VecDeque<Box<Task>>,
     responses: Vec<Packet<IpHeader, EmptyMetadata>>,
 }
 impl TaskManager {
@@ -173,7 +173,7 @@ impl TaskManager {
         TaskManager {
             master_service: master_service,
             // resp_hdr: resp_hdr,
-            // ready: VecDeque::with_capacity(32),
+            ready: VecDeque::with_capacity(32),
             responses: vec![],
         }
     }
@@ -208,7 +208,8 @@ impl TaskManager {
         &mut self,
         resp_hdr: &mut PacketHeaders,
         mut request: Packet<UdpHeader, EmptyMetadata>,
-    ) -> Option<(Box<Task>, OpCode)> {
+        // ) -> Option<(Box<Task>, OpCode)> {
+    ) {
         resp_hdr
             .udp_header
             .set_dst_port(request.get_header().src_port());
@@ -227,13 +228,14 @@ impl TaskManager {
                 op @ OpCode::SandstormInvokeRpc => {
                     let response = self.create_response(resp_hdr, &request).unwrap();
                     match self.master_service.dispatch_invoke(request, response) {
-                        Ok(task) => Some((task, op)), // self.ready.push_back(task),
+                        // Ok(task) => Some((task, op)),
+                        Ok(task) => self.ready.push_back(task),
                         Err((req, res)) => {
                             // Master returned an error. The allocated request and response packets
                             // need to be freed up.
                             req.free_packet();
                             res.free_packet();
-                            None
+                            // None
                         }
                     }
                 }
@@ -245,7 +247,8 @@ impl TaskManager {
                         responses.push(self.create_response(resp_hdr, &request).unwrap());
                     }
                     match self.master_service.get(request, responses) {
-                        Ok(task) => Some((task, op)), // self.ready.push_back(task),
+                        // Ok(task) => Some((task, op)), // self.ready.push_back(task),
+                        Ok(task) => self.ready.push_back(task),
                         Err((req, resps)) => {
                             // Master returned an error. The allocated request and response packets
                             // need to be freed up.
@@ -254,7 +257,7 @@ impl TaskManager {
                             for resp in resps.into_iter() {
                                 resp.free_packet();
                             }
-                            None
+                            // None
                         }
                     }
                 }
@@ -274,14 +277,43 @@ impl TaskManager {
                 // }
                 _ => {
                     request.free_packet();
-                    None
+                    // None
                 }
             }
         } else {
-            None
+            // None
         }
     }
     // TODO: profile overhead in dispatch
+    // fn run_task(
+    //     &mut self,
+    //     mut task: Box<Task>,
+    //     queue_len: &mut f64,
+    //     task_duration_cv: f64,
+    //     // ) -> Option<Vec<Packet<IpHeader, EmptyMetadata>>> {
+    // ) {
+    //     if task.run().0 == COMPLETED {
+    //         // The task finished execution, check for request and response packets. If they
+    //         // exist, then free the request packet, and enqueue the response packet.
+    //         if let Some((req, resps)) = unsafe { task.tear(queue_len, task_duration_cv) } {
+    //             trace!("task complete");
+    //             req.free_packet();
+    //             // return Some(
+    //             //     resps
+    //             //         .into_iter()
+    //             //         .map(|resp| rpc::fixup_header_length_fields(resp))
+    //             //         .collect::<Vec<_>>(),
+    //             // );
+    //             for resp in resps.into_iter() {
+    //                 self.responses.push(rpc::fixup_header_length_fields(resp));
+    //             }
+    //             // self.responses
+    //             //     .write()
+    //             //     .push(rpc::fixup_header_length_fields(res));
+    //         }
+    //     }
+    //     // None
+    // }
     fn run_task(
         &mut self,
         mut task: Box<Task>,
@@ -308,6 +340,8 @@ impl TaskManager {
                 //     .write()
                 //     .push(rpc::fixup_header_length_fields(res));
             }
+        } else {
+            self.ready.push_back(task);
         }
         // None
     }
@@ -522,37 +556,48 @@ impl StorageNodeWorker {
         let responses = &mut self.manager.responses;
         self.dispatcher.sender.send_pkts(responses);
     }
-    fn handle_request(
-        &mut self,
-        mut request: Packet<UdpHeader, EmptyMetadata>,
-        queue_length: &mut f64,
-    ) {
-        let start = cycles::rdtsc();
-        if let Some((task, op)) = self.manager.create_task(&mut self.resp_hdr, request) {
+    fn run_tasks(&mut self, queue_length: &mut f64) {
+        while let Some(task) = self.manager.ready.pop_front() {
+            let start = cycles::rdtsc();
             let cv = self.task_duration_cv.cv();
-            // TODO: add dispatch overhead to task time
-            // NOTE: we do not report the queue len of sib queue
-            // TODO: add multi-packet transmission overhead in send_response
-            // if let Some(mut resps) = self.manager.run_task(task, queue_length, cv) {
-            //     self.dispatcher.sender.send_pkts(&mut resps);
-            // }
             self.manager.run_task(task, queue_length, cv);
             self.send_response();
             let end = cycles::rdtsc();
             let duration = (end - start) as f64;
-            // if self.dispatcher.reset[self.id].load(Ordering::Relaxed) {
-            //     self.task_duration_cv.reset();
-            //     self.dispatcher.reset[self.id].store(false, Ordering::Relaxed);
-            // }
-            // let type_id = if op == OpCode::SandstormInvokeRpc {
-            //     0
-            // } else {
-            //     1
-            // };
-            self.task_duration_cv.update(duration /*, type_id*/);
-            // self.task_duration_cv.write().unwrap().update(duration);
+            self.task_duration_cv.update(duration);
         }
     }
+    // fn handle_request(
+    //     &mut self,
+    //     mut request: Packet<UdpHeader, EmptyMetadata>,
+    //     queue_length: &mut f64,
+    // ) {
+    //     let start = cycles::rdtsc();
+    //     if let Some((task, op)) = self.manager.create_task(&mut self.resp_hdr, request) {
+    //         let cv = self.task_duration_cv.cv();
+    //         // TODO: add dispatch overhead to task time
+    //         // NOTE: we do not report the queue len of sib queue
+    //         // TODO: add multi-packet transmission overhead in send_response
+    //         // if let Some(mut resps) = self.manager.run_task(task, queue_length, cv) {
+    //         //     self.dispatcher.sender.send_pkts(&mut resps);
+    //         // }
+    //         self.manager.run_task(task, queue_length, cv);
+    //         self.send_response();
+    //         let end = cycles::rdtsc();
+    //         let duration = (end - start) as f64;
+    //         // if self.dispatcher.reset[self.id].load(Ordering::Relaxed) {
+    //         //     self.task_duration_cv.reset();
+    //         //     self.dispatcher.reset[self.id].store(false, Ordering::Relaxed);
+    //         // }
+    //         // let type_id = if op == OpCode::SandstormInvokeRpc {
+    //         //     0
+    //         // } else {
+    //         //     1
+    //         // };
+    //         self.task_duration_cv.update(duration /*, type_id*/);
+    //         // self.task_duration_cv.write().unwrap().update(duration);
+    //     }
+    // }
 }
 
 impl Executable for StorageNodeWorker {
@@ -578,22 +623,39 @@ impl Executable for StorageNodeWorker {
                 self.task_duration_cv.reset();
                 self.queue_length.reset();
             }
-            let ql = self.dispatcher.length;
-            self.queue_length.update(cycles::rdtsc(), ql);
-            let mut moving_avg = self.queue_length.avg();
-            if ql > 0.0 {
-                while let Some(packet) = self.dispatcher.poll() {
-                    self.handle_request(packet, &mut moving_avg);
-                }
-            // } else if let Some(packet) = self.dispatcher.poll_sib() {
-            //     self.handle_request(packet, &mut moving_avg);
+            while let Some(packet) = self.dispatcher.poll() {
+                self.manager.create_task(&mut self.resp_hdr, packet);
             }
-            // if let Some(mut requests) = self.dispatcher.recv() {
-            //     while let Some(request) = requests.pop(){
-            //         self.handle_request(request);
-            //     }
-            // }
+            let mut ql = self.manager.ready.len() as f64;
+            self.queue_length.update(cycles::rdtsc(), ql);
+            if ql > 0.0 {
+                self.run_tasks(&mut ql);
+            } else if let Some(packet) = self.dispatcher.poll_sib() {
+                self.manager.create_task(&mut self.resp_hdr, packet);
+            }
         }
+        // loop {
+        //     self.dispatcher.recv();
+        //     if self.dispatcher.reset() {
+        //         self.task_duration_cv.reset();
+        //         self.queue_length.reset();
+        //     }
+        //     let ql = self.dispatcher.length;
+        //     self.queue_length.update(cycles::rdtsc(), ql);
+        //     let mut moving_avg = self.queue_length.avg();
+        //     if ql > 0.0 {
+        //         while let Some(packet) = self.dispatcher.poll() {
+        //             self.handle_request(packet, &mut moving_avg);
+        //         }
+        //     } else if let Some(packet) = self.dispatcher.poll_sib() {
+        //         self.handle_request(packet, &mut moving_avg);
+        //     }
+        //     // if let Some(mut requests) = self.dispatcher.recv() {
+        //     //     while let Some(request) = requests.pop(){
+        //     //         self.handle_request(request);
+        //     //     }
+        //     // }
+        // }
     }
     fn dependencies(&mut self) -> Vec<usize> {
         vec![]

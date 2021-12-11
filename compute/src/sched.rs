@@ -99,7 +99,8 @@ impl TaskManager {
         tenant: u32,
         name_length: usize,
         sender_service: Rc<Sender>,
-    ) -> Option<Box<Task>> {
+        // ) -> Option<Box<Task>> {
+    ) {
         let tenant_id: TenantId = tenant as TenantId;
         let name_length: usize = name_length as usize;
 
@@ -133,13 +134,13 @@ impl TaskManager {
             //     id,
             //     Box::new(Container::new(TaskPriority::REQUEST, db, ext, id)),
             // );
-            // self.ready
-            //     .push_back(Box::new(Container::new(TaskPriority::REQUEST, db, ext, id)))
-            return Some(Box::new(Container::new(TaskPriority::REQUEST, db, ext, id)));
+            self.ready
+                .push_back(Box::new(Container::new(TaskPriority::REQUEST, db, ext, id)))
+            // return Some(Box::new(Container::new(TaskPriority::REQUEST, db, ext, id)));
         } else {
             info!("Unable to create a generator for this ext of name {}", name);
         }
-        None
+        // None
     }
 
     /// Delete a waiting task from the scheduler.
@@ -174,7 +175,8 @@ impl TaskManager {
         recordlen: usize,
         segment_id: usize,
         num_segments: usize,
-    ) -> Option<Box<Task>> {
+        // ) -> Option<Box<Task>> {
+    ) {
         if let Some(mut task) = self.waiting.remove(&id) {
             if cfg!(feature = "checksum") {
                 // let (keys, records) = records.split_at(377);
@@ -193,8 +195,8 @@ impl TaskManager {
                 }
                 if ready {
                     trace!("ext id {} all segments recvd", id);
-                    // self.ready.push_back(task);
-                    return Some(task);
+                    self.ready.push_back(task);
+                    // return Some(task);
                 } else {
                     trace!("ext id {} still waiting for kv resps", id);
                     self.waiting.insert(id, task);
@@ -204,7 +206,7 @@ impl TaskManager {
         } else {
             info!("No waiting task with id {}", id);
         }
-        None
+        // None
     }
     /*
     /// This method run the task associated with an extension. And on the completion
@@ -238,12 +240,7 @@ impl TaskManager {
         (taskstate, time)
     }
     */
-    pub fn execute_task(
-        &mut self,
-        mut task: Box<Task>,
-        queue_len: &mut f64,
-        task_duration_cv: f64,
-    ) {
+    pub fn run_task(&mut self, mut task: Box<Task>, queue_len: &mut f64, task_duration_cv: f64) {
         // let mut task = self.ready.pop_front().unwrap();
         if task.run().0 == COMPLETED {
             trace!("task complete");
@@ -550,7 +547,7 @@ pub struct ComputeNodeWorker {
     // this is dynamic, i.e. resp dst is set as req src upon recving new reqs
     resp_hdr: PacketHeaders,
     id: usize,
-    length: MovingTimeAvg,
+    queue_length: MovingTimeAvg,
     // reset: Arc<AtomicBool>,
     // last_run: u64,
     // #[cfg(feature = "queue_len")]
@@ -613,7 +610,7 @@ impl ComputeNodeWorker {
             manager: TaskManager::new(Arc::clone(&masterservice)),
             // manager: manager,
             id: id,
-            length: MovingTimeAvg::new(config.moving_exp),
+            queue_length: MovingTimeAvg::new(config.moving_exp),
             // last_run: 0,
             // #[cfg(feature = "queue_len")]
             // timestamp: timestamp,
@@ -688,59 +685,72 @@ impl ComputeNodeWorker {
             self.dispatcher.sender.send_pkts(resps);
         }
     }
-    pub fn handle_rpc(&mut self, packet: Packet<UdpHeader, EmptyMetadata>, queue_length: &mut f64) {
-        let start = cycles::rdtsc();
-        let (task, op) = self.dispatch(packet);
-        if let Some(task) = task {
+    pub fn run_tasks(&mut self, queue_length: &mut f64) {
+        while let Some(task) = self.manager.ready.pop_front() {
+            let start = cycles::rdtsc();
             let cv = self.task_duration_cv.cv();
-            // TODO: add dispatch overhead to task time
-            // NOTE: we do not report the queue len of sib queue
-            // TODO: add multi-packet transmission overhead in send_response
-            // if let Some(mut resps) = self.manager.execute_task(task, ql, cv) {
-            //     self.dispatcher.sender.send_pkts(&mut resps);
-            // }
-            self.manager.execute_task(task, queue_length, cv);
+            self.manager.run_task(task, queue_length, cv);
             self.send_response();
             let end = cycles::rdtsc();
             let duration = (end - start) as f64;
-            // if self.dispatcher.reset[self.id].load(Ordering::Relaxed) {
-            //     self.task_duration_cv.reset();
-            //     self.dispatcher.reset[self.id].store(false, Ordering::Relaxed);
-            // }
-            // let type_id = if op == OpCode::SandstormInvokeRpc {
-            //     0
-            // } else {
-            //     2
-            // };
-            self.task_duration_cv.update(duration /*, type_id*/);
-        } else if op == OpCode::SandstormGetRpc {
-            let end = cycles::rdtsc();
-            let duration = (end - start) as f64;
-            // if self.dispatcher.reset[self.id].load(Ordering::Relaxed) {
-            //     self.task_duration_cv.reset();
-            //     self.dispatcher.reset[self.id].store(false, Ordering::Relaxed);
-            // }
-            self.task_duration_cv.update(duration /*, 1*/);
+            self.task_duration_cv.update(duration);
         }
     }
+    // pub fn handle_rpc(&mut self, packet: Packet<UdpHeader, EmptyMetadata>, queue_length: &mut f64) {
+    //     let start = cycles::rdtsc();
+    //     let (task, op) = self.dispatch(packet);
+    //     if let Some(task) = task {
+    //         let cv = self.task_duration_cv.cv();
+    //         // TODO: add dispatch overhead to task time
+    //         // NOTE: we do not report the queue len of sib queue
+    //         // TODO: add multi-packet transmission overhead in send_response
+    //         // if let Some(mut resps) = self.manager.execute_task(task, ql, cv) {
+    //         //     self.dispatcher.sender.send_pkts(&mut resps);
+    //         // }
+    //         self.manager.execute_task(task, queue_length, cv);
+    //         self.send_response();
+    //         let end = cycles::rdtsc();
+    //         let duration = (end - start) as f64;
+    //         // if self.dispatcher.reset[self.id].load(Ordering::Relaxed) {
+    //         //     self.task_duration_cv.reset();
+    //         //     self.dispatcher.reset[self.id].store(false, Ordering::Relaxed);
+    //         // }
+    //         // let type_id = if op == OpCode::SandstormInvokeRpc {
+    //         //     0
+    //         // } else {
+    //         //     2
+    //         // };
+    //         self.task_duration_cv.update(duration /*, type_id*/);
+    //     } else if op == OpCode::SandstormGetRpc {
+    //         let end = cycles::rdtsc();
+    //         let duration = (end - start) as f64;
+    //         // if self.dispatcher.reset[self.id].load(Ordering::Relaxed) {
+    //         //     self.task_duration_cv.reset();
+    //         //     self.dispatcher.reset[self.id].store(false, Ordering::Relaxed);
+    //         // }
+    //         self.task_duration_cv.update(duration /*, 1*/);
+    //     }
+    // }
 
     // 1. invoke_req: lb to compute
     // 2. get_resp: storage to compute
     pub fn dispatch(
         &mut self,
         packet: Packet<UdpHeader, EmptyMetadata>,
-    ) -> (Option<Box<Task>>, OpCode) {
+        // ) -> (Option<Box<Task>>, OpCode) {
+    ) {
         match parse_rpc_opcode(&packet) {
             op @ OpCode::SandstormInvokeRpc => {
                 if parse_rpc_service(&packet) == Service::MasterService {
-                    (self.dispatch_invoke(packet), op)
+                    // (self.dispatch_invoke(packet), op)
+                    self.dispatch_invoke(packet)
                 } else {
                     trace!("invalid rpc req, ignore");
                     packet.free_packet();
-                    (None, op)
+                    // (None, op)
                 }
             }
-            op @ OpCode::SandstormGetRpc => (self.process_get_resp(packet), op),
+            op @ OpCode::SandstormGetRpc => self.process_get_resp(packet), //(self.process_get_resp(packet), op),
             // #[cfg(feature = "queue_len")]
             // OpCode::TerminateRpc => {
             //     self.terminate.store(true, Ordering::Relaxed);
@@ -759,7 +769,7 @@ impl ComputeNodeWorker {
             _ => {
                 trace!("pkt is not for compute node, ignore");
                 packet.free_packet();
-                (None, OpCode::InvalidOperation)
+                // (None, OpCode::InvalidOperation)
             }
         }
     }
@@ -767,7 +777,8 @@ impl ComputeNodeWorker {
     fn process_get_resp(
         &mut self,
         response: Packet<UdpHeader, EmptyMetadata>,
-    ) -> Option<Box<Task>> {
+        // ) -> Option<Box<Task>> {
+    ) {
         let p = response.parse_header::<GetResponse>();
         let hdr = p.get_header();
         let timestamp = hdr.common_header.stamp; // this is the timestamp when this ext is inserted in taskmanager
@@ -788,13 +799,14 @@ impl ComputeNodeWorker {
                 timestamp,
                 p.get_header().common_header.status
             );
-            None
+            // None
         };
         p.free_packet();
-        task
+        // task
     }
 
-    fn dispatch_invoke(&mut self, request: Packet<UdpHeader, EmptyMetadata>) -> Option<Box<Task>> {
+    fn dispatch_invoke(&mut self, request: Packet<UdpHeader, EmptyMetadata>) /*-> Option<Box<Task>>*/
+    {
         self.resp_hdr
             .udp_header
             .set_dst_port(request.get_header().src_port());
@@ -829,7 +841,7 @@ impl ComputeNodeWorker {
         } else {
             println!("ERROR: Failed to allocate packet for response");
             request.free_packet();
-            None
+            // None
         }
     }
 
@@ -837,7 +849,8 @@ impl ComputeNodeWorker {
         &mut self,
         req: Packet<UdpHeader, EmptyMetadata>,
         res: Packet<UdpHeader, EmptyMetadata>,
-    ) -> Option<Box<Task>> {
+        // ) -> Option<Box<Task>> {
+    ) {
         let req = req.parse_header::<InvokeRequest>();
         let hdr = req.get_header();
         let tenant_id = hdr.common_header.tenant;
@@ -874,46 +887,71 @@ impl Executable for ComputeNodeWorker {
         //         self.dispatcher.steal();
         //     }
         // }
-        // TODO: put only invoke req in queue
         loop {
-            // if let Some(mut packets) = self.dispatcher.recv() {
-            //     while let Some(packet) = packets.pop() {
-            //         self.handle_rpc(packet);
-            //     }
-            // }
+            // get resp processing is not considered
             let get_resps = self.dispatcher.recv();
             if self.dispatcher.reset() {
                 self.task_duration_cv.reset();
-                self.length.reset();
+                self.queue_length.reset();
             }
-            let ql = self.dispatcher.length;
-            self.length.update(cycles::rdtsc(), ql);
-            let mut queue_length = self.length.avg();
             if let Some(resps) = get_resps {
                 for resp in resps.into_iter() {
-                    self.handle_rpc(resp, &mut queue_length);
+                    self.dispatch(resp);
                 }
             }
+            while let Some(packet) = self.dispatcher.poll() {
+                self.dispatch(packet);
+            }
+            let mut ql = self.manager.ready.len() as f64;
+            self.queue_length.update(cycles::rdtsc(), ql);
             if ql > 0.0 {
-                while let Some(packet) = self.dispatcher.poll() {
-                    self.handle_rpc(packet, &mut queue_length);
+                self.run_tasks(&mut ql);
+            } else if self.dispatcher.length == 0.0 {
+                if let Some(packet) = self.dispatcher.poll_sib() {
+                    self.dispatch(packet);
                 }
-            // } else if let Some(packet) = self.dispatcher.poll_sib() {
-            //     self.handle_rpc(packet, &mut queue_length);
             }
-            // if let Ok(_) = self.dispatcher.recv() {
-            //     loop {
-            //         let packet = self.dispatcher.queue.queue.write().unwrap().pop_front();
-            //         if let Some(packet) = packet {
-            //             self.handle_rpc(packet);
-            //         } else {
-            //             break;
-            //         }
-            //     }
-            // } else if let Some(packet) = self.dispatcher.poll_sib() {
-            //     self.handle_rpc(packet);
-            // }
         }
+        // TODO: put only invoke req in queue
+        // loop {
+        //     // if let Some(mut packets) = self.dispatcher.recv() {
+        //     //     while let Some(packet) = packets.pop() {
+        //     //         self.handle_rpc(packet);
+        //     //     }
+        //     // }
+        //     let get_resps = self.dispatcher.recv();
+        //     if self.dispatcher.reset() {
+        //         self.task_duration_cv.reset();
+        //         self.queue_length.reset();
+        //     }
+        //     let ql = self.dispatcher.length;
+        //     self.queue_length.update(cycles::rdtsc(), ql);
+        //     let mut queue_length = self.queue_length.avg();
+        //     if let Some(resps) = get_resps {
+        //         for resp in resps.into_iter() {
+        //             self.handle_rpc(resp, &mut queue_length);
+        //         }
+        //     }
+        //     if ql > 0.0 {
+        //         while let Some(packet) = self.dispatcher.poll() {
+        //             self.handle_rpc(packet, &mut queue_length);
+        //         }
+        //     } else if let Some(packet) = self.dispatcher.poll_sib() {
+        //         self.handle_rpc(packet, &mut queue_length);
+        //     }
+        //     // if let Ok(_) = self.dispatcher.recv() {
+        //     //     loop {
+        //     //         let packet = self.dispatcher.queue.queue.write().unwrap().pop_front();
+        //     //         if let Some(packet) = packet {
+        //     //             self.handle_rpc(packet);
+        //     //         } else {
+        //     //             break;
+        //     //         }
+        //     //     }
+        //     // } else if let Some(packet) = self.dispatcher.poll_sib() {
+        //     //     self.handle_rpc(packet);
+        //     // }
+        // }
     }
     /*
     fn execute(&mut self) {
