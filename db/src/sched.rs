@@ -403,7 +403,8 @@ impl MovingTimeAvg {
         // self.avg.update(delta_avg);
     }
     pub fn avg(&self) -> f64 {
-        self.moving_avg
+        // self.moving_avg
+        self.E_x
     }
 }
 impl fmt::Display for MovingTimeAvg {
@@ -467,7 +468,13 @@ impl CoeffOfVar {
         // self.counter_type.clear();
         // self.E_x_type.clear();
         // self.E_x2_type.clear();
-        // writeln!(s, "    mean {:.2} std {:.2}", self.E_x, self.E_x2.sqrt());
+        // writeln!(
+        //     s,
+        //     "mean {:.2} std {:.2} counter {} ",
+        //     self.E_x,
+        //     self.E_x2.sqrt(),
+        //     self.counter as usize,
+        // );
         self.counter = 0.0;
         self.E_x = 0.0;
         self.E_x2 = 0.0;
@@ -626,10 +633,11 @@ impl Executable for StorageNodeWorker {
             while let Some(packet) = self.dispatcher.poll() {
                 self.manager.create_task(&mut self.resp_hdr, packet);
             }
-            let mut ql = self.manager.ready.len() as f64;
-            self.queue_length.update(cycles::rdtsc(), ql);
-            if ql > 0.0 {
-                self.run_tasks(&mut ql);
+            let ql = self.manager.ready.len();
+            self.queue_length.update(cycles::rdtsc(), ql as f64);
+            let mut ql_mean = self.queue_length.avg();
+            if ql > 0 {
+                self.run_tasks(&mut ql_mean);
             } else if let Some(packet) = self.dispatcher.poll_sib() {
                 self.manager.create_task(&mut self.resp_hdr, packet);
             }

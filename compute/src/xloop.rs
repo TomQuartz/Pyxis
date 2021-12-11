@@ -85,9 +85,9 @@ impl fmt::Display for MovingTimeAvg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "moving {:.2} elapsed {:.2} mean {:.2} std {:.2} counter {}",
+            "moving {:.2} mean {:.2} std {:.2} counter {} ",
             self.moving_avg,
-            self.elapsed,
+            // self.elapsed,
             self.E_x,
             self.std(),
             self.counter as usize,
@@ -211,8 +211,8 @@ impl CoreLoad {
 }
 impl fmt::Display for CoreLoad {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,"ql ({})",self.queue_length)?;
-        write!(f,"cv ({})",self.task_duration_cv)
+        write!(f,"ql ({}) ",self.queue_length)?;
+        write!(f,"cv ({}) ",self.task_duration_cv)
         // write!(
         //     f,
         //     "ql (mean {:.2} std {:.2} latest {:.2} counter {}) ",
