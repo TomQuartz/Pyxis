@@ -403,8 +403,8 @@ impl MovingTimeAvg {
         // self.avg.update(delta_avg);
     }
     pub fn avg(&self) -> f64 {
-        // self.moving_avg
-        self.E_x
+        self.moving_avg
+        // self.E_x
     }
 }
 impl fmt::Display for MovingTimeAvg {
@@ -633,11 +633,12 @@ impl Executable for StorageNodeWorker {
             while let Some(packet) = self.dispatcher.poll() {
                 self.manager.create_task(&mut self.resp_hdr, packet);
             }
-            let ql = self.manager.ready.len();
-            self.queue_length.update(cycles::rdtsc(), ql as f64);
+            let mut ql = self.manager.ready.len() as f64;
+            self.queue_length.update(cycles::rdtsc(), ql);
             let mut ql_mean = self.queue_length.avg();
-            if ql > 0 {
-                self.run_tasks(&mut ql_mean);
+            if ql > 0.0 {
+                self.run_tasks(&mut ql);
+                // self.run_tasks(&mut ql_mean);
             } else if let Some(packet) = self.dispatcher.poll_sib() {
                 self.manager.create_task(&mut self.resp_hdr, packet);
             }

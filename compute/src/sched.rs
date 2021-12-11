@@ -902,11 +902,12 @@ impl Executable for ComputeNodeWorker {
             while let Some(packet) = self.dispatcher.poll() {
                 self.dispatch(packet);
             }
-            let ql = self.manager.ready.len();
-            self.queue_length.update(cycles::rdtsc(), ql as f64);
+            let mut ql = self.manager.ready.len() as f64;
+            self.queue_length.update(cycles::rdtsc(), ql);
             let mut ql_mean = self.queue_length.avg();
-            if ql > 0 {
-                self.run_tasks(&mut ql_mean);
+            if ql > 0.0 {
+                self.run_tasks(&mut ql);
+                // self.run_tasks(&mut ql_mean);
             } else if self.dispatcher.length == 0.0 {
                 if let Some(packet) = self.dispatcher.poll_sib() {
                     self.dispatch(packet);
