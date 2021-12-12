@@ -1,3 +1,4 @@
+use db::config::LBConfig;
 use db::cycles::rdtsc;
 use std::collections::HashMap;
 use std::fmt::{self, Write};
@@ -74,7 +75,7 @@ impl MovingTimeAvg {
     fn avg(&self) -> f64 {
         self.moving_avg
     }
-    fn mean(&self)->f64{
+    fn mean(&self) -> f64 {
         self.E_x
     }
     fn std(&self) -> f64 {
@@ -205,14 +206,14 @@ impl CoreLoad {
         self.queue_length.reset();
         self.task_duration_cv.reset();
     }
-    fn mean(&self)->(f64,f64){
-        (self.queue_length.mean(),self.task_duration_cv.avg())
+    fn mean(&self) -> (f64, f64) {
+        (self.queue_length.mean(), self.task_duration_cv.avg())
     }
 }
 impl fmt::Display for CoreLoad {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,"ql ({}) ",self.queue_length)?;
-        write!(f,"cv ({}) ",self.task_duration_cv)
+        write!(f, "ql ({}) ", self.queue_length)?;
+        write!(f, "cv ({}) ", self.task_duration_cv)
         // write!(
         //     f,
         //     "ql (mean {:.2} std {:.2} latest {:.2} counter {}) ",
@@ -284,10 +285,11 @@ impl ServerLoad {
         task_duration_cv: f64,
     ) -> Result<(), ()> {
         if let Some(server_load) = self.ip2load.get(&src_ip) {
-            server_load[src_port as usize]
-                .write()
-                .unwrap()
-                .update_load(curr_rdtsc, queue_length, task_duration_cv);
+            server_load[src_port as usize].write().unwrap().update_load(
+                curr_rdtsc,
+                queue_length,
+                task_duration_cv,
+            );
             // server_load[src_port as usize]
             //     .write()
             //     .unwrap()
@@ -502,7 +504,7 @@ pub struct QueueGrad {
     last_x: f64,
     // thresh
     thresh_ql: f64,
-    thresh_tput: f64,
+    // thresh_tput: f64,
     // monotone_thresh: f64,
     // min_range: f64,
     // lowerbound: f64,
@@ -510,7 +512,8 @@ pub struct QueueGrad {
     min_step: f64,
     max_step: f64,
     lr: f64,
-    // lr_decay: f64,
+    lr_default: f64,
+    lr_decay: f64,
     msg: String,
     // grad
     // interval: u64,
@@ -526,13 +529,15 @@ pub struct QueueGrad {
 }
 
 impl QueueGrad {
-    pub fn new(xloop_factor: u64, thresh_ql: f64, thresh_tput: f64, lr: f64, max_step: f64, min_step: f64/*, exp: f64*/,        storage_load: Arc<ServerLoad>,
+    pub fn new(
+        config: &LBConfig,
+        storage_load: Arc<ServerLoad>,
         compute_load: Arc<ServerLoad>,
-) -> QueueGrad {
+    ) -> QueueGrad {
         QueueGrad {
             storage_load: storage_load,
             compute_load: compute_load,
-            interval: CPU_FREQUENCY / xloop_factor,
+            interval: CPU_FREQUENCY / config.xloop_factor,
             last_rdtsc: 0,
             last_recvd: 0,
             // last_tput: 0.0,
@@ -540,11 +545,13 @@ impl QueueGrad {
             last_ql_storage: 0.0,
             last_ql_compute: 0.0,
             last_x: 0.0,
-            thresh_ql: thresh_ql,
-            thresh_tput: thresh_tput,
-            lr: lr, // 200?
-            min_step: min_step,
-            max_step: max_step,
+            thresh_ql: config.thresh_ql,
+            // thresh_tput: config.thresh_tput,
+            lr: config.lr, // 200?
+            lr_default: config.lr,
+            lr_decay: config.lr_decay,
+            min_step: config.min_step,
+            max_step: config.max_step,
             // exp: exp, // 0.5?
             msg: String::new(),
         }
@@ -552,12 +559,17 @@ impl QueueGrad {
     pub fn ready(&mut self, curr_rdtsc: u64) -> bool {
         curr_rdtsc - self.last_rdtsc > self.interval
     }
-    fn clamp(&self,raw_step: f64)->f64{
+    fn clamp(&self, raw_step: f64) -> f64 {
         let bounded_step = raw_step.abs().min(self.max_step);
-        bounded_step*raw_step.signum()
+        bounded_step * raw_step.signum()
     }
     /// update
-    pub fn update_x(&mut self, xinterface: &impl XInterface<X = f64>, curr_rdtsc: u64, recvd: usize) {
+    pub fn update_x(
+        &mut self,
+        xinterface: &impl XInterface<X = f64>,
+        curr_rdtsc: u64,
+        recvd: usize,
+    ) {
         let x = xinterface.get();
         let delta_x = x - self.last_x;
         // tput
@@ -581,25 +593,40 @@ impl QueueGrad {
         self.last_recvd = recvd;
         // NOTE: always update tput history because thresh_tput is based on delta
         self.last_inv_tput = inv_tput;
+        // sync on every update
+        self.last_x = x;
+        self.last_ql_storage = ql_storage;
+        self.last_ql_compute = ql_compute;
+        // update
         let mut step: f64 = 0.0;
         let mut step_raw: f64 = 0.0;
         // NOTE: suppress variation with two thresh
-        if ql_diff.abs() > self.thresh_ql && delta_inv_tput.abs() > self.thresh_tput{
-            if delta_ql_diff * ql_diff < 0.0{
-                step_raw = self.lr*ql_diff*delta_x/delta_ql_diff;
+        if ql_diff.abs() > self.thresh_ql
+        /*&& delta_inv_tput.abs() > self.thresh_tput*/
+        {
+            if delta_ql_diff * ql_diff < 0.0 {
+                // Newton's method
+                step_raw = -self.lr * ql_diff * delta_x / delta_ql_diff;
                 step = self.clamp(step_raw);
-            }else{
-                step = self.min_step*delta_x.signum()*delta_inv_tput.signum();
+            } else {
+                step = -self.min_step * delta_x.signum() * delta_inv_tput.signum();
             }
-            // sync
-            self.last_x = x;
-            self.last_ql_storage = ql_storage;
-            self.last_ql_compute = ql_compute;
+            // decrease lr if direction has changed
+            // in case of jump out, delta_x=0, so lr is unchaged
+            if delta_x * step < 0.0 {
+                self.lr *= self.lr_decay;
+            }
+            // // sync
+            // self.last_x = x;
+            // self.last_ql_storage = ql_storage;
+            // self.last_ql_compute = ql_compute;
         } else {
-            // do nothing for now, just reset history, prepare for jump out
-            self.last_x = 10000.0;
-            self.last_ql_storage = 10000.0;
-            self.last_ql_compute = 0.0;
+            // reset lr, this is jump out
+            self.lr = self.lr_default;
+            // // do nothing for now, just reset history, prepare for jump out
+            // self.last_x = 10000.0;
+            // self.last_ql_storage = 10000.0;
+            // self.last_ql_compute = 0.0;
         }
         // update
         if step != 0.0 {
@@ -611,7 +638,7 @@ impl QueueGrad {
         self.msg.clear();
         write!(
             self.msg,
-            "x {:.2} dx {:.2} ql_diff {:.2}({:.2}) inv_tput {:.2}({:.2}) step {:.2} step_raw {:.2} storage {:.2}({:.2}) compute {:.2}({:.2}) ql_raw ({:.2},{:.2}) cv ({:.2},{:.2})",
+            "x {:.2} dx {:.2} ql_diff {:.2}({:.2}) inv_tput {:.2}({:.2}) step {:.2} step_raw {:.2} lr {:.2} storage {:.2}({:.2}) compute {:.2}({:.2}) ql_raw ({:.2},{:.2}) cv ({:.2},{:.2})",
             x,
             delta_x,
             ql_diff,
@@ -620,6 +647,7 @@ impl QueueGrad {
             delta_inv_tput,
             step,
             step_raw,
+            self.lr,
             ql_storage,
             delta_ql_storage, 
             ql_compute,
@@ -654,8 +682,8 @@ impl QueueGrad {
     //     ql_storage: f64,
     //     ql_compute: f64,
     // ) {
-        // let tput = 2.4e6 * (recvd - self.last_recvd) as f64 / (curr_rdtsc - self.last_rdtsc) as f64;
-        // let delta_tput = tput - self.last_tput;
+    // let tput = 2.4e6 * (recvd - self.last_recvd) as f64 / (curr_rdtsc - self.last_rdtsc) as f64;
+    // let delta_tput = tput - self.last_tput;
     //     // let last_ql_diff = self.last_ql_storage - self.last_ql_compute;
     //     let ql_diff = ql_storage - ql_compute;
     //     let delta_ql_storage = ql_storage - self.last_ql_storage;

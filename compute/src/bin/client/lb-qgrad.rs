@@ -399,16 +399,7 @@ impl LoadBalancer {
                 lowerbound: 0.0,
             },
             learnable: config.learnable,
-            xloop: QueueGrad::new(
-                config.xloop_factor,
-                config.thresh_ql,
-                config.thresh_tput,
-                config.lr,
-                config.max_step,
-                config.min_step,
-                storage_load,
-                compute_load,
-            ),
+            xloop: QueueGrad::new(config, storage_load, compute_load),
             // not used
             // bimodal: config.bimodal,
             // bimodal_interval: config.bimodal_interval,

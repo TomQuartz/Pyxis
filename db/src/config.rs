@@ -392,8 +392,9 @@ pub struct LBConfig {
     pub moving_exp: f64,
     // grad
     pub thresh_ql: f64,
-    pub thresh_tput: f64,
+    // pub thresh_tput: f64,
     pub lr: f64,
+    pub lr_decay: f64,
     pub max_step: f64,
     pub min_step: f64,
     // // queue
