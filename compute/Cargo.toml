@@ -17,8 +17,8 @@ path = "src/bin/client/compute.rs"
 #path = "src/bin/client/lb-tput.rs"
 
 [[bin]]
-name = "lb-queue"
-path = "src/bin/client/lb-queue.rs"
+name = "lb-qgrad"
+path = "src/bin/client/lb-qgrad.rs"
 
 [dependencies]
 order-stat   = "0.1.3"

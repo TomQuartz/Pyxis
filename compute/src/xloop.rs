@@ -489,6 +489,237 @@ impl fmt::Display for ServerLoad {
     }
 }
 
+pub struct QueueGrad {
+    pub storage_load: Arc<ServerLoad>,
+    pub compute_load: Arc<ServerLoad>,
+    interval: u64,
+    last_rdtsc: u64,
+    last_recvd: usize,
+    // last_tput: f64,
+    last_inv_tput: f64,
+    last_ql_storage: f64,
+    last_ql_compute: f64,
+    last_x: f64,
+    // thresh
+    thresh_ql: f64,
+    thresh_tput: f64,
+    // monotone_thresh: f64,
+    // min_range: f64,
+    // lowerbound: f64,
+    // upperbound: f64,
+    min_step: f64,
+    max_step: f64,
+    lr: f64,
+    // lr_decay: f64,
+    msg: String,
+    // grad
+    // interval: u64,
+    // last_rdtsc: u64,
+    // last_ql_storage: f64,
+    // last_ql_compute: f64,
+    // last_x: f64,
+    // lr: f64,
+    // min_step: f64,
+    // max_step: f64,
+    // exp: f64,
+    // msg: String,
+}
+
+impl QueueGrad {
+    pub fn new(xloop_factor: u64, thresh_ql: f64, thresh_tput: f64, lr: f64, max_step: f64, min_step: f64/*, exp: f64*/,        storage_load: Arc<ServerLoad>,
+        compute_load: Arc<ServerLoad>,
+) -> QueueGrad {
+        QueueGrad {
+            storage_load: storage_load,
+            compute_load: compute_load,
+            interval: CPU_FREQUENCY / xloop_factor,
+            last_rdtsc: 0,
+            last_recvd: 0,
+            // last_tput: 0.0,
+            last_inv_tput: 0.0,
+            last_ql_storage: 0.0,
+            last_ql_compute: 0.0,
+            last_x: 0.0,
+            thresh_ql: thresh_ql,
+            thresh_tput: thresh_tput,
+            lr: lr, // 200?
+            min_step: min_step,
+            max_step: max_step,
+            // exp: exp, // 0.5?
+            msg: String::new(),
+        }
+    }
+    pub fn ready(&mut self, curr_rdtsc: u64) -> bool {
+        curr_rdtsc - self.last_rdtsc > self.interval
+    }
+    fn clamp(&self,raw_step: f64)->f64{
+        let bounded_step = raw_step.abs().min(self.max_step);
+        bounded_step*raw_step.signum()
+    }
+    /// update
+    pub fn update_x(&mut self, xinterface: &impl XInterface<X = f64>, curr_rdtsc: u64, recvd: usize) {
+        let x = xinterface.get();
+        let delta_x = x - self.last_x;
+        // tput
+        // let tput = 2.4e6 * (recvd - self.last_recvd) as f64 / (curr_rdtsc - self.last_rdtsc) as f64;
+        let inv_tput = (recvd - self.last_recvd) as f64 / (curr_rdtsc - self.last_rdtsc) as f64;
+        // let delta_tput = tput - self.last_tput;
+        let delta_inv_tput = inv_tput - self.last_inv_tput;
+        // ql
+        let (ql_storage_raw, cv_storage) = self.storage_load.avg_all();
+        let (ql_compute_raw, cv_compute) = self.compute_load.avg_all();
+        let ql_storage = ql_storage_raw / (1.0 + cv_storage);
+        let ql_compute = ql_compute_raw / (1.0 + cv_compute);
+        // diff
+        let last_ql_diff = self.last_ql_storage - self.last_ql_compute;
+        let ql_diff = ql_storage - ql_compute;
+        let delta_ql_storage = ql_storage - self.last_ql_storage;
+        let delta_ql_compute = ql_compute - self.last_ql_compute;
+        let delta_ql_diff = ql_diff - last_ql_diff;
+        // sync
+        self.last_rdtsc = curr_rdtsc;
+        self.last_recvd = recvd;
+        // NOTE: always update tput history because thresh_tput is based on delta
+        self.last_inv_tput = inv_tput;
+        let mut step: f64 = 0.0;
+        let mut step_raw: f64 = 0.0;
+        // NOTE: suppress variation with two thresh
+        if ql_diff.abs() > self.thresh_ql && delta_inv_tput.abs() > self.thresh_tput{
+            if delta_ql_diff * ql_diff < 0.0{
+                step_raw = self.lr*ql_diff*delta_x/delta_ql_diff;
+                step = self.clamp(step_raw);
+            }else{
+                step = self.min_step*delta_x.signum()*delta_inv_tput.signum();
+            }
+            // sync
+            self.last_x = x;
+            self.last_ql_storage = ql_storage;
+            self.last_ql_compute = ql_compute;
+        } else {
+            // do nothing for now, just reset history, prepare for jump out
+            self.last_x = 10000.0;
+            self.last_ql_storage = 10000.0;
+            self.last_ql_compute = 0.0;
+        }
+        // update
+        if step != 0.0 {
+            xinterface.update(step);
+        }
+        // reset after each update, in case workload has changed within loop interval
+        self.compute_load.reset();
+        self.storage_load.reset();
+        self.msg.clear();
+        write!(
+            self.msg,
+            "x {:.2} dx {:.2} ql_diff {:.2}({:.2}) inv_tput {:.2}({:.2}) step {:.2} step_raw {:.2} storage {:.2}({:.2}) compute {:.2}({:.2}) ql_raw ({:.2},{:.2}) cv ({:.2},{:.2})",
+            x,
+            delta_x,
+            ql_diff,
+            delta_ql_diff,
+            inv_tput,
+            delta_inv_tput,
+            step,
+            step_raw,
+            ql_storage,
+            delta_ql_storage, 
+            ql_compute,
+            delta_ql_compute,
+            ql_storage_raw,
+            ql_compute_raw,
+            cv_storage,
+            cv_compute,
+        );
+    }
+
+    // /// xloop
+    // pub fn xloop(
+    //     &mut self,
+    //     xinterface: &impl XInterface<X = f64>,
+    //     curr_rdtsc: u64,
+    //     recvd: usize,
+    //     ql_storage: f64,
+    //     ql_compute: f64,
+    // ) {
+    //     // recvd % self.factor?
+    //     if curr_rdtsc - self.last_rdtsc > self.interval {
+    //         self.update_x(xinterface, curr_rdtsc, ql_storage, ql_compute);
+    //     }
+    // }
+    // /// update
+    // pub fn update_x(
+    //     &mut self,
+    //     xinterface: &impl XInterface<X = f64>,
+    //     curr_rdtsc: u64,
+    //     recvd: usize,
+    //     ql_storage: f64,
+    //     ql_compute: f64,
+    // ) {
+        // let tput = 2.4e6 * (recvd - self.last_recvd) as f64 / (curr_rdtsc - self.last_rdtsc) as f64;
+        // let delta_tput = tput - self.last_tput;
+    //     // let last_ql_diff = self.last_ql_storage - self.last_ql_compute;
+    //     let ql_diff = ql_storage - ql_compute;
+    //     let delta_ql_storage = ql_storage - self.last_ql_storage;
+    //     let delta_ql_compute = ql_compute - self.last_ql_compute;
+    //     // let delta_ql_diff = ql_diff - last_ql_diff;
+    //     let x = xinterface.get();
+    //     let delta_x = x - self.last_x;
+    //     // sync
+    //     self.last_rdtsc = curr_rdtsc;
+    //     self.last_ql_storage = ql_storage;
+    //     self.last_ql_compute = ql_compute;
+    //     self.last_x = x;
+    //     // grad
+    //     let mut step: f64 = 0.0;
+    //     let mut raw_step: f64 = 0.0;
+    //     if ql_diff > 0.0 {
+    //         if delta_ql_storage < 0.0 {
+    //             // proceed with grad
+    //             raw_step = self.lr * delta_ql_storage / delta_x;
+    //             let bounded_step = raw_step.abs().max(self.min_step).min(self.max_step);
+    //             step = if raw_step > 0.0 {
+    //                 bounded_step
+    //             } else {
+    //                 -bounded_step
+    //             };
+    //         } else {
+    //             // bounce back
+    //             step = -delta_x * (1.0 - self.exp);
+    //         }
+    //     } else {
+    //         // if delta_ql_compute < 0.0 {
+    //         //     let raw_step = self.lr * delta_ql_compute / delta_x;
+    //         //     let bounded_step = raw_step.abs().max(self.min_step).min(self.max_step);
+    //         //     step = if raw_step > 0.0 {
+    //         //         bounded_step
+    //         //     } else {
+    //         //         -bounded_step
+    //         //     };
+    //         // } else {
+    //         //     // bounce back
+    //         //     step = -delta_x * (1.0 - self.exp);
+    //         // }
+    //     }
+    //     xinterface.update(step);
+    //     self.msg.clear();
+    //     write!(
+    //         self.msg,
+    //         "ql {:?} x {} d_ql {:?} d_x {} step {} raw_step {}",
+    //         (ql_storage, ql_compute),
+    //         x,
+    //         (delta_ql_storage, delta_ql_compute),
+    //         delta_x,
+    //         step,
+    //         raw_step,
+    //     );
+    // }
+}
+
+impl fmt::Display for QueueGrad {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.msg)
+    }
+}
+
 pub struct QueueSweep {
     pub storage_load: Arc<ServerLoad>,
     pub compute_load: Arc<ServerLoad>,
@@ -641,7 +872,7 @@ impl fmt::Display for QueueSweep {
         write!(f, "{}", self.msg)
     }
 }
-
+/*
 pub struct QueuePivot {
     interval: u64,
     last_rdtsc: u64,
@@ -746,7 +977,6 @@ impl fmt::Display for QueuePivot {
     }
 }
 
-/*
 pub struct TputGrad {
     // pub timer: Timer,
     interval: u64,
