@@ -633,12 +633,14 @@ impl Executable for StorageNodeWorker {
             while let Some(packet) = self.dispatcher.poll() {
                 self.manager.create_task(&mut self.resp_hdr, packet);
             }
-            let mut ql = self.manager.ready.len() as f64;
-            self.queue_length.update(cycles::rdtsc(), ql);
-            let mut ql_mean = self.queue_length.avg();
-            if ql > 0.0 {
-                self.run_tasks(&mut ql);
-                // self.run_tasks(&mut ql_mean);
+            // let mut ql = self.manager.ready.len() as f64;
+            // self.queue_length.update(cycles::rdtsc(), ql);
+            // let mut ql_mean = self.queue_length.avg();
+            let mut waiting = 0f64;
+            // if ql > 0.0 {
+            if self.manager.ready.len() > 0 {
+                self.run_tasks(&mut waiting);
+                // self.run_tasks(&mut ql);
             } else if let Some(packet) = self.dispatcher.poll_sib() {
                 self.manager.create_task(&mut self.resp_hdr, packet);
             }

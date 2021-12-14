@@ -265,6 +265,8 @@ struct LoadBalancer {
     output_last_recvd: usize,
     finished: Arc<AtomicBool>,
     tput: f64,
+    // outs_storage: usize,
+    // outs_compute: usize,
 }
 
 // Implementation of methods on LoadBalancer.
@@ -494,9 +496,11 @@ impl LoadBalancer {
                     // in the first 4 bytes of the key.
                     p_get[24..28].copy_from_slice(&key[0..4]);
                     trace!("send type {} rpc {}", type_id, native);
-                    self.dispatcher
+                    let (ip, port) = self
+                        .dispatcher
                         .sender2compute
-                        .send_invoke(tenant, 8, &p_get, curr, type_id)
+                        .send_invoke(tenant, 8, &p_get, curr, type_id);
+                    self.xloop.compute_load.inc_outstanding(ip, port);
                 },
                 |tenant, key, _val| {
                     // First 18 bytes on the payload were already pre-populated with the
@@ -524,9 +528,11 @@ impl LoadBalancer {
                     // (4 bytes), and number of CPU cycles compute(4 bytes). Just write
                     // in the first 4 bytes of the key.
                     p_get[24..28].copy_from_slice(&key[0..4]);
-                    self.dispatcher
+                    let (ip, port) = self
+                        .dispatcher
                         .sender2storage
-                        .send_invoke(tenant, 8, &p_get, curr, type_id)
+                        .send_invoke(tenant, 8, &p_get, curr, type_id);
+                    self.xloop.storage_load.inc_outstanding(ip, port);
                 },
                 |tenant, key, _val| {
                     // First 18 bytes on the payload were already pre-populated with the
@@ -555,7 +561,7 @@ impl LoadBalancer {
         &self,
         src_ip: u32,
         src_port: u16,
-        curr_rdtsc: u64,
+        // curr_rdtsc: u64,
         queue_length: f64,
         task_duration_cv: f64,
     ) {
@@ -566,7 +572,7 @@ impl LoadBalancer {
         if let Ok(_) = self.xloop.storage_load.update_load(
             src_ip,
             src_port,
-            curr_rdtsc - self.start,
+            // curr_rdtsc - self.start,
             queue_length,
             task_duration_cv,
         )
@@ -585,7 +591,7 @@ impl LoadBalancer {
             self.xloop.compute_load.update_load(
                 src_ip,
                 src_port,
-                curr_rdtsc - self.start,
+                // curr_rdtsc - self.start,
                 queue_length,
                 task_duration_cv,
             );
@@ -637,7 +643,7 @@ impl LoadBalancer {
                                     self.update_load(
                                         src_ip,
                                         src_port,
-                                        curr_rdtsc,
+                                        // curr_rdtsc,
                                         hdr.server_load,
                                         hdr.task_duration_cv,
                                         // #[cfg(feature = "server_stats")]
@@ -645,6 +651,11 @@ impl LoadBalancer {
                                     );
                                     self.latencies[type_id].push(curr_rdtsc - timestamp);
                                     self.outstanding_reqs.remove(&timestamp);
+                                    if self.xloop.storage_load.ip2outs.contains_key(&src_ip) {
+                                        self.xloop.storage_load.dec_outstanding(src_ip, src_port);
+                                    } else {
+                                        self.xloop.compute_load.dec_outstanding(src_ip, src_port);
+                                    }
                                     self.send_once(slot_id);
                                 } else {
                                     warn!("no outstanding request");
@@ -969,23 +980,40 @@ fn main() {
     net_context.stop();
 
     if cfg!(feature = "summary") {
-        // let (ql_storage_moving, cv_storage) = storage_load.avg_all();
-        let (ql_storage_mean, cv_storage) = storage_load.mean_all();
-        // let (ql_compute_moving, cv_compute) = compute_load.avg_all();
-        let (ql_compute_mean, cv_compute) = compute_load.mean_all();
+        // let (ql_storage_mean, cv_storage) = storage_load.mean_all();
+        let (out_storage, w_storage, cv_storage, ncores_storage) = storage_load.aggr_all();
+        // let (ql_compute_mean, cv_compute) = compute_load.mean_all();
+        let (out_compute, w_compute, cv_compute, ncores_compute) = compute_load.aggr_all();
+        // out_storage + w_compute=ql_storage
+        let ql_storage_raw = (out_storage + w_compute) / ncores_storage;
+        let ql_compute_raw = (out_compute - w_compute) / ncores_compute;
+        let ql_storage = ql_storage_raw / (1.0 + cv_storage / ncores_storage);
+        let ql_compute = ql_compute_raw / (1.0 + cv_compute / ncores_compute);
         print!("{}", storage_load);
         // println!(
-        //     "storage summary ql {:.2} mean {:.2} cv {:.2}",
-        //     ql_storage_moving, ql_storage_mean, cv_storage
+        //     "storage summary ql {:.2} cv {:.2}",
+        //     ql_storage_mean, cv_storage
         // );
         println!(
-            "storage summary ql {:.2} cv {:.2}",
-            ql_storage_mean, cv_storage
+            "storage summary ql {:.2} raw {:.2} outs {:.2} waiting {:.2} cv {:.2}",
+            ql_storage,
+            ql_storage_raw,
+            out_storage,
+            w_storage,
+            cv_storage / ncores_storage
         );
         print!("{}", compute_load);
+        // println!(
+        //     "compute summary ql {:.2} cv {:.2}",
+        //     ql_compute_mean, cv_compute
+        // );
         println!(
-            "compute summary ql {:.2} cv {:.2}",
-            ql_compute_mean, cv_compute
+            "compute summary ql {:.2} raw {:.2} outs {:.2} waiting {:.2} cv {:.2}",
+            ql_compute,
+            ql_compute_raw,
+            out_compute,
+            w_compute,
+            cv_compute / ncores_compute
         );
     }
     // // #[cfg(feature = "server_stats")]

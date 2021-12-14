@@ -888,6 +888,7 @@ impl Executable for ComputeNodeWorker {
         //     }
         // }
         loop {
+            let mut waiting = self.manager.waiting.len() as f64;
             // get resp processing is not considered
             let get_resps = self.dispatcher.recv();
             if self.dispatcher.reset() {
@@ -902,11 +903,12 @@ impl Executable for ComputeNodeWorker {
             while let Some(packet) = self.dispatcher.poll() {
                 self.dispatch(packet);
             }
-            let mut ql = self.manager.ready.len() as f64;
-            self.queue_length.update(cycles::rdtsc(), ql);
-            let mut ql_mean = self.queue_length.avg();
-            if ql > 0.0 {
-                self.run_tasks(&mut ql);
+            // let mut ql = self.manager.ready.len() as f64;
+            // self.queue_length.update(cycles::rdtsc(), ql);
+            // let mut ql_mean = self.queue_length.avg();
+            if self.manager.ready.len() > 0 {
+                self.run_tasks(&mut waiting);
+                // self.run_tasks(&mut ql);
                 // self.run_tasks(&mut ql_mean);
             } else if self.dispatcher.length == 0.0 {
                 if let Some(packet) = self.dispatcher.poll_sib() {

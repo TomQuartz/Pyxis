@@ -396,8 +396,9 @@ impl Sender {
         payload: &[u8],
         id: u64,
         _type_id: usize,
-    ) {
+    ) -> (u32, u16) {
         let endpoint = self.get_endpoint(payload);
+        let port = self.get_dst_port(endpoint);
         let request = rpc::create_invoke_rpc(
             &self.req_hdrs[endpoint].mac_header,
             &self.req_hdrs[endpoint].ip_header,
@@ -406,7 +407,8 @@ impl Sender {
             name_len,
             payload,
             id,
-            self.get_dst_port(endpoint),
+            // self.get_dst_port(endpoint),
+            port,
             // self.get_dst_port_by_type(type_id),
             // (id & 0xffff) as u16 & (self.dst_ports - 1),
         );
@@ -415,6 +417,7 @@ impl Sender {
             self.req_hdrs[endpoint].ip_header.dst()
         );
         self.send_pkt(request);
+        (self.req_hdrs[endpoint].ip_header.dst(), port)
     }
     #[cfg(feature = "queue_len")]
     pub fn send_terminate(&self) {

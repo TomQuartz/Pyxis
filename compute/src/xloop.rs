@@ -7,6 +7,7 @@ use std::io::Write as writef;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicUsize,Ordering};
 
 const CPU_FREQUENCY: u64 = 2400000000;
 
@@ -185,34 +186,47 @@ impl fmt::Display for Avg {
 }
 
 struct CoreLoad {
-    queue_length: MovingTimeAvg,
+    // queue_length: MovingTimeAvg,
+    // outstanding: Avg,
+    waiting: Avg,
     task_duration_cv: Avg,
 }
 impl CoreLoad {
     fn new() -> CoreLoad {
         CoreLoad {
-            queue_length: MovingTimeAvg::new(),
+            // queue_length: MovingTimeAvg::new(),
+            // outstanding: Avg::new(),
+            waiting: Avg::new(),
             task_duration_cv: Avg::new(),
         }
     }
-    fn update_load(&mut self, current_time: u64, queue_length: f64, task_duration_cv: f64) {
-        self.queue_length.update(current_time, queue_length);
+    // fn update_outstanding(&mut self, outstanding: f64){
+    //     self.outstanding.update(outstanding);
+    // }
+    fn update_load(&mut self, /*current_time: u64, */queue_length: f64, task_duration_cv: f64) {
+        // self.queue_length.update(current_time, queue_length);
+        self.waiting.update(queue_length);
         self.task_duration_cv.update(task_duration_cv);
     }
     fn avg(&self) -> (f64, f64) {
-        (self.queue_length.avg(), self.task_duration_cv.avg())
+        // (self.queue_length.avg(), self.task_duration_cv.avg())
+        (self.waiting.avg(), self.task_duration_cv.avg())
     }
     fn reset(&mut self) {
-        self.queue_length.reset();
+        // self.queue_length.reset();
+        // self.outstanding.reset();
+        self.waiting.reset();
         self.task_duration_cv.reset();
     }
-    fn mean(&self) -> (f64, f64) {
-        (self.queue_length.mean(), self.task_duration_cv.avg())
-    }
+    // fn mean(&self) -> (f64, f64) {
+    //     (self.queue_length.mean(), self.task_duration_cv.avg())
+    // }
 }
 impl fmt::Display for CoreLoad {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ql ({}) ", self.queue_length)?;
+        // write!(f, "ql ({}) ", self.queue_length)?;
+        // write!(f, "outstanding ({}) ", self.outstanding)?;
+        write!(f, "waiting ({}) ", self.waiting)?;
         write!(f, "cv ({}) ", self.task_duration_cv)
         // write!(
         //     f,
@@ -235,9 +249,9 @@ impl fmt::Display for CoreLoad {
 
 pub struct ServerLoad {
     cluster_name: String,
-    // ip2load: HashMap<u32, RwLock<MovingTimeAvg>>,
+    pub ip2outs: HashMap<u32,Vec<AtomicUsize>>,
     ip2load: HashMap<u32, Vec<RwLock<CoreLoad>>>,
-    // ip2load: HashMap<u32, RwLock<Avg>>,
+    // num_queues: usize,
     // #[cfg(feature = "server_stats")]
     // ip2trace: HashMap<u32, RwLock<Vec<(usize, (u64, (f64, f64)))>>>,
 }
@@ -249,14 +263,19 @@ impl ServerLoad {
         moving_exp: f64,
     ) -> ServerLoad {
         let mut ip2load = HashMap::new();
+        let mut ip2outs = HashMap::new();
+        // let mut num_queues = 0usize;
         for &(ip, num_ports) in &ip_and_ports {
             let mut server_load = vec![];
+            let mut outs = vec![];
             for _ in 0..num_ports {
                 server_load.push(RwLock::new(CoreLoad::new()));
+                outs.push(AtomicUsize::new(0));
             }
             let ip = u32::from(Ipv4Addr::from_str(ip).unwrap());
             // ip2load.insert(ip, RwLock::new(MovingTimeAvg::new(moving_exp)));
             ip2load.insert(ip, server_load);
+            ip2outs.insert(ip,outs);
         }
         // #[cfg(feature = "server_stats")]
         // let mut ip2trace = HashMap::new();
@@ -272,21 +291,31 @@ impl ServerLoad {
         ServerLoad {
             cluster_name: cluster_name.to_string(),
             ip2load: ip2load,
+            ip2outs:ip2outs,
+            // num_queues: num_queues,
             // #[cfg(feature = "server_stats")]
             // ip2trace: ip2trace,
         }
+    }
+    pub fn inc_outstanding(&self,src_ip:u32,src_port:u16){
+        let outs = self.ip2outs.get(&src_ip).unwrap();
+        outs[src_port as usize].fetch_add(1,Ordering::Relaxed);
+    }
+    pub fn dec_outstanding(&self,src_ip:u32,src_port:u16){
+        let outs = self.ip2outs.get(&src_ip).unwrap();
+        outs[src_port as usize].fetch_sub(1,Ordering::Relaxed);
     }
     pub fn update_load(
         &self,
         src_ip: u32,
         src_port: u16,
-        curr_rdtsc: u64,
+        // curr_rdtsc: u64,
         queue_length: f64,
         task_duration_cv: f64,
     ) -> Result<(), ()> {
         if let Some(server_load) = self.ip2load.get(&src_ip) {
             server_load[src_port as usize].write().unwrap().update_load(
-                curr_rdtsc,
+                // curr_rdtsc,
                 queue_length,
                 task_duration_cv,
             );
@@ -316,62 +345,81 @@ impl ServerLoad {
     //             .push((id, (curr_rdtsc, (server_ql, task_duration_cv))));
     //     }
     // }
-    pub fn avg_server(&self, ip: u32) -> (f64, f64) {
+    pub fn aggr_server(&self, ip: u32) -> (f64, f64, f64, f64) {
         let server_load = self.ip2load.get(&ip).unwrap();
         let num_cores = server_load.len() as f64;
-        let mut total_ql = 0f64;
+        let mut total_outs = 0f64;
+        let mut total_w = 0f64;
         let mut total_cv = 0f64;
         for core_load in server_load.iter() {
-            let (ql, cv) = core_load.read().unwrap().avg();
-            total_ql += ql;
+            let (w, cv) = core_load.read().unwrap().avg();
+            // total_ql += ql;
+            total_w+=w;
             total_cv += cv;
         }
-        (total_ql / num_cores, total_cv / num_cores)
+        let outs = self.ip2outs.get(&ip).unwrap();
+        for out in outs.iter(){
+            total_outs+=out.load(Ordering::Acquire) as f64;
+        }
+        // (total_ql / num_cores, total_cv / num_cores)
+        (total_outs,total_w,total_cv,num_cores)
         // server_load.read().unwrap().avg()
     }
-    pub fn avg_all(&self) -> (f64, f64) {
-        let mut total_ql = 0f64;
+    pub fn aggr_all(&self) -> (f64, f64,f64,f64) {
+        // let mut total_ql = 0f64;
+        let mut total_outs = 0f64;
+        let mut total_w = 0f64;
         let mut total_cv = 0f64;
-        let num_servers = self.ip2load.len() as f64;
-        for &ip in self.ip2load.keys() {
-            let (ql, cv) = self.avg_server(ip);
-            total_ql += ql;
-            total_cv += cv;
-        }
-        (total_ql / num_servers, total_cv / num_servers)
-    }
-    pub fn mean_server(&self, ip: u32) -> (f64,f64) {
-        let server_load = self.ip2load.get(&ip).unwrap();
-        let num_cores = server_load.len() as f64;
-        let mut total_ql = 0f64;
-        let mut total_cv = 0f64;
-        for core_load in server_load.iter() {
-            let (ql, cv) = core_load.read().unwrap().mean();
-            total_ql += ql;
-            total_cv += cv;
-        }
-        // total_ql / num_cores
-        (total_ql / num_cores, total_cv / num_cores)
-        // server_load.read().unwrap().avg()
-    }
-    pub fn mean_all(&self) -> (f64,f64) {
-        let mut total_ql = 0f64;
-        let mut total_cv = 0f64;
-        let num_servers = self.ip2load.len() as f64;
+        // let num_servers = self.ip2load.len() as f64;
+        let mut num_cores = 0f64;
         for &ip in self.ip2load.keys() {
             // let (ql, cv) = self.avg_server(ip);
-            let (ql,cv) = self.mean_server(ip);
-            total_ql += ql;
+            let (outs, w, cv,ncores) = self.aggr_server(ip);
+            // total_ql += ql;
+            total_outs+=outs;
+            total_w+=w;
             total_cv += cv;
+            num_cores+=ncores;
         }
-        // total_ql / num_servers
-        (total_ql / num_servers, total_cv / num_servers)
+        // (total_ql / num_servers, total_cv / num_servers)
+        (total_outs,total_w,total_cv,num_cores)
     }
+    // pub fn mean_server(&self, ip: u32) -> (f64,f64) {
+    //     let server_load = self.ip2load.get(&ip).unwrap();
+    //     let num_cores = server_load.len() as f64;
+    //     let mut total_ql = 0f64;
+    //     let mut total_cv = 0f64;
+    //     for core_load in server_load.iter() {
+    //         let (ql, cv) = core_load.read().unwrap().mean();
+    //         total_ql += ql;
+    //         total_cv += cv;
+    //     }
+    //     // total_ql / num_cores
+    //     (total_ql / num_cores, total_cv / num_cores)
+    //     // server_load.read().unwrap().avg()
+    // }
+    // pub fn mean_all(&self) -> (f64,f64) {
+    //     let mut total_ql = 0f64;
+    //     let mut total_cv = 0f64;
+    //     let num_servers = self.ip2load.len() as f64;
+    //     for &ip in self.ip2load.keys() {
+    //         // let (ql, cv) = self.avg_server(ip);
+    //         let (ql,cv) = self.mean_server(ip);
+    //         total_ql += ql;
+    //         total_cv += cv;
+    //     }
+    //     // total_ql / num_servers
+    //     (total_ql / num_servers, total_cv / num_servers)
+    // }
     pub fn reset(&self) {
         for &ip in self.ip2load.keys() {
             let server_load = self.ip2load.get(&ip).unwrap();
             for core_load in server_load.iter() {
                 core_load.write().unwrap().reset();
+            }
+            let outs = self.ip2outs.get(&ip).unwrap();
+            for out in outs.iter(){
+                out.store(0,Ordering::Release);
             }
             // server_load.write().unwrap().reset();
         }
@@ -574,11 +622,16 @@ impl QueueGrad {
         // let inv_tput = (curr_rdtsc - self.last_rdtsc) as f64 / (recvd - self.last_recvd) as f64;
         let delta_tput = tput - self.last_tput;
         // let delta_inv_tput = inv_tput - self.last_inv_tput;
-        // ql
-        let (ql_storage_raw, cv_storage) = self.storage_load.mean_all();
-        let (ql_compute_raw, cv_compute) = self.compute_load.mean_all();
-        let ql_storage = ql_storage_raw / (1.0 + cv_storage);
-        let ql_compute = ql_compute_raw / (1.0 + cv_compute);
+        // // ql
+        // let (ql_storage_raw, cv_storage) = self.storage_load.mean_all();
+        // let (ql_compute_raw, cv_compute) = self.compute_load.mean_all();
+        let (out_storage,_,cv_storage,ncores_storage)=self.storage_load.aggr_all();
+        let (out_compute,w_compute,cv_compute,ncores_compute)=self.compute_load.aggr_all();
+        // out_storage + w_compute=ql_storage
+        let ql_storage_raw = (out_storage+w_compute)/ncores_storage;
+        let ql_compute_raw = (out_compute-w_compute)/ncores_compute;
+        let ql_storage = ql_storage_raw / (1.0 + cv_storage/ncores_storage);
+        let ql_compute = ql_compute_raw / (1.0 + cv_compute/ncores_compute);
         // diff
         let last_ql_diff = self.last_ql_storage - self.last_ql_compute;
         let ql_diff = ql_storage - ql_compute;
@@ -807,6 +860,7 @@ impl QueueSweep {
     pub fn ready(&mut self, curr_rdtsc: u64) -> bool {
         curr_rdtsc - self.last_rdtsc > self.interval
     }
+    /*
     /// update
     pub fn update_x(&mut self, xinterface: &impl XInterface<X = f64>, curr_rdtsc: u64) {
         let (ql_storage_raw, cv_storage) = self.storage_load.avg_all();
@@ -899,6 +953,7 @@ impl QueueSweep {
             cv_compute,
         );
     }
+    */
 }
 
 impl fmt::Display for QueueSweep {
