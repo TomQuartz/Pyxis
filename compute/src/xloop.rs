@@ -417,10 +417,7 @@ impl ServerLoad {
             for core_load in server_load.iter() {
                 core_load.write().unwrap().reset();
             }
-            let outs = self.ip2outs.get(&ip).unwrap();
-            for out in outs.iter(){
-                out.store(0,Ordering::Release);
-            }
+            // NOTE: there's no need to reset outstanding
             // server_load.write().unwrap().reset();
         }
     }
