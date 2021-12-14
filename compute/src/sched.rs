@@ -888,7 +888,7 @@ impl Executable for ComputeNodeWorker {
         //     }
         // }
         loop {
-            let mut waiting = self.manager.waiting.len() as f64;
+            // let mut waiting = self.manager.waiting.len() as f64;
             // get resp processing is not considered
             let get_resps = self.dispatcher.recv();
             if self.dispatcher.reset() {
@@ -900,6 +900,7 @@ impl Executable for ComputeNodeWorker {
                     self.dispatch(resp);
                 }
             }
+            let mut waiting = self.manager.waiting.len() as f64;
             while let Some(packet) = self.dispatcher.poll() {
                 self.dispatch(packet);
             }
