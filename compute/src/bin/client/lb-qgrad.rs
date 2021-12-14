@@ -674,7 +674,11 @@ impl LoadBalancer {
                 if self.id == 0 {
                     let curr_rdtsc = cycles::rdtsc();
                     let global_recvd = self.global_recvd.load(Ordering::Relaxed);
-                    if self.learnable && self.xloop.ready(curr_rdtsc) {
+                    if self.learnable
+                        && self.xloop.ready(curr_rdtsc)
+                        && packet_recvd_signal
+                        && global_recvd - self.xloop.last_recvd > 8000
+                    {
                         // let ql_storage = self.storage_load.avg_all();
                         // let ql_compute = self.compute_load.avg_all();
                         self.xloop
@@ -682,16 +686,20 @@ impl LoadBalancer {
                         // reset even if not updated
                         self.dispatcher.sender2storage.send_reset();
                         self.dispatcher.sender2compute.send_reset();
-                        // self.xloop
-                        //     .xloop(&self.partition, curr_rdtsc, ql_storage, ql_compute);
+                        // let output_tput = 2.4e6 * (global_recvd - self.output_last_recvd) as f32
+                        //     / (curr_rdtsc - self.output_last_rdtsc) as f32;
+                        // println!("rdtsc {} tput {:.2}", curr_rdtsc / 2400000, output_tput);
+                        // println!("xloop {}", self.xloop);
+                        // self.output_last_rdtsc = curr_rdtsc;
+                        // self.output_last_recvd = global_recvd;
                     }
                     // let xloop_rate = 2.4e6 * (global_recvd - self.xloop_last_recvd) as f32
                     //     / (xloop_rdtsc - self.xloop_last_rdtsc) as f32;
                     if self.output_factor != 0
                         && (curr_rdtsc - self.output_last_rdtsc > 2400000000 / self.output_factor)
                     {
-                        // // tput
-                        // let global_recvd = self.global_recvd.load(Ordering::Relaxed);
+                        // tput
+                        let global_recvd = self.global_recvd.load(Ordering::Relaxed);
                         let output_tput = 2.4e6 * (global_recvd - self.output_last_recvd) as f32
                             / (curr_rdtsc - self.output_last_rdtsc) as f32;
                         // lat
@@ -712,11 +720,12 @@ impl LoadBalancer {
                             output_tput,
                             // self.xloop,
                         );
+                        // xloop
                         println!("xloop {}", self.xloop);
-                        #[cfg(feature = "server_stats")]
-                        debug!("{}", self.xloop.storage_load);
-                        #[cfg(feature = "server_stats")]
-                        debug!("{}", self.xloop.compute_load);
+                        // #[cfg(feature = "server_stats")]
+                        // debug!("{}", self.xloop.storage_load);
+                        // #[cfg(feature = "server_stats")]
+                        // debug!("{}", self.xloop.compute_load);
                         self.output_last_rdtsc = curr_rdtsc;
                         self.output_last_recvd = global_recvd;
                     }
@@ -790,6 +799,12 @@ impl Drop for LoadBalancer {
                 );
             }
             println!("PUSHBACK Throughput {:.2}", self.tput);
+        }
+        if self.id == 0 && cfg!(feature = "xtrace") {
+            let mut f = File::create(format!("convergence{}.log", self.max_out)).unwrap();
+            for s in &self.xloop.xtrace {
+                writeln!(f, "{}", s);
+            }
         }
     }
 }
@@ -953,20 +968,26 @@ fn main() {
     // Stop the client.
     net_context.stop();
 
-    // let (ql_storage_moving, cv_storage) = storage_load.avg_all();
-    // let ql_storage_mean = storage_load.mean_all();
-    // let (ql_compute_moving, cv_compute) = compute_load.avg_all();
-    // let ql_compute_mean = compute_load.mean_all();
-    // print!("{}", storage_load);
-    // println!(
-    //     "storage summary ql {:.2} mean {:.2} cv {:.2}",
-    //     ql_storage_moving, ql_storage_mean, cv_storage
-    // );
-    // print!("{}", compute_load);
-    // println!(
-    //     "compute summary ql {:.2} mean {:.2} cv {:.2}",
-    //     ql_compute_moving, ql_compute_mean, cv_compute
-    // );
+    if cfg!(feature = "summary") {
+        // let (ql_storage_moving, cv_storage) = storage_load.avg_all();
+        let (ql_storage_mean, cv_storage) = storage_load.mean_all();
+        // let (ql_compute_moving, cv_compute) = compute_load.avg_all();
+        let (ql_compute_mean, cv_compute) = compute_load.mean_all();
+        print!("{}", storage_load);
+        // println!(
+        //     "storage summary ql {:.2} mean {:.2} cv {:.2}",
+        //     ql_storage_moving, ql_storage_mean, cv_storage
+        // );
+        println!(
+            "storage summary ql {:.2} cv {:.2}",
+            ql_storage_mean, cv_storage
+        );
+        print!("{}", compute_load);
+        println!(
+            "compute summary ql {:.2} cv {:.2}",
+            ql_compute_mean, cv_compute
+        );
+    }
     // // #[cfg(feature = "server_stats")]
     // // storage_load.print_trace();
     // // // storage_load.write_trace();
