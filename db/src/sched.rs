@@ -625,7 +625,7 @@ impl Executable for StorageNodeWorker {
         //     }
         // }
         loop {
-            let mut waiting = 0f64;
+            // let mut waiting = 0f64;
             self.dispatcher.recv();
             if self.dispatcher.reset() {
                 self.task_duration_cv.reset();
@@ -637,6 +637,7 @@ impl Executable for StorageNodeWorker {
             // let mut ql = self.manager.ready.len() as f64;
             // self.queue_length.update(cycles::rdtsc(), ql);
             // let mut ql_mean = self.queue_length.avg();
+            let mut waiting = self.manager.ready.len() as f64;
             // if ql > 0.0 {
             if self.manager.ready.len() > 0 {
                 self.run_tasks(&mut waiting);
