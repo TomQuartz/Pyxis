@@ -900,7 +900,9 @@ impl Executable for ComputeNodeWorker {
                     self.dispatch(resp);
                 }
             }
-            let mut waiting = self.manager.waiting.len() as f64;
+            let waiting = self.manager.waiting.len() as f64;
+            self.queue_length.update(cycles::rdtsc(), waiting);
+            let mut waiting_mean = self.queue_length.moving();
             while let Some(packet) = self.dispatcher.poll() {
                 self.dispatch(packet);
             }
@@ -908,7 +910,8 @@ impl Executable for ComputeNodeWorker {
             // self.queue_length.update(cycles::rdtsc(), ql);
             // let mut ql_mean = self.queue_length.avg();
             if self.manager.ready.len() > 0 {
-                self.run_tasks(&mut waiting);
+                // self.run_tasks(&mut waiting);
+                self.run_tasks(&mut waiting_mean);
                 // self.run_tasks(&mut ql);
                 // self.run_tasks(&mut ql_mean);
             } else if self.dispatcher.length == 0.0 {

@@ -402,9 +402,12 @@ impl MovingTimeAvg {
         // #[cfg(feature = "queue_len")]
         // self.avg.update(delta_avg);
     }
-    pub fn avg(&self) -> f64 {
+    pub fn moving(&self) -> f64 {
         self.moving_avg
         // self.E_x
+    }
+    pub fn mean(&self) -> f64 {
+        self.E_x
     }
 }
 impl fmt::Display for MovingTimeAvg {
