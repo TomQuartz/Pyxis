@@ -651,7 +651,7 @@ impl LoadBalancer {
                                     );
                                     self.latencies[type_id].push(curr_rdtsc - timestamp);
                                     self.outstanding_reqs.remove(&timestamp);
-                                    if self.xloop.storage_load.ip2outs.contains_key(&src_ip) {
+                                    if self.xloop.storage_load.ip2load.contains_key(&src_ip) {
                                         self.xloop.storage_load.dec_outstanding(src_ip, src_port);
                                     } else {
                                         self.xloop.compute_load.dec_outstanding(src_ip, src_port);
@@ -709,6 +709,9 @@ impl LoadBalancer {
                     if self.output_factor != 0
                         && (curr_rdtsc - self.output_last_rdtsc > 2400000000 / self.output_factor)
                     {
+                        self.xloop.snapshot(curr_rdtsc);
+                        self.output_last_rdtsc = curr_rdtsc;
+                        /*
                         // tput
                         let global_recvd = self.global_recvd.load(Ordering::Relaxed);
                         let output_tput = 2.4e6 * (global_recvd - self.output_last_recvd) as f32
@@ -739,11 +742,11 @@ impl LoadBalancer {
                         // debug!("{}", self.xloop.compute_load);
                         self.output_last_rdtsc = curr_rdtsc;
                         self.output_last_recvd = global_recvd;
+                        */
                     }
                 }
             }
         }
-
         // The moment all response packets have been received, set the value of the
         // stop timestamp so that throughput can be estimated later.
         if self.requests <= self.recvd {
@@ -812,7 +815,7 @@ impl Drop for LoadBalancer {
             println!("PUSHBACK Throughput {:.2}", self.tput);
         }
         if self.id == 0 && cfg!(feature = "xtrace") {
-            let mut f = File::create(format!("convergence{}.log", self.max_out)).unwrap();
+            let mut f = File::create(format!("outstanding{}.log", self.max_out)).unwrap();
             for s in &self.xloop.xtrace {
                 writeln!(f, "{}", s);
             }
@@ -982,8 +985,12 @@ fn main() {
     if cfg!(feature = "summary") {
         // let (ql_storage_mean, cv_storage) = storage_load.mean_all();
         let (out_storage, w_storage, cv_storage, ncores_storage) = storage_load.aggr_all();
+        let out_storage = storage_load.outs_trace.borrow().avg();
+        let out_storage_std = storage_load.outs_trace.borrow().std();
         // let (ql_compute_mean, cv_compute) = compute_load.mean_all();
         let (out_compute, w_compute, cv_compute, ncores_compute) = compute_load.aggr_all();
+        let out_compute = compute_load.outs_trace.borrow().avg();
+        let out_compute_std = compute_load.outs_trace.borrow().std();
         // out_storage + w_compute=ql_storage
         let ql_storage_raw = (out_storage + w_compute) / ncores_storage;
         let ql_compute_raw = (out_compute - w_compute) / ncores_compute;
@@ -995,10 +1002,11 @@ fn main() {
         //     ql_storage_mean, cv_storage
         // );
         println!(
-            "storage summary ql {:.2} raw {:.2} outs {:.2} waiting {:.2} cv {:.2}",
+            "storage summary ql {:.2} raw {:.2} outs {:.2}({:.2}) waiting {:.2} cv {:.2}",
             ql_storage,
             ql_storage_raw,
             out_storage,
+            out_storage_std,
             w_storage,
             cv_storage / ncores_storage
         );
@@ -1008,10 +1016,11 @@ fn main() {
         //     ql_compute_mean, cv_compute
         // );
         println!(
-            "compute summary ql {:.2} raw {:.2} outs {:.2} waiting {:.2} cv {:.2}",
+            "compute summary ql {:.2} raw {:.2} outs {:.2}({:.2}) waiting {:.2} cv {:.2}",
             ql_compute,
             ql_compute_raw,
             out_compute,
+            out_compute_std,
             w_compute,
             cv_compute / ncores_compute
         );

@@ -8,6 +8,7 @@ use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicUsize,Ordering};
+use std::cell::RefCell;
 
 const CPU_FREQUENCY: u64 = 2400000000;
 
@@ -138,7 +139,7 @@ impl TimeAvg {
     }
 }
 */
-struct Avg {
+pub struct Avg {
     counter: f64,
     lastest: f64,
     E_x: f64,
@@ -165,10 +166,10 @@ impl Avg {
         self.E_x2 =
             self.E_x2 * ((self.counter - 1.0) / self.counter) + delta * delta / self.counter;
     }
-    fn avg(&self) -> f64 {
+    pub fn avg(&self) -> f64 {
         self.E_x
     }
-    fn std(&self) -> f64 {
+    pub fn std(&self) -> f64 {
         (self.E_x2 - self.E_x * self.E_x).sqrt()
     }
 }
@@ -185,7 +186,7 @@ impl fmt::Display for Avg {
     }
 }
 
-struct CoreLoad {
+pub struct CoreLoad {
     // queue_length: MovingTimeAvg,
     // outstanding: Avg,
     waiting: Avg,
@@ -249,8 +250,11 @@ impl fmt::Display for CoreLoad {
 
 pub struct ServerLoad {
     cluster_name: String,
-    pub ip2outs: HashMap<u32,Vec<AtomicUsize>>,
-    ip2load: HashMap<u32, Vec<RwLock<CoreLoad>>>,
+    // NOTE: outs is not exact since there's work stealing
+    // pub ip2outs: HashMap<u32,Vec<AtomicIsize>>,
+    outstanding: AtomicUsize,
+    pub outs_trace: RefCell<Avg>,
+    pub ip2load: HashMap<u32, Vec<RwLock<CoreLoad>>>,
     // num_queues: usize,
     // #[cfg(feature = "server_stats")]
     // ip2trace: HashMap<u32, RwLock<Vec<(usize, (u64, (f64, f64)))>>>,
@@ -263,19 +267,19 @@ impl ServerLoad {
         moving_exp: f64,
     ) -> ServerLoad {
         let mut ip2load = HashMap::new();
-        let mut ip2outs = HashMap::new();
+        // let mut ip2outs = HashMap::new();
         // let mut num_queues = 0usize;
         for &(ip, num_ports) in &ip_and_ports {
             let mut server_load = vec![];
-            let mut outs = vec![];
+            // let mut outs = vec![];
             for _ in 0..num_ports {
                 server_load.push(RwLock::new(CoreLoad::new()));
-                outs.push(AtomicUsize::new(0));
+                // outs.push(AtomicIsize::new(0));
             }
             let ip = u32::from(Ipv4Addr::from_str(ip).unwrap());
             // ip2load.insert(ip, RwLock::new(MovingTimeAvg::new(moving_exp)));
             ip2load.insert(ip, server_load);
-            ip2outs.insert(ip,outs);
+            // ip2outs.insert(ip,outs);
         }
         // #[cfg(feature = "server_stats")]
         // let mut ip2trace = HashMap::new();
@@ -291,19 +295,23 @@ impl ServerLoad {
         ServerLoad {
             cluster_name: cluster_name.to_string(),
             ip2load: ip2load,
-            ip2outs:ip2outs,
+            // ip2outs:ip2outs,
+            outstanding:AtomicUsize::new(0),
+            outs_trace:RefCell::new(Avg::new()),
             // num_queues: num_queues,
             // #[cfg(feature = "server_stats")]
             // ip2trace: ip2trace,
         }
     }
     pub fn inc_outstanding(&self,src_ip:u32,src_port:u16){
-        let outs = self.ip2outs.get(&src_ip).unwrap();
-        outs[src_port as usize].fetch_add(1,Ordering::Relaxed);
+        // let outs = self.ip2outs.get(&src_ip).unwrap();
+        // outs[src_port as usize].fetch_add(1,Ordering::SeqCst)
+        self.outstanding.fetch_add(1,Ordering::SeqCst);
     }
     pub fn dec_outstanding(&self,src_ip:u32,src_port:u16){
-        let outs = self.ip2outs.get(&src_ip).unwrap();
-        outs[src_port as usize].fetch_sub(1,Ordering::Relaxed);
+        // let outs = self.ip2outs.get(&src_ip).unwrap();
+        // outs[src_port as usize].fetch_sub(1,Ordering::SeqCst)
+        self.outstanding.fetch_sub(1,Ordering::SeqCst);
     }
     pub fn update_load(
         &self,
@@ -345,10 +353,10 @@ impl ServerLoad {
     //             .push((id, (curr_rdtsc, (server_ql, task_duration_cv))));
     //     }
     // }
-    pub fn aggr_server(&self, ip: u32) -> (f64, f64, f64, f64) {
+    pub fn aggr_server(&self, ip: u32) -> (f64, f64, f64) {
         let server_load = self.ip2load.get(&ip).unwrap();
         let num_cores = server_load.len() as f64;
-        let mut total_outs = 0f64;
+        // let mut total_outs = 0f64;
         let mut total_w = 0f64;
         let mut total_cv = 0f64;
         for core_load in server_load.iter() {
@@ -357,31 +365,32 @@ impl ServerLoad {
             total_w+=w;
             total_cv += cv;
         }
-        let outs = self.ip2outs.get(&ip).unwrap();
-        for out in outs.iter(){
-            total_outs+=out.load(Ordering::Acquire) as f64;
-        }
+        // let outs = self.ip2outs.get(&ip).unwrap();
+        // for out in outs.iter(){
+        //     total_outs+=out.load(Ordering::Acquire) as f64;
+        // }
         // (total_ql / num_cores, total_cv / num_cores)
-        (total_outs,total_w,total_cv,num_cores)
+        (total_w,total_cv,num_cores)
         // server_load.read().unwrap().avg()
     }
     pub fn aggr_all(&self) -> (f64, f64,f64,f64) {
         // let mut total_ql = 0f64;
-        let mut total_outs = 0f64;
+        // let mut total_outs = 0f64;
         let mut total_w = 0f64;
         let mut total_cv = 0f64;
         // let num_servers = self.ip2load.len() as f64;
         let mut num_cores = 0f64;
         for &ip in self.ip2load.keys() {
             // let (ql, cv) = self.avg_server(ip);
-            let (outs, w, cv,ncores) = self.aggr_server(ip);
+            let (w, cv,ncores) = self.aggr_server(ip);
             // total_ql += ql;
-            total_outs+=outs;
+            // total_outs+=outs;
             total_w+=w;
             total_cv += cv;
             num_cores+=ncores;
         }
         // (total_ql / num_servers, total_cv / num_servers)
+        let total_outs = self.outstanding.load(Ordering::Acquire) as f64;
         (total_outs,total_w,total_cv,num_cores)
     }
     // pub fn mean_server(&self, ip: u32) -> (f64,f64) {
@@ -535,6 +544,8 @@ impl fmt::Display for ServerLoad {
         Ok(())
     }
 }
+unsafe impl Send for ServerLoad {}
+unsafe impl Sync for ServerLoad {}
 
 pub struct QueueGrad {
     pub storage_load: Arc<ServerLoad>,
@@ -592,6 +603,12 @@ impl QueueGrad {
             msg: String::new(),
             xtrace: Vec::with_capacity(64000000),
         }
+    }
+    pub fn snapshot(&mut self,curr_rdtsc:u64){
+        let (out_storage,_,cv_storage,ncores_storage)=self.storage_load.aggr_all();
+        let (out_compute,w_compute,cv_compute,ncores_compute)=self.compute_load.aggr_all();
+        self.storage_load.outs_trace.borrow_mut().update(out_storage);
+        self.compute_load.outs_trace.borrow_mut().update(out_compute);
     }
     pub fn ready(&mut self, curr_rdtsc: u64) -> bool {
         if self.last_rdtsc==0{
