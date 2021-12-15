@@ -1005,9 +1005,9 @@ fn main() {
             "storage summary ql {:.2} raw {:.2} outs {:.2}({:.2}) waiting {:.2} cv {:.2}",
             ql_storage,
             ql_storage_raw,
-            out_storage,
-            out_storage_std,
-            w_storage,
+            out_storage / ncores_storage,
+            out_storage_std / ncores_storage,
+            w_storage / ncores_storage,
             cv_storage / ncores_storage
         );
         print!("{}", compute_load);
@@ -1019,9 +1019,9 @@ fn main() {
             "compute summary ql {:.2} raw {:.2} outs {:.2}({:.2}) waiting {:.2} cv {:.2}",
             ql_compute,
             ql_compute_raw,
-            out_compute,
-            out_compute_std,
-            w_compute,
+            out_compute / ncores_compute,
+            out_compute_std / ncores_compute,
+            w_compute / ncores_compute,
             cv_compute / ncores_compute
         );
     }
