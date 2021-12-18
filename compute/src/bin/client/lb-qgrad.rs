@@ -649,7 +649,8 @@ impl LoadBalancer {
                                         // #[cfg(feature = "server_stats")]
                                         // (curr_rdtsc - self.init_rdtsc),
                                     );
-                                    self.latencies[type_id].push(curr_rdtsc - timestamp);
+                                    // self.latencies[type_id].push(curr_rdtsc - timestamp);
+                                    self.latencies[0].push(curr_rdtsc - timestamp);
                                     self.outstanding_reqs.remove(&timestamp);
                                     if self.xloop.storage_load.ip2load.contains_key(&src_ip) {
                                         self.xloop.storage_load.dec_outstanding(src_ip, src_port);
@@ -695,6 +696,7 @@ impl LoadBalancer {
                         self.xloop
                             .update_x(&self.partition, curr_rdtsc, global_recvd);
                         // reset even if not updated
+                        // TODO: there's no need to reset since we no longer need cv
                         self.dispatcher.sender2storage.send_reset();
                         self.dispatcher.sender2compute.send_reset();
                         // let output_tput = 2.4e6 * (global_recvd - self.output_last_recvd) as f32
@@ -709,8 +711,13 @@ impl LoadBalancer {
                     if self.output_factor != 0
                         && (curr_rdtsc - self.output_last_rdtsc > 2400000000 / self.output_factor)
                     {
+                        // let global_recvd = self.global_recvd.load(Ordering::Relaxed);
+                        // let output_tput = 2.4e6 * (global_recvd - self.output_last_recvd) as f32
+                        //     / (curr_rdtsc - self.output_last_rdtsc) as f32;
+                        // println!("rdtsc {} tput {:.2}", curr_rdtsc / 2400000, output_tput);
+                        // self.output_last_rdtsc = curr_rdtsc;
+                        // self.output_last_recvd = global_recvd;
                         self.xloop.snapshot(curr_rdtsc);
-                        self.output_last_rdtsc = curr_rdtsc;
                         /*
                         // tput
                         let global_recvd = self.global_recvd.load(Ordering::Relaxed);
@@ -794,6 +801,9 @@ impl Drop for LoadBalancer {
         if self.tput > 0.0 {
             // Calculate & print median & tail latency only on the master thread.
             for (type_id, lat) in self.latencies.iter_mut().enumerate() {
+                if lat.len() == 0 {
+                    continue;
+                }
                 lat.sort();
                 let m;
                 let t = lat[(lat.len() * 99) / 100];

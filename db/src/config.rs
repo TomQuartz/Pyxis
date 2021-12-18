@@ -23,6 +23,7 @@ use super::toml;
 use e2d2::config::{NetbricksConfiguration, PortConfiguration};
 // use e2d2::scheduler::NetBricksContext as NetbricksContext;
 use e2d2::scheduler::*;
+use std::collections::HashMap;
 
 /// To show the error while parsing the MAC address.
 #[derive(Debug, Clone)]
@@ -367,7 +368,7 @@ pub struct ServerConfig {
     pub max_rx_packets: usize,
     pub server: NetConfig,
 }
-
+/*
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
 pub struct LBConfig {
@@ -390,13 +391,26 @@ pub struct LBConfig {
     pub max_out: u32,
     pub xloop_factor: u64,
     pub moving_exp: f64,
-    // grad
+    // tput
+    pub lr: f64,
+    pub max_step_rel: f64,
+    pub max_step_abs: f64,
+    pub min_step_rel: f64,
+    pub min_step_abs: f64,
+    pub min_interval: f64,
+    pub max_err: f64,
+    // pub max_ql_diff: f64,
+    // pub min_ql_diff: f64,
+    // pub ql_lowerbound: f64,
+    // pub max_step: f64,
+    // pub min_lr: f64,
+    // qgrad
     pub thresh_ql: f64,
     // pub thresh_tput: f64,
-    pub lr: f64,
+    // pub lr: f64,
     pub lr_decay: f64,
-    pub max_step: f64,
-    pub min_step: f64,
+    // pub max_step: f64,
+    // pub min_step: f64,
     // // queue
     // pub ql_diff_thresh: f64,
     // // pivot
@@ -421,6 +435,54 @@ pub struct LBConfig {
     pub compute: Vec<NetConfig>,
     pub storage: Vec<NetConfig>,
 }
+*/
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(default)]
+pub struct LBConfig {
+    pub num_tenants: u32,
+    // pub key_len: usize,
+    // pub value_len: usize,
+    // pub n_keys: usize,
+    // pub put_pct: usize,
+    pub skew: f64,
+    pub tenant_skew: f64,
+    // stop after duration
+    pub duration: u64,
+    // pub num_reqs: usize,
+    // pub multi_kv: Vec<u32>,
+    // pub multi_ord: Vec<u32>,
+    // pub multi_ratio: Vec<f32>,
+    // pub multi_rpc: bool,
+    // pub type2core: Vec<Vec<u16>>,
+    pub learnable: bool,
+    pub partition: f64,
+    pub max_out: u32,
+    pub xloop_factor: u64,
+    pub output_factor: u64,
+    // not used
+    pub moving_exp: f64,
+    // tput
+    pub lr: f64,
+    pub max_step_rel: f64,
+    pub max_step_abs: f64,
+    pub min_step_rel: f64,
+    pub min_step_abs: f64,
+    pub min_interval: f64,
+    pub max_err: f64,
+    // network configuration
+    pub lb: ServerConfig,
+    // TODO: add utilization config
+    // NOTE: this is the number of storage ports, equal duration
+    // NOTE: assumes no workstealing
+    // pub utilization: Vec<usize>
+    // [[]]
+    pub compute: Vec<NetConfig>,
+    pub storage: Vec<NetConfig>,
+    // workload configuration
+    pub exts: Vec<ExtensionConfig>,
+    pub phases: Vec<PhaseConfig>,
+}
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
@@ -428,24 +490,58 @@ pub struct ComputeConfig {
     // pub max_credits: u32,
     pub moving_exp: f64,
     pub compute: ServerConfig,
+    // NOTE: all exts are loaded by default
+    // pub exts: Vec<String>,
+    // [[]]
     pub storage: Vec<NetConfig>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
-pub struct StorageConfig {
-    /// Number of tenants to intialize the tables.
-    pub num_tenants: u32,
-    /// Type of workload; TAO, YCSB, AGGREGATE etc.
-    pub workload: String,
-    /// Number of records in the table for each tenant.
-    pub num_records: u32,
-    /// rx batch size
+pub struct TableConfig {
     pub key_len: usize,
     pub value_len: usize,
     pub record_len: usize,
+    pub num_records: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(default)]
+pub struct ExtensionConfig {
+    pub name: String,
+    pub kv: u32,
+    pub order: u32,
+    pub key_len: usize,
+    pub table_id: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(default)]
+pub struct PhaseConfig {
+    /// extension ids
+    pub exts: Vec<usize>,
+    pub ratio: Vec<f32>,
+    pub duration: u64,
+}
+
+pub struct StorageConfig {
+    /// Number of tenants to intialize the tables.
+    pub num_tenants: u32,
+    // /// Type of workload; TAO, YCSB, AGGREGATE etc.
+    // pub workload: String,
+    // /// Number of records in the table for each tenant.
+    // pub num_records: u32,
+    // /// rx batch size
+    // pub key_len: usize,
+    // pub value_len: usize,
+    // pub record_len: usize,
+    // not used
     pub moving_exp: f64,
     pub storage: ServerConfig,
+    // NOTE: all exts are loaded by default
+    // pub exts: Vec<String>,
+    // [[]]
+    pub tables: Vec<TableConfig>,
 }
 
 pub fn get_default_netbricks_config(config: &ServerConfig) -> NetbricksConfiguration {

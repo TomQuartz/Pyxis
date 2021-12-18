@@ -2,37 +2,32 @@
 num_tenants = 1
 key_len = 30
 value_len = 100
-n_keys = 1000000
+n_keys = 10000
 put_pct = 0
 skew = 0.99
 tenant_skew = 0.1
-num_reqs = 64000
+num_reqs = 64000000
 
 multi_kv = [4,0]
 multi_ord = [0,25600]
-multi_ratio = [12,88]
+multi_ratio = [45,55]
 multi_rpc = false
 
-learnable = false
-partition = 100
-max_out = 24
+learnable = true
+partition = 50
+max_out = 32
 
-# queue
-ql_diff_thresh = 50
+# grad
+# lr and max_step is normalized by the length of interval
+lr = 0.5
+max_step_rel = 0.25
+max_step_abs = 1000
+min_step_rel = 0.05
+min_step_abs = 40
+min_interval = 80
+max_err = 0.05
 
-# sweep
-min_range = 50
-monotone_thresh = 10
-max_step = 1000
-lr_decay = 0.1
-
-# pivot
-pivot = 1200
-range = 200
-step_large = 1000
-step_small = 20
-
-xloop_factor = 800
+xloop_factor = 20
 moving_exp = 0
 invoke_p = 100
 bimodal = false
@@ -47,28 +42,28 @@ num_cores = 8
 [lb.server]
 rx_queues = 8
 ip_addr = "10.10.1.1"
-mac_addr = "9c:dc:71:56:fd:c5"
+mac_addr = "9c:dc:71:5e:2f:71"
 
 [[compute]]
-rx_queues = 1
+rx_queues = 8
 ip_addr = "10.10.1.5"
-mac_addr = "9c:dc:71:56:af:85"
+mac_addr = "9c:dc:71:5b:22:61"
 [[compute]]
-rx_queues = 1
+rx_queues = 8
 ip_addr = "10.10.1.3"
-mac_addr = "9c:dc:71:5e:2f:b1"
+mac_addr = "9c:dc:71:56:fd:c5"
 [[compute]]
-rx_queues = 1
+rx_queues = 8
 ip_addr = "10.10.1.4"
-mac_addr = "9c:dc:71:56:bf:05"
+mac_addr = "9c:dc:71:56:fd:85"
 [[compute]]
-rx_queues = 1
+rx_queues = 8
 ip_addr = "10.10.1.2"
-mac_addr = "9c:dc:71:56:af:75"
+mac_addr = "9c:dc:71:56:bf:05"
 
 [[storage]]
-rx_queues = 1
+rx_queues = 8
 ip_addr = "10.10.1.6"
-mac_addr = "9c:dc:71:5d:90:d1"
+mac_addr = "9c:dc:71:56:af:75"
 
 

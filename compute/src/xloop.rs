@@ -1,14 +1,14 @@
 use db::config::LBConfig;
 use db::cycles::rdtsc;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{self, Write};
 use std::fs::File;
 use std::io::Write as writef;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
-use std::sync::atomic::{AtomicUsize,Ordering};
-use std::cell::RefCell;
 
 const CPU_FREQUENCY: u64 = 2400000000;
 
@@ -204,7 +204,11 @@ impl CoreLoad {
     // fn update_outstanding(&mut self, outstanding: f64){
     //     self.outstanding.update(outstanding);
     // }
-    fn update_load(&mut self, /*current_time: u64, */queue_length: f64, task_duration_cv: f64) {
+    fn update_load(
+        &mut self,
+        /*current_time: u64, */ queue_length: f64,
+        task_duration_cv: f64,
+    ) {
         // self.queue_length.update(current_time, queue_length);
         self.waiting.update(queue_length);
         self.task_duration_cv.update(task_duration_cv);
@@ -296,22 +300,22 @@ impl ServerLoad {
             cluster_name: cluster_name.to_string(),
             ip2load: ip2load,
             // ip2outs:ip2outs,
-            outstanding:AtomicUsize::new(0),
-            outs_trace:RefCell::new(Avg::new()),
+            outstanding: AtomicUsize::new(0),
+            outs_trace: RefCell::new(Avg::new()),
             // num_queues: num_queues,
             // #[cfg(feature = "server_stats")]
             // ip2trace: ip2trace,
         }
     }
-    pub fn inc_outstanding(&self,src_ip:u32,src_port:u16){
+    pub fn inc_outstanding(&self, src_ip: u32, src_port: u16) {
         // let outs = self.ip2outs.get(&src_ip).unwrap();
         // outs[src_port as usize].fetch_add(1,Ordering::SeqCst)
-        self.outstanding.fetch_add(1,Ordering::SeqCst);
+        self.outstanding.fetch_add(1, Ordering::SeqCst);
     }
-    pub fn dec_outstanding(&self,src_ip:u32,src_port:u16){
+    pub fn dec_outstanding(&self, src_ip: u32, src_port: u16) {
         // let outs = self.ip2outs.get(&src_ip).unwrap();
         // outs[src_port as usize].fetch_sub(1,Ordering::SeqCst)
-        self.outstanding.fetch_sub(1,Ordering::SeqCst);
+        self.outstanding.fetch_sub(1, Ordering::SeqCst);
     }
     pub fn update_load(
         &self,
@@ -362,7 +366,7 @@ impl ServerLoad {
         for core_load in server_load.iter() {
             let (w, cv) = core_load.read().unwrap().avg();
             // total_ql += ql;
-            total_w+=w;
+            total_w += w;
             total_cv += cv;
         }
         // let outs = self.ip2outs.get(&ip).unwrap();
@@ -370,10 +374,10 @@ impl ServerLoad {
         //     total_outs+=out.load(Ordering::Acquire) as f64;
         // }
         // (total_ql / num_cores, total_cv / num_cores)
-        (total_w,total_cv,num_cores)
+        (total_w, total_cv, num_cores)
         // server_load.read().unwrap().avg()
     }
-    pub fn aggr_all(&self) -> (f64, f64,f64,f64) {
+    pub fn aggr_all(&self) -> (f64, f64, f64, f64) {
         // let mut total_ql = 0f64;
         // let mut total_outs = 0f64;
         let mut total_w = 0f64;
@@ -382,16 +386,16 @@ impl ServerLoad {
         let mut num_cores = 0f64;
         for &ip in self.ip2load.keys() {
             // let (ql, cv) = self.avg_server(ip);
-            let (w, cv,ncores) = self.aggr_server(ip);
+            let (w, cv, ncores) = self.aggr_server(ip);
             // total_ql += ql;
             // total_outs+=outs;
-            total_w+=w;
+            total_w += w;
             total_cv += cv;
-            num_cores+=ncores;
+            num_cores += ncores;
         }
         // (total_ql / num_servers, total_cv / num_servers)
         let total_outs = self.outstanding.load(Ordering::Acquire) as f64;
-        (total_outs,total_w,total_cv,num_cores)
+        (total_outs, total_w, total_cv, num_cores)
     }
     // pub fn mean_server(&self, ip: u32) -> (f64,f64) {
     //     let server_load = self.ip2load.get(&ip).unwrap();
@@ -547,6 +551,270 @@ impl fmt::Display for ServerLoad {
 unsafe impl Send for ServerLoad {}
 unsafe impl Sync for ServerLoad {}
 
+fn clamp(raw_step: f64, min_step: f64, max_step: f64) -> f64 {
+    let mut bounded_step = raw_step.abs().max(min_step);
+    if max_step < min_step {
+        bounded_step = min_step;
+    } else {
+        bounded_step = bounded_step.min(max_step);
+    }
+    bounded_step * raw_step.signum()
+}
+
+fn relative_err(x: f64, y: f64) -> f64 {
+    (x - y).abs() * 2.0 / (x + y)
+}
+
+pub struct TputGrad {
+    pub storage_load: Arc<ServerLoad>,
+    pub compute_load: Arc<ServerLoad>,
+    interval: u64,
+    last_rdtsc: u64,
+    pub last_recvd: usize,
+    // last_tput: f64,
+    last_inv_tput: f64,
+    // last_ql_storage: f64,
+    // last_ql_compute: f64,
+    last_x: f64,
+    // // thresh
+    // max_ql_diff: f64,
+    // min_ql_diff: f64,
+    // ql_lowerbound: f64,
+    // exp_lowerbound: f64,
+    max_step_rel: f64,
+    max_step_abs: f64,
+    min_step_rel: f64,
+    min_step_abs: f64,
+    lr: f64,
+    // lr_decay: f64,
+    // default_lr: f64,
+    // min_lr: f64,
+    upperbound: f64,
+    lowerbound: f64,
+    min_interval: f64,
+    max_err: f64,
+    converged: bool,
+    // best_y: f64,
+    // best_x: f64,
+    msg: String,
+    start: u64,
+    stop: u64,
+    // trace
+    pub xtrace: Vec<String>,
+}
+
+impl TputGrad {
+    pub fn new(
+        config: &LBConfig,
+        storage_load: Arc<ServerLoad>,
+        compute_load: Arc<ServerLoad>,
+    ) -> TputGrad {
+        TputGrad {
+            storage_load: storage_load,
+            compute_load: compute_load,
+            interval: CPU_FREQUENCY / config.xloop_factor,
+            last_rdtsc: 0,
+            last_recvd: 0,
+            // last_tput: 0.0,
+            last_inv_tput: 0.0,
+            // last_ql_storage: 0.0,
+            // last_ql_compute: 0.0,
+            last_x: config.partition * 100.0,
+            // last_x: 0.0,
+            // max_ql_diff:config.max_ql_diff,
+            // min_ql_diff:config.min_ql_diff,
+            // ql_lowerbound: config.ql_lowerbound,
+            // exp_lowerbound: config.exp_lowerbound,
+            lr: config.lr,
+            max_step_rel: config.max_step_rel,
+            max_step_abs: config.max_step_abs,
+            min_step_rel: config.min_step_rel,
+            min_step_abs: config.min_step_abs,
+            min_interval: config.min_interval,
+            max_err: config.max_err,
+            converged: false,
+            upperbound: 10000.0,
+            lowerbound: 0.0,
+            msg: String::new(),
+            start: 0,
+            stop: 0,
+            xtrace: Vec::with_capacity(64000000),
+        }
+    }
+    // pub fn snapshot(&mut self,curr_rdtsc:u64){
+    //     let (out_storage,_,cv_storage,ncores_storage)=self.storage_load.aggr_all();
+    //     let (out_compute,w_compute,cv_compute,ncores_compute)=self.compute_load.aggr_all();
+    //     self.storage_load.outs_trace.borrow_mut().update(out_storage);
+    //     self.compute_load.outs_trace.borrow_mut().update(out_compute);
+    // }
+    pub fn ready(&mut self, curr_rdtsc: u64) -> bool {
+        if self.last_rdtsc == 0 {
+            self.last_rdtsc = curr_rdtsc;
+            false
+        } else {
+            curr_rdtsc - self.last_rdtsc > self.interval
+        }
+    }
+    /// update
+    pub fn update_x(
+        &mut self,
+        xinterface: &impl XInterface<X = f64>,
+        curr_rdtsc: u64,
+        recvd: usize,
+    ) -> Option<i32> {
+        if self.start == 0 {
+            self.start = curr_rdtsc;
+        }
+        let x = xinterface.get();
+        let delta_x = x - self.last_x;
+        // tput
+        let delta_recvd = recvd - self.last_recvd;
+        let delta_t = curr_rdtsc - self.last_rdtsc;
+        // let tput = 2.4e6 * (recvd - self.last_recvd) as f64 / (curr_rdtsc - self.last_rdtsc) as f64;
+        let inv_tput = delta_t as f64 / delta_recvd as f64;
+        // let delta_tput = tput - self.last_tput;
+        let delta_inv_tput = inv_tput - self.last_inv_tput;
+        // interval
+        if delta_x > 0.0 {
+            if delta_inv_tput > 2.0 {
+                self.upperbound = x;
+            } else if delta_inv_tput < -2.0 {
+                self.lowerbound = self.last_x;
+            }
+        } else if delta_x < 0.0 {
+            // exclude delta_x = 0, for the first call to xloop or after reset
+            if delta_inv_tput < -2.0 {
+                self.upperbound = self.last_x;
+            } else if delta_inv_tput > 2.0 {
+                self.lowerbound = x;
+            }
+        }
+        let interval = self.upperbound - self.lowerbound;
+        // grad
+        let mut step = 0f64;
+        let mut step_raw = 0f64;
+        if self.converged && relative_err(inv_tput, self.last_inv_tput) > self.max_err {
+            self.converged = false;
+        }
+        if !self.converged && interval > self.min_interval {
+            step_raw = -self.lr * interval * delta_inv_tput / (delta_x + 1e-9);
+            let max_step = self.max_step_abs.min(self.max_step_rel * interval);
+            let min_step = self.min_step_abs.max(self.min_step_rel * interval);
+            step = clamp(step_raw, min_step, max_step);
+        } else if !self.converged {
+            // stop gradient descend and reset ub & lb
+            self.converged = true;
+            self.upperbound = 10000.0;
+            self.lowerbound = 0.0;
+            self.stop = curr_rdtsc;
+        }
+        // sync
+        self.last_rdtsc = curr_rdtsc;
+        self.last_recvd = recvd;
+        // self.last_tput = tput;
+        self.last_inv_tput = inv_tput;
+        self.last_x = x;
+        // update
+        if step != 0f64 {
+            xinterface.update(step);
+        }
+        self.msg.clear();
+        write!(
+            self.msg,
+            "rdtsc {} x {:.2}({:.2}) inv_tput {:.2}({:.2}) tput {:.2}({}/{}) step {:.2}({:.2}) range {:.2}({:.2},{:.2}) ",
+            curr_rdtsc,
+            x,
+            delta_x,
+            inv_tput,
+            // tput,
+            delta_inv_tput,
+            // delta_tput,
+            2.4e6 / inv_tput,
+            delta_recvd,
+            delta_t,
+            step,
+            step_raw,
+            interval,
+            self.lowerbound,
+            self.upperbound,
+        );
+        if self.converged {
+            write!(self.msg, "elapsed {} ", (self.stop - self.start) / 2400000);
+        }
+        let mut balanced = None;
+        /*
+        // elastic scaling
+        if converged{
+            let (out_storage,w_storage,cv_storage,ncores_storage)=self.storage_load.aggr_all();
+            let (out_compute,w_compute,cv_compute,ncores_compute)=self.compute_load.aggr_all();
+            let out_storage = out_storage/ncores_storage;
+            let out_compute = out_compute/ncores_compute;
+            let w_compute = w_compute/ncores_compute;
+            // w_storage == 0
+            let ql_storage = out_storage+w_compute;
+            let ql_compute = out_compute-w_compute;
+            // ub and lb of ql_compute
+            let (upperbound_compute,lowerbound_compute) = if ql_storage-self.min_ql_diff>self.ql_lowerbound{ // min 5, max 10, lb 1
+                (ql_storage-self.min_ql_diff,(ql_storage-self.max_ql_diff).max(self.ql_lowerbound))
+            }else{
+                (ql_storage,ql_storage*self.exp_lowerbound)
+            };
+            balanced = if ql_compute > upperbound_compute{
+                Some(1)  // compute overload
+            }else if ql_compute > lowerbound_compute{
+                Some(0)   // balanced
+            }else{
+                Some(-1)   // storage overload
+            };
+            // NOTE: if converged, ql_storage is always larger than ql_compute
+            // // ub and lb of ql_compute
+            // let (upperbound_compute,lowerbound_compute) = if ql_storage-self.min_ql_diff>self.ql_lowerbound{ // min 5, max 10, lb 1
+            //     (ql_storage-self.min_ql_diff,(ql_storage-self.max_ql_diff).max(self.ql_lowerbound))
+            // }else{
+            //     (ql_storage,ql_storage*self.exp_lowerbound)
+            // };
+            // balanced = if ql_compute > upperbound_compute{
+            //     Some(1)  // compute overload
+            // }else if ql_compute > lowerbound_compute{
+            //     Some(0)   // balanced
+            // }else{
+            //     Some(-1)   // storage overload
+            // };
+            write!(self.msg,"storage {:.2}({:.2}+{:.2}) compute {:.2}({:.2}-{:.2}) range ({:.2},{:.2})",ql_storage,out_storage,w_compute,ql_compute,out_compute,w_compute,upperbound_compute,lowerbound_compute);
+        }
+        */
+        // reset avg of waiting, locally on lb
+        self.compute_load.reset();
+        self.storage_load.reset();
+        if cfg!(feature = "xtrace") {
+            self.xtrace.push(self.msg.clone());
+        }
+        balanced
+    }
+}
+
+impl fmt::Display for TputGrad {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.msg)
+    }
+}
+
+// inc by fixed step, dec by binary search
+pub struct ElasticScaling {
+    // thresh
+    max_ql_diff: f64,
+    min_ql_diff: f64,
+    ql_lowerbound: f64,
+    exp_lowerbound: f64,
+    // update
+    max_alloc: u32,
+    // history
+    cores: u32,
+    last_state: i32,
+    last_step: u32,
+}
+
+/*
 pub struct QueueGrad {
     pub storage_load: Arc<ServerLoad>,
     pub compute_load: Arc<ServerLoad>,
@@ -604,11 +872,16 @@ impl QueueGrad {
             xtrace: Vec::with_capacity(64000000),
         }
     }
-    pub fn snapshot(&mut self,curr_rdtsc:u64){
+    pub fn snapshot(&mut self,curr_rdtsc:u64/*,global_recvd:usize*/){
         let (out_storage,_,cv_storage,ncores_storage)=self.storage_load.aggr_all();
         let (out_compute,w_compute,cv_compute,ncores_compute)=self.compute_load.aggr_all();
         self.storage_load.outs_trace.borrow_mut().update(out_storage);
         self.compute_load.outs_trace.borrow_mut().update(out_compute);
+        // let tput = 2.4e6 * (global_recvd - self.last_recvd) as f32
+        //     / (curr_rdtsc - self.last_rdtsc) as f32;
+        // self.last_rdtsc=curr_rdtsc;
+        // self.last_recvd=global_recvd;
+        // println!("rdtsc {} tput {:.2}",curr_rdtsc/2400000,tput);
     }
     pub fn ready(&mut self, curr_rdtsc: u64) -> bool {
         if self.last_rdtsc==0{
@@ -719,7 +992,7 @@ impl QueueGrad {
             step_raw,
             self.lr,
             ql_storage,
-            delta_ql_storage, 
+            delta_ql_storage,
             ql_compute,
             delta_ql_compute,
             ql_storage_raw,
@@ -954,11 +1227,11 @@ impl QueueSweep {
             x,
             ql_storage,
             ql_compute,
-            delta_ql_storage, 
+            delta_ql_storage,
             delta_ql_compute,
             delta_x,
             step,
-            self.lowerbound, 
+            self.lowerbound,
             self.upperbound,
             self.lr,
             ql_storage_raw,
@@ -975,6 +1248,7 @@ impl fmt::Display for QueueSweep {
         write!(f, "{}", self.msg)
     }
 }
+*/
 /*
 pub struct QueuePivot {
     interval: u64,
