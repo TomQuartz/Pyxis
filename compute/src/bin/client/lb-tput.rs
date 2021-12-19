@@ -539,7 +539,7 @@ impl LoadBalancer {
                     {
                         let output_tput = (global_recvd - self.output_last_recvd) as f64
                             * (CPU_FREQUENCY / 1000) as f64
-                            * (curr_rdtsc - self.output_last_rdtsc) as f64;
+                            / (curr_rdtsc - self.output_last_rdtsc) as f64;
                         self.output_last_recvd = global_recvd;
                         self.output_last_rdtsc = curr_rdtsc;
                         println!(
