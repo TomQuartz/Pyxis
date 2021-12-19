@@ -46,6 +46,7 @@ use e2d2::headers::UdpHeader;
 use e2d2::interface::Packet;
 use spin::RwLock;
 
+use super::config::*;
 use sandstorm::common::{TableId, TenantId, PACKET_UDP_LEN};
 use sandstorm::db::DB;
 use sandstorm::ext::*;
@@ -78,11 +79,13 @@ pub struct Master {
     /// Manager of the table heap. Required to allow writes to the database.
     heap: Allocator,
 
-    key_len: usize,
-    /// value len
-    pub value_len: usize,
-    /// the payload len of get resp packet
-    pub record_len: usize,
+    // key_len: usize,
+    // /// value len
+    // pub value_len: usize,
+    // /// the payload len of get resp packet
+    // pub record_len: usize,
+    pub table_cfg: Vec<TableConfig>,
+    // ext_cfg: Vec<ExtensionConfig>,
 }
 
 // Implementation of methods on Master.
@@ -92,7 +95,11 @@ impl Master {
     /// # Return
     ///
     /// A Master service capable of creating schedulable tasks out of RPC requests.
-    pub fn new(key_len: usize, value_len: usize, record_len: usize) -> Master {
+    pub fn new(
+        table_cfg: &Vec<TableConfig>,
+        // ext_cfg: &Vec<ExtensionConfig>,
+        /*key_len: usize, value_len: usize, record_len: usize*/
+    ) -> Master {
         Master {
             // Cannot use copy constructor because of the Arc<Tenant>.
             tenants: [
@@ -132,9 +139,11 @@ impl Master {
             ],
             extensions: ExtensionManager::new(),
             heap: Allocator::new(),
-            key_len: key_len,
-            value_len: value_len,
-            record_len: record_len,
+            // key_len: key_len,
+            // value_len: value_len,
+            // record_len: record_len,
+            table_cfg: table_cfg.clone(),
+            // ext_cfg: ext_cfg.clone(),
         }
     }
 
@@ -147,7 +156,7 @@ impl Master {
     /// * `table_id`:  Identifier of the table to be added to the tenant. This table will contain
     ///                all the objects.
     /// * `num`:       The number of objects to be added to the data table.
-    pub fn fill_test(&mut self, tenant_id: TenantId, table_id: TableId, num: u32) {
+    pub fn fill_test(&mut self, tenant_id: TenantId, table_id: TableId /*, num: u32*/) {
         // Create a tenant containing the table.
         let mut tenant = Tenant::new(tenant_id);
         tenant.create_table(table_id);
@@ -156,13 +165,19 @@ impl Master {
             .get_table(table_id)
             .expect("Failed to init test table.");
 
-        let mut key = vec![0; self.key_len];
-        let mut val = vec![0; self.value_len];
+        let table_config = &self.table_cfg[table_id as usize - 1];
+
+        let mut key = vec![0; table_config.key_len];
+        let mut val = vec![0; table_config.value_len];
+        let num_records = table_config.num_records;
+
+        // let mut key = vec![0; self.key_len];
+        // let mut val = vec![0; self.value_len];
 
         // Allocate objects, and fill up the above table. Each object consists of a 30 Byte key
         // and a 100 Byte value.
-        for i in 1..(num + 1) {
-            let value: [u8; 4] = unsafe { transmute((i % num + 1).to_le()) };
+        for i in 1..(num_records + 1) {
+            let value: [u8; 4] = unsafe { transmute((i % num_records + 1).to_le()) };
             let temp: [u8; 4] = unsafe { transmute(i.to_le()) };
             &key[0..4].copy_from_slice(&temp);
             &val[0..4].copy_from_slice(&value);
@@ -764,7 +779,8 @@ impl Master {
     #[allow(unused_assignments)]
     pub fn get(
         &self,
-        req: Packet<UdpHeader, EmptyMetadata>,
+        // req: Packet<UdpHeader, EmptyMetadata>,
+        req: Packet<GetRequest, EmptyMetadata>,
         mut resps: Vec<Packet<UdpHeader, EmptyMetadata>>,
     ) -> Result<
         Box<Task>,
@@ -774,7 +790,7 @@ impl Master {
         ),
     > {
         // First, parse the request packet.
-        let req = req.parse_header::<GetRequest>();
+        // let req = req.parse_header::<GetRequest>();
 
         // Read fields off the request header.
         let mut tenant_id: TenantId = 0;
@@ -828,7 +844,8 @@ impl Master {
         let tenant = self.get_tenant(tenant_id);
         let alloc: *const Allocator = &self.heap;
 
-        let record_len = self.record_len;
+        // let record_len = self.record_len;
+        let record_len = self.table_cfg[table_id as usize].record_len;
 
         // Create a generator for this request.
         let gen = Box::pin(move || {

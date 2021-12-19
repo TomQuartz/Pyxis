@@ -180,7 +180,6 @@ impl TaskManager {
     fn create_response(
         &self,
         resp_hdr: &PacketHeaders,
-        request: &Packet<UdpHeader, EmptyMetadata>,
     ) -> Option<Packet<UdpHeader, EmptyMetadata>> {
         if let Some(response) = new_packet() {
             let mut response = response
@@ -226,7 +225,7 @@ impl TaskManager {
         if parse_rpc_service(&request) == wireformat::Service::MasterService {
             match parse_rpc_opcode(&request) {
                 op @ OpCode::SandstormInvokeRpc => {
-                    let response = self.create_response(resp_hdr, &request).unwrap();
+                    let response = self.create_response(resp_hdr).unwrap();
                     match self.master_service.dispatch_invoke(request, response) {
                         // Ok(task) => Some((task, op)),
                         Ok(task) => self.ready.push_back(task),
@@ -240,13 +239,15 @@ impl TaskManager {
                     }
                 }
                 op @ OpCode::SandstormGetRpc => {
-                    let num_responses =
-                        self.master_service.value_len / self.master_service.record_len;
+                    let req = request.parse_header::<GetRequest>();
+                    let table_id = req.get_header().table_id as usize;
+                    let table_cfg = &self.master_service.table_cfg[table_id];
+                    let num_responses = table_cfg.value_len / table_cfg.record_len;
                     let mut responses = vec![];
                     for _ in 0..num_responses {
-                        responses.push(self.create_response(resp_hdr, &request).unwrap());
+                        responses.push(self.create_response(resp_hdr).unwrap());
                     }
-                    match self.master_service.get(request, responses) {
+                    match self.master_service.get(req, responses) {
                         // Ok(task) => Some((task, op)), // self.ready.push_back(task),
                         Ok(task) => self.ready.push_back(task),
                         Err((req, resps)) => {

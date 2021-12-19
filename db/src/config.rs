@@ -440,12 +440,12 @@ pub struct LBConfig {
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
 pub struct LBConfig {
-    pub num_tenants: u32,
+    pub num_tenants: usize,
     // pub key_len: usize,
     // pub value_len: usize,
     // pub n_keys: usize,
     // pub put_pct: usize,
-    pub skew: f64,
+    // pub skew: f64,
     pub tenant_skew: f64,
     // stop after duration
     pub duration: u64,
@@ -461,7 +461,7 @@ pub struct LBConfig {
     pub xloop_factor: u64,
     pub output_factor: u64,
     // not used
-    pub moving_exp: f64,
+    // pub moving_exp: f64,
     // tput
     pub lr: f64,
     pub max_step_rel: f64,
@@ -480,7 +480,8 @@ pub struct LBConfig {
     pub compute: Vec<NetConfig>,
     pub storage: Vec<NetConfig>,
     // workload configuration
-    pub exts: Vec<ExtensionConfig>,
+    pub tables: Vec<TableConfig>,
+    pub workloads: Vec<WorkloadConfig>,
     pub phases: Vec<PhaseConfig>,
 }
 
@@ -502,28 +503,32 @@ pub struct TableConfig {
     pub key_len: usize,
     pub value_len: usize,
     pub record_len: usize,
-    pub num_records: usize,
+    pub num_records: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
-pub struct ExtensionConfig {
-    pub name: String,
+pub struct WorkloadConfig {
+    pub extension: String,
     pub kv: u32,
     pub order: u32,
-    pub key_len: usize,
-    pub table_id: usize,
+    pub table_id: u64,
+    pub skew: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
 pub struct PhaseConfig {
-    /// extension ids
-    pub exts: Vec<usize>,
-    pub ratio: Vec<f32>,
+    /// workload ids
+    // pub workloads: Vec<usize>,
+    // NOTE: this ratio is over all workloads and may include zero
+    // this is ok since ratios are cumsumed
+    pub ratios: Vec<f32>,
     pub duration: u64,
 }
 
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(default)]
 pub struct StorageConfig {
     /// Number of tenants to intialize the tables.
     pub num_tenants: u32,

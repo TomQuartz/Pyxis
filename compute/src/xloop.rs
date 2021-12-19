@@ -10,7 +10,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 
-const CPU_FREQUENCY: u64 = 2400000000;
+pub const CPU_FREQUENCY: u64 = 2400000000;
 
 pub trait XInterface {
     type X;
@@ -146,7 +146,7 @@ pub struct Avg {
     E_x2: f64,
 }
 impl Avg {
-    fn new() -> Avg {
+    pub fn new() -> Avg {
         Avg {
             counter: 0.0,
             lastest: 0.0,
@@ -154,12 +154,12 @@ impl Avg {
             E_x2: 0.0,
         }
     }
-    fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.counter = 0.0;
         self.E_x = 0.0;
         self.E_x2 = 0.0;
     }
-    fn update(&mut self, delta: f64) {
+    pub fn update(&mut self, delta: f64) {
         self.counter += 1.0;
         self.lastest = delta;
         self.E_x = self.E_x * ((self.counter - 1.0) / self.counter) + delta / self.counter;
@@ -257,7 +257,7 @@ pub struct ServerLoad {
     // NOTE: outs is not exact since there's work stealing
     // pub ip2outs: HashMap<u32,Vec<AtomicIsize>>,
     outstanding: AtomicUsize,
-    pub outs_trace: RefCell<Avg>,
+    // pub outs_trace: RefCell<Avg>,
     pub ip2load: HashMap<u32, Vec<RwLock<CoreLoad>>>,
     // num_queues: usize,
     // #[cfg(feature = "server_stats")]
@@ -268,7 +268,7 @@ impl ServerLoad {
     pub fn new(
         cluster_name: &str,
         ip_and_ports: Vec<(&String, i32)>,
-        moving_exp: f64,
+        // moving_exp: f64,
     ) -> ServerLoad {
         let mut ip2load = HashMap::new();
         // let mut ip2outs = HashMap::new();
@@ -301,7 +301,7 @@ impl ServerLoad {
             ip2load: ip2load,
             // ip2outs:ip2outs,
             outstanding: AtomicUsize::new(0),
-            outs_trace: RefCell::new(Avg::new()),
+            // outs_trace: RefCell::new(Avg::new()),
             // num_queues: num_queues,
             // #[cfg(feature = "server_stats")]
             // ip2trace: ip2trace,
@@ -324,7 +324,7 @@ impl ServerLoad {
         // curr_rdtsc: u64,
         queue_length: f64,
         task_duration_cv: f64,
-    ) -> Result<(), ()> {
+    ) {
         if let Some(server_load) = self.ip2load.get(&src_ip) {
             server_load[src_port as usize].write().unwrap().update_load(
                 // curr_rdtsc,
@@ -335,9 +335,6 @@ impl ServerLoad {
             //     .write()
             //     .unwrap()
             //     .update_load(queue_length, task_duration_cv);
-            Ok(())
-        } else {
-            Err(())
         }
     }
     // #[cfg(feature = "server_stats")]

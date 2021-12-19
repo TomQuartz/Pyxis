@@ -136,7 +136,7 @@ fn obj_get_dispatch(db: Rc<DB>, ops: &[u8]) {
         db.resp(error.as_bytes());
         return;
     }
-
+    
     let (table, key) = ops.split_at(8);
     let table: u64 = convert_from_slice(table);
 

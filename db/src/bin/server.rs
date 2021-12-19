@@ -442,19 +442,26 @@ fn main() {
     let config: StorageConfig = config::load("storage.toml");
     info!("Starting up storage with config {:?}", config);
 
-    let mut master = Master::new(config.key_len, config.value_len, config.record_len);
-    match config.workload.as_str() {
-        "PUSHBACK" => {
-            info!(
-                "Populating PUSHBACK data, {} tenants, {} records/tenant",
-                config.num_tenants, config.num_records
-            );
-            for tenant in 1..(config.num_tenants + 1) {
-                master.fill_test(tenant, 1, config.num_records);
-                master.load_test(tenant);
-            }
+    // let mut master = Master::new(config.key_len, config.value_len, config.record_len);
+    let mut master = Master::new(&config.tables);
+    // match config.workload.as_str() {
+    //     "PUSHBACK" => {
+    //         info!(
+    //             "Populating PUSHBACK data, {} tenants, {} records/tenant",
+    //             config.num_tenants, config.num_records
+    //         );
+    //         for tenant in 1..(config.num_tenants + 1) {
+    //             master.fill_test(tenant, 1, config.num_records);
+    //             master.load_test(tenant);
+    //         }
+    //     }
+    //     _ => {}
+    // }
+    for tenant in 1..=config.num_tenants {
+        for table_id in 1..=config.tables.len() {
+            master.fill_test(tenant, table_id as u64);
         }
-        _ => {}
+        master.load_test(tenant);
     }
     let master = Arc::new(master);
     let mut net_context: NetbricksContext = config_and_init_netbricks(&config.storage);

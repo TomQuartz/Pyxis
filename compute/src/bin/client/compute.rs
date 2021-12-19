@@ -189,11 +189,11 @@ fn main() {
     let config: ComputeConfig = config::load("compute.toml");
     warn!("Starting up compute node with config {:?}", config);
 
-    let mut master = Master::new(0, 0, 0);
+    let mut master = Master::new(&vec![]);
     // Create tenants with extensions.
     let num_tenants: u32 = 1;
     info!("Populating extension for {} tenants", num_tenants);
-    for tenant in 1..(num_tenants + 1) {
+    for tenant in 1..=num_tenants {
         master.load_test(tenant);
     }
     // finished populating, now mark as immut
