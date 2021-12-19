@@ -39,9 +39,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use atomic_float::AtomicF64;
-use db::sched::MovingTimeAvg;
 use db::dispatch::{Queue, Receiver, Sender};
 use db::e2d2::scheduler::Executable;
+use db::sched::MovingTimeAvg;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
 use std::sync::RwLock;
@@ -939,6 +939,46 @@ pub struct LBDispatcher {
 impl LBDispatcher {
     pub fn new(config: &LBConfig, net_port: CacheAligned<PortQueue>) -> LBDispatcher {
         LBDispatcher {
+            sender2compute: Sender::new(
+                net_port.clone(),
+                &config.lb.server,
+                &config.compute,
+                // Arc::new(RwLock::new(0)),
+            ),
+            sender2storage: Sender::new(
+                net_port.clone(),
+                &config.lb.server,
+                &config.storage,
+                // Arc::new(RwLock::new(0)),
+            ),
+            receiver: Receiver::new(
+                net_port,
+                // None,
+                config.lb.max_rx_packets,
+                &config.lb.server.ip_addr,
+            )
+            // receiver: Receiver {
+            //     net_port: net_port,
+            //     sib_port: None,
+            //     stealing: false,
+            //     max_rx_packets: config.lb.max_rx_packets,
+            //     ip_addr: u32::from(
+            //         Ipv4Addr::from_str(&config.lb.server.ip_addr).expect("missing src ip for LB"),
+            //     ),
+            // },
+        }
+    }
+}
+
+pub struct KayakDispatcher {
+    pub sender2compute: Sender,
+    pub sender2storage: Sender,
+    pub receiver: Receiver,
+}
+
+impl KayakDispatcher {
+    pub fn new(config: &KayakConfig, net_port: CacheAligned<PortQueue>) -> KayakDispatcher {
+        KayakDispatcher {
             sender2compute: Sender::new(
                 net_port.clone(),
                 &config.lb.server,

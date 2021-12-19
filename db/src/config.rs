@@ -439,6 +439,30 @@ pub struct LBConfig {
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
+pub struct KayakConfig {
+    pub num_tenants: usize,
+    pub tenant_skew: f64,
+    // stop after duration
+    pub duration: u64,
+    pub learnable: bool,
+    pub partition: f64,
+    pub max_out: u32,
+    pub xloop_factor: u64,
+    pub output_factor: u64,
+    // TODO: add kayak configurations here
+    // network configuration
+    pub lb: ServerConfig,
+    // [[]]
+    pub compute: Vec<NetConfig>,
+    pub storage: Vec<NetConfig>,
+    // workload configuration
+    pub tables: Vec<TableConfig>,
+    pub workloads: Vec<WorkloadConfig>,
+    pub phases: Vec<PhaseConfig>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(default)]
 pub struct LBConfig {
     pub num_tenants: usize,
     // pub key_len: usize,

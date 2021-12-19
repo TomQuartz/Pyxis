@@ -16,6 +16,10 @@ path = "src/bin/client/compute.rs"
 name = "lb-tput"
 path = "src/bin/client/lb-tput.rs"
 
+[[bin]]
+name = "kayak"
+path = "src/bin/client/kayak.rs"
+
 #[[bin]]
 #name = "lb-qgrad"
 #path = "src/bin/client/lb-qgrad.rs"
