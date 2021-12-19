@@ -206,7 +206,6 @@ where
     xloop_last_rate: f32,
     xloop_last_X: f32,
 
-
     rloop_last_recvd: u64,
     rloop_last_rdtsc: u64,
     rloop_last_out: f32,
@@ -437,7 +436,7 @@ where
                             Arc::clone(&self.sender),
                         );
                         self.sender
-                            .send_invoke(tenant, self.name_length, &p_get, curr)
+                            .send_invoke(tenant, self.name_length, &p_get, curr, 0)
                     },
                     |tenant, multiget| {
                         p_put[13..17].copy_from_slice(&multiget[0..4]);
@@ -450,7 +449,7 @@ where
                             Arc::clone(&self.sender),
                         );
                         self.sender
-                            .send_invoke(tenant, self.name_length, &p_put, curr)
+                            .send_invoke(tenant, self.name_length, &p_put, curr, 0)
                     },
                 );
                 self.outstanding += 1;
@@ -484,57 +483,57 @@ where
                             RpcStatus::StatusTxAbort => {
                                 // FIXME:  only count but no re-try?
                                 self.aborted += 1; //
-                                /*if self.native == true {
-                                    // For native commit response.
-                                    if p.get_payload().len() == self.key_len {
-                                        self.sender.send_get(
-                                            tenant,
-                                            self.table_id,
-                                            p.get_payload(),
-                                            timestamp,
-                                        )
-                                    } else {
-                                        let n_keys: u32 =
-                                            (p.get_payload().len() / self.key_len) as u32;
-                                        self.sender.send_multiget(
-                                            tenant,
-                                            self.table_id,
-                                            self.key_len as u16,
-                                            n_keys,
-                                            p.get_payload(),
-                                            timestamp,
-                                        );
-                                    }
-                                } else {
-                                    // For Pushback commit response.
-                                    let mut invoke_get_modify = self.invoke_get_modify.borrow_mut();
-                                    let name_length = self.name_length;
-                                    let mut start_index = 13;
-                                    let mut end_index = start_index + 4;
-                                    let records = p.get_payload();
-                                    for key in records.chunks(self.key_len) {
-                                        invoke_get_modify[start_index..end_index]
-                                            .copy_from_slice(&key[0..4]);
-                                        start_index += 30;
-                                        end_index += 30;
-                                    }
+                                                   /*if self.native == true {
+                                                       // For native commit response.
+                                                       if p.get_payload().len() == self.key_len {
+                                                           self.sender.send_get(
+                                                               tenant,
+                                                               self.table_id,
+                                                               p.get_payload(),
+                                                               timestamp,
+                                                           )
+                                                       } else {
+                                                           let n_keys: u32 =
+                                                               (p.get_payload().len() / self.key_len) as u32;
+                                                           self.sender.send_multiget(
+                                                               tenant,
+                                                               self.table_id,
+                                                               self.key_len as u16,
+                                                               n_keys,
+                                                               p.get_payload(),
+                                                               timestamp,
+                                                           );
+                                                       }
+                                                   } else {
+                                                       // For Pushback commit response.
+                                                       let mut invoke_get_modify = self.invoke_get_modify.borrow_mut();
+                                                       let name_length = self.name_length;
+                                                       let mut start_index = 13;
+                                                       let mut end_index = start_index + 4;
+                                                       let records = p.get_payload();
+                                                       for key in records.chunks(self.key_len) {
+                                                           invoke_get_modify[start_index..end_index]
+                                                               .copy_from_slice(&key[0..4]);
+                                                           start_index += 30;
+                                                           end_index += 30;
+                                                       }
 
-                                    self.sender.send_invoke(
-                                        tenant,
-                                        name_length,
-                                        &invoke_get_modify,
-                                        timestamp,
-                                    );
-                                    self.manager.borrow_mut().create_task(
-                                        timestamp,
-                                        &invoke_get_modify,
-                                        tenant,
-                                        name_length as usize,
-                                        Arc::clone(&self.sender),
-                                    );
-                                }
-                                self.aborted += 1;
-                                self.outstanding += 1;*/
+                                                       self.sender.send_invoke(
+                                                           tenant,
+                                                           name_length,
+                                                           &invoke_get_modify,
+                                                           timestamp,
+                                                       );
+                                                       self.manager.borrow_mut().create_task(
+                                                           timestamp,
+                                                           &invoke_get_modify,
+                                                           tenant,
+                                                           name_length as usize,
+                                                           Arc::clone(&self.sender),
+                                                       );
+                                                   }
+                                                   self.aborted += 1;
+                                                   self.outstanding += 1;*/
                             }
 
                             // CommitRPC:StatusOK. I guess this is the native OK reply
@@ -588,6 +587,7 @@ where
                                     self.name_length,
                                     p.get_payload(),
                                     timestamp,
+                                    0,
                                 );
                             }
 
@@ -644,9 +644,8 @@ where
                 let len = self.latencies.len();
 
                 if packet_recvd_signal {
-
                     if len > 100 && len % 10 == 0 {
-                        let mut tmp = &self.latencies[(len-100)..len];
+                        let mut tmp = &self.latencies[(len - 100)..len];
                         let mut tmpvec = tmp.to_vec();
                         self.kth = *order_stat::kth(&mut tmpvec, 98);
                     }
@@ -654,10 +653,14 @@ where
                     // Loop logic here
                     // This is R-loop
                     let rloop_rdtsc = cycles::rdtsc();
-                    if self.rloop_factor != 0 && (rloop_rdtsc - self.rloop_last_rdtsc > 2400000000 / self.rloop_factor as u64) &&
-                        len > 100 && len % self.rloop_factor == 0 {
-
-                        let rloop_rate = 2.4e6 * (self.recvd - self.rloop_last_recvd) as f32 / (rloop_rdtsc - self.rloop_last_rdtsc) as f32;
+                    if self.rloop_factor != 0
+                        && (rloop_rdtsc - self.rloop_last_rdtsc
+                            > 2400000000 / self.rloop_factor as u64)
+                        && len > 100
+                        && len % self.rloop_factor == 0
+                    {
+                        let rloop_rate = 2.4e6 * (self.recvd - self.rloop_last_recvd) as f32
+                            / (rloop_rdtsc - self.rloop_last_rdtsc) as f32;
                         self.rloop_last_rdtsc = rloop_rdtsc;
                         self.rloop_last_recvd = self.recvd;
 
@@ -668,17 +671,18 @@ where
                         // let last_out_delta = self.max_out - self.rloop_last_out;
                         // self.rloop_last_out = self.max_out;
 
-                        let lat_offset = self.slo as f32- self.kth as f32;
+                        let lat_offset = self.slo as f32 - self.kth as f32;
 
                         // 3e-6 for heavy, 2e-5 normal
                         let out_delta = 3e-6 * lat_offset; // * last_out_delta / kth_delta as f32;
-
 
                         if self.max_out + out_delta > 2.0 {
                             self.max_out += out_delta;
                         } else {
                             self.max_out = self.max_out * 0.5;
-                            if self.max_out < 2.0 {self.max_out = 2.0;}
+                            if self.max_out < 2.0 {
+                                self.max_out = 2.0;
+                            }
                         }
 
                         // // AIMD version
@@ -694,10 +698,15 @@ where
 
                     let xloop_rdtsc = cycles::rdtsc();
                     // This is X-loop
-                    if self.xloop_factor != 0 && (xloop_rdtsc - self.xloop_last_rdtsc > 2400000000 / self.xloop_factor as u64) &&
-                        len > 100 && len % self.xloop_factor == 0 {
+                    if self.xloop_factor != 0
+                        && (xloop_rdtsc - self.xloop_last_rdtsc
+                            > 2400000000 / self.xloop_factor as u64)
+                        && len > 100
+                        && len % self.xloop_factor == 0
+                    {
                         // first calc the rate
-                        let xloop_rate = 2.4e6 * (self.recvd - self.xloop_last_recvd) as f32 / (xloop_rdtsc - self.xloop_last_rdtsc) as f32;
+                        let xloop_rate = 2.4e6 * (self.recvd - self.xloop_last_recvd) as f32
+                            / (xloop_rdtsc - self.xloop_last_rdtsc) as f32;
                         self.xloop_last_rdtsc = xloop_rdtsc;
                         self.xloop_last_recvd = self.recvd;
 
@@ -736,10 +745,9 @@ where
                         }
 
                         // Debug output
-//                        info!("rate {} d_rate {} ext_p {} op {}", rate, d_rate, self.ext_p, self.last_op);
+                        //                        info!("rate {} d_rate {} ext_p {} op {}", rate, d_rate, self.ext_p, self.last_op);
                         trace!("rdtsc {} len {} tail {} out {} recvd {} rate {} d_rate {} ext_p {} off {} XL",
                                xloop_rdtsc, len, self.kth, self.max_out, self.recvd, xloop_rate, delta_rate, self.ext_p, bounded_offset_X);
-
                     }
 
                     // Reset flag
@@ -833,6 +841,7 @@ where
                             self.name_length,
                             p.get_payload(),
                             timestamp,
+                            0,
                         );
                     }
 
@@ -1062,13 +1071,15 @@ fn main() {
     let config = config::ClientConfig::load();
     info!("Starting up Sandstorm client with config {:?}", config);
 
-    let masterservice = Arc::new(Master::new());
+    let mut masterservice = Master::new();
 
     // Create tenants with extensions.
     info!("Populating extension for {} tenants", config.num_tenants);
     for tenant in 1..(config.num_tenants + 1) {
         masterservice.load_test(tenant);
     }
+    // finished populating, now mark as immut
+    let masterservice = Arc::new(masterservice);
 
     // Setup Netbricks.
     let mut net_context = setup::config_and_init_netbricks(&config);
@@ -1083,7 +1094,7 @@ fn main() {
     assert!(senders_receivers.len() == 8);
 
     // Setup 1 senders, and receivers.
-    for i in 0..1 {
+    for i in 0..8 {
         // First, retrieve a tx-rx queue pair from Netbricks
         let port = net_context
             .rx_queues

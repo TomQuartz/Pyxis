@@ -15,13 +15,13 @@
 
 extern crate bytes;
 extern crate db;
+extern crate order_stat;
 extern crate rand;
 extern crate sandstorm;
 extern crate spin;
 extern crate splinter;
 extern crate time;
 extern crate zipf;
-extern crate order_stat;
 
 mod setup;
 
@@ -58,7 +58,6 @@ static mut FINISHED: bool = false;
 static mut ORD_DIST: bool = false;
 static ORDER: f64 = 2500.0;
 static STD_DEV: f64 = 500.0;
-
 
 // PUSHBACK benchmark.
 // The benchmark is created and parameterized with `new()`. Many threads
@@ -258,7 +257,6 @@ where
     xloop_last_rate: f32,
     xloop_last_X: f32,
 
-
     rloop_last_recvd: u64,
     rloop_last_rdtsc: u64,
     rloop_last_out: f32,
@@ -416,16 +414,18 @@ where
             // Get the current time stamp so that we can determine if it is time to issue the next RPC.
             let curr = cycles::rdtsc();
 
-            let o = self.workload.borrow_mut().rng.gen::<u32>() % 10000 >= (self.ext_p * 100.0) as u32;
+            let o =
+                self.workload.borrow_mut().rng.gen::<u32>() % 10000 >= (self.ext_p * 100.0) as u32;
             if o == true {
                 // Configured to issue native RPCs, issue a regular get()/put() operation.
                 self.workload.borrow_mut().abc(
                     |tenant, key, _ord| self.sender.send_get(tenant, 1, key, curr),
                     |tenant, key, val, _ord| self.sender.send_put(tenant, 1, key, val, curr),
                 );
-                self.native_state
-                    .borrow_mut()
-                    .insert(curr, PushbackState::new(self.num, self.record_len as usize));
+                self.native_state.borrow_mut().insert(
+                    curr,
+                    PushbackState::new(self.num, self.record_len as usize, 0),
+                );
                 self.outstanding += 1;
             } else {
                 // Configured to issue invoke() RPCs.
@@ -440,7 +440,9 @@ where
                             // Bimodal workload generator
                             if self.is_bimodal {
                                 // We do not need to use the ord passed in, we can generate our own ord here.
-                                p_get[20..24].copy_from_slice(&{ transmute::<u32, [u8; 4]>(self.ord.to_le()) });
+                                p_get[20..24].copy_from_slice(&{
+                                    transmute::<u32, [u8; 4]>(self.ord.to_le())
+                                });
                             }
                         }
                         // First 24 bytes on the payload were already pre-populated with the
@@ -455,7 +457,7 @@ where
                             8,
                             Arc::clone(&self.sender),
                         );
-                        self.sender.send_invoke(tenant, 8, &p_get, curr)
+                        self.sender.send_invoke(tenant, 8, &p_get, curr, 0)
                     },
                     |tenant, key, _val, _ord| {
                         // First 18 bytes on the payload were already pre-populated with the
@@ -470,7 +472,7 @@ where
                             8,
                             Arc::clone(&self.sender),
                         );
-                        self.sender.send_invoke(tenant, 8, &p_put, curr)
+                        self.sender.send_invoke(tenant, 8, &p_put, curr, 0)
                     },
                 );
                 self.outstanding += 1;
@@ -568,7 +570,6 @@ where
                         }
 
                         // _ => packet.free_packet(),
-
                         OpCode::SandstormGetRpc => {
                             let p = packet.parse_header::<GetResponse>();
                             let timestamp = p.get_header().common_header.stamp;
@@ -637,7 +638,7 @@ where
                 // kth measurement here
                 let len = self.latencies.len();
                 if len > 100 && len % 10 == 0 {
-                    let mut tmp = &self.latencies[(len-100)..len];
+                    let mut tmp = &self.latencies[(len - 100)..len];
                     let mut tmpvec = tmp.to_vec();
                     self.kth = *order_stat::kth(&mut tmpvec, 98);
                 }
@@ -645,10 +646,14 @@ where
                 // Loop logic here
                 // This is R-loop
                 let rloop_rdtsc = cycles::rdtsc();
-                if self.rloop_factor != 0 && packet_recvd_signal && (rloop_rdtsc - self.rloop_last_rdtsc > 2400000000 / self.rloop_factor as u64) &&
-                    len > 100 && len % self.rloop_factor == 0 {
-
-                    let rloop_rate = 2.4e6 * (self.recvd - self.rloop_last_recvd) as f32 / (rloop_rdtsc - self.rloop_last_rdtsc) as f32;
+                if self.rloop_factor != 0
+                    && packet_recvd_signal
+                    && (rloop_rdtsc - self.rloop_last_rdtsc > 2400000000 / self.rloop_factor as u64)
+                    && len > 100
+                    && len % self.rloop_factor == 0
+                {
+                    let rloop_rate = 2.4e6 * (self.recvd - self.rloop_last_recvd) as f32
+                        / (rloop_rdtsc - self.rloop_last_rdtsc) as f32;
                     self.rloop_last_rdtsc = rloop_rdtsc;
                     self.rloop_last_recvd = self.recvd;
 
@@ -659,17 +664,18 @@ where
                     // let last_out_delta = self.max_out - self.rloop_last_out;
                     // self.rloop_last_out = self.max_out;
 
-                    let lat_offset = self.slo as f32- self.kth as f32;
+                    let lat_offset = self.slo as f32 - self.kth as f32;
 
                     // 3e-6 for heavy, 2e-5 normal
                     let out_delta = 3e-6 * lat_offset; // * last_out_delta / kth_delta as f32;
-
 
                     if self.max_out + out_delta > 2.0 {
                         self.max_out += out_delta;
                     } else {
                         self.max_out = self.max_out * 0.5;
-                        if self.max_out < 2.0 {self.max_out = 2.0;}
+                        if self.max_out < 2.0 {
+                            self.max_out = 2.0;
+                        }
                     }
 
                     // // AIMD version
@@ -685,10 +691,15 @@ where
 
                 let xloop_rdtsc = cycles::rdtsc();
                 // This is X-loop
-                if self.xloop_factor != 0 && packet_recvd_signal && (xloop_rdtsc - self.xloop_last_rdtsc > 2400000000 / self.xloop_factor as u64) &&
-                    len > 100 && len % self.xloop_factor == 0 {
+                if self.xloop_factor != 0
+                    && packet_recvd_signal
+                    && (xloop_rdtsc - self.xloop_last_rdtsc > 2400000000 / self.xloop_factor as u64)
+                    && len > 100
+                    && len % self.xloop_factor == 0
+                {
                     // first calc the rate
-                    let xloop_rate = 2.4e6 * (self.recvd - self.xloop_last_recvd) as f32 / (xloop_rdtsc - self.xloop_last_rdtsc) as f32;
+                    let xloop_rate = 2.4e6 * (self.recvd - self.xloop_last_recvd) as f32
+                        / (xloop_rdtsc - self.xloop_last_rdtsc) as f32;
                     self.xloop_last_rdtsc = xloop_rdtsc;
                     self.xloop_last_recvd = self.recvd;
 
@@ -750,7 +761,6 @@ where
                     //     }
                     // }
 
-
                     // let delta_kth = self.kth as i32 - self.xloop_last_kth as i32;
                     // let delta_X = self.ext_p - self.xloop_last_X;
                     // self.xloop_last_X = self.ext_p;
@@ -769,14 +779,11 @@ where
                     //     self.ext_p = new_X;
                     // }
 
-
                     // Debug output
-//                        info!("rate {} d_rate {} ext_p {} op {}", rate, d_rate, self.ext_p, self.last_op);
+                    //                        info!("rate {} d_rate {} ext_p {} op {}", rate, d_rate, self.ext_p, self.last_op);
                     trace!("rdtsc {} len {} tail {} out {} recvd {} rate {} d_rate {} ext_p {} off {} XL",
                           xloop_rdtsc, len, self.kth, self.max_out, self.recvd, xloop_rate, delta_rate, self.ext_p, bounded_offset_X);
-
                 }
-
             }
         }
 
@@ -800,7 +807,10 @@ where
             info!("The client thread received only {} packets", self.recvd);
         }
 
-        info!("pushedback {} of total {}", self.counter_pushback, self.recvd);
+        info!(
+            "pushedback {} of total {}",
+            self.counter_pushback, self.recvd
+        );
 
         // Calculate & print the throughput for all client threads.
         println!(
@@ -909,13 +919,15 @@ fn main() {
     let config = config::ClientConfig::load();
     info!("Starting up Sandstorm client with config {:?}", config);
 
-    let masterservice = Arc::new(Master::new());
+    let mut masterservice = Master::new();
 
     // Create tenants with extensions.
     info!("Populating extension for {} tenants", config.num_tenants);
     for tenant in 1..(config.num_tenants + 1) {
         masterservice.load_test(tenant);
     }
+    // finished populating, now mark as immut
+    let masterservice = Arc::new(masterservice);
 
     // Setup Netbricks.
     let mut net_context = setup::config_and_init_netbricks(&config);
@@ -930,7 +942,7 @@ fn main() {
     assert!(senders_receivers.len() == 8);
 
     // Setup 1 senders, and receivers.
-    for i in 0..1 {
+    for i in 0..8 {
         // First, retrieve a tx-rx queue pair from Netbricks
         let port = net_context
             .rx_queues
