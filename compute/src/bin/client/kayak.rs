@@ -214,6 +214,17 @@ struct LoadBalancer {
     learnable: bool,
     partition: Arc<AtomicF64>,
     // TODO: add kayak's params, e.g. xloop_factor
+
+    xloop_last_rdtsc: u64,
+    xloop_last_recvd: u64,
+    xloop_last_tput: f64,
+    xloop_last_X: f64,
+    xloop_factor: u64,
+    xloop_learning_rate: f64,
+    xloop_interval: Vec<f64>,
+    tput_vec: Vec<f64>,
+    rpc_vec: Vec<f64>,
+
     output_factor: u64,
     output_last_rdtsc: u64,
     output_last_recvd: usize,
@@ -270,6 +281,15 @@ impl LoadBalancer {
             max_out: config.max_out,
             partition: partition,
             learnable: config.learnable,
+            xloop_last_rdtsc: cycles::rdtsc(),
+            xloop_last_recvd: 0,
+            xloop_last_tput: 0.0,
+            xloop_last_X: 10001.0,
+            xloop_factor: config.xloop_factor,
+            xloop_learning_rate: config.xloop_learning_rate,
+            xloop_interval: Vec::new(),
+            tput_vec: Vec::new(),
+            rpc_vec: Vec::new(),
             output_factor: config.output_factor,
             output_last_rdtsc: init_rdtsc,
             output_last_recvd: 0,
@@ -364,11 +384,64 @@ impl LoadBalancer {
                             / (curr_rdtsc - self.output_last_rdtsc) as f64;
                         self.output_last_recvd = global_recvd;
                         self.output_last_rdtsc = curr_rdtsc;
-                        println!(
-                            "rdtsc {} tput {:.2}",
-                            curr_rdtsc / (CPU_FREQUENCY / 1000),
-                            output_tput
-                        )
+                        // println!(
+                        //     "rdtsc {} tput {:.2}",
+                        //     curr_rdtsc / (CPU_FREQUENCY / 1000),
+                        //     output_tput
+                        // )
+                        self.tput_vec.push(output_tput);
+                        self.rpc_vec.push((self.partition.load(Ordering::Relaxed) as f64) / 100.0);
+                    }
+
+                    if self.xloop_factor != 0
+                        && packet_recvd_signal
+                        && (curr_rdtsc - self.xloop_last_rdtsc
+                            > CPU_FREQUENCY / self.xloop_factor)
+                        && global_recvd > 100
+                        && global_recvd as u64 % self.xloop_factor == 0
+                    {
+                        self.xloop_interval.push((curr_rdtsc - self.xloop_last_rdtsc) as f64 / (CPU_FREQUENCY / 1000) as f64);
+                        let xloop_tput = (global_recvd as u64 - self.xloop_last_recvd) as f64
+                            * (CPU_FREQUENCY / 1000) as f64
+                            / (curr_rdtsc - self.xloop_last_rdtsc) as f64;
+                        self.xloop_last_rdtsc = curr_rdtsc;
+                        self.xloop_last_recvd = global_recvd as u64;
+
+                        if self.learnable {
+                            let delta_tput = xloop_tput - self.xloop_last_tput;
+                            self.xloop_last_tput = xloop_tput;
+                            let x = (self.partition.load(Ordering::Relaxed) as f64) / 100.0;
+                            let delta_X = x - self.xloop_last_X;
+                            self.xloop_last_X = x;
+                            let grad = self.xloop_learning_rate * delta_tput / delta_X;
+                            let mut bounded_offset_X: f64 = -1.0;
+                            if grad > 0.0 {
+                                if grad < 1.0 {
+                                    bounded_offset_X = 1.0;
+                                } else if grad > 10.0 {
+                                    bounded_offset_X = 5.0;
+                                } else {
+                                    bounded_offset_X = grad;
+                                }
+                            } else {
+                                if grad > -1.0 {
+                                    bounded_offset_X = -1.0;
+                                } else if grad < -10.0 {
+                                    bounded_offset_X = -5.0;
+                                } else {
+                                    bounded_offset_X = grad;
+                                }
+                            }
+                            if self.output_factor != 0 {
+                                println!("delta_X {:.2} delta_tput/delta_X {:.2}, grad {:.2}, bounded_offset_X {:.2}",
+                                    delta_X, delta_tput / delta_X, grad, bounded_offset_X);
+                            }
+                            let mut new_X = bounded_offset_X + x;
+                            if new_X > 100.0 || new_X < 0.0 {
+                                new_X = x - bounded_offset_X;
+                            }
+                            self.partition.store(new_X * 100.0, Ordering::Relaxed);
+                        }
                     }
                 }
             }
@@ -431,6 +504,28 @@ impl Drop for LoadBalancer {
             );
             // println!("PUSHBACK Throughput {:.2}", self.tput.moving());
             println!("PUSHBACK Throughput {:.2}", self.tput);
+        }
+        if self.id == 0 {
+            let mut avg_x_interval:f64 = 0.0;
+            let mut std_x_interval:f64 = 0.0;
+            // println!("xloop learning rate: {}", self.xloop_learning_rate);
+            println!("number of xloop tunes: {}", self.xloop_interval.len());
+            for i in &self.xloop_interval {
+                avg_x_interval += i;
+            }
+            avg_x_interval /= self.xloop_interval.len() as f64;
+            println!("xloop interval avg: {}", avg_x_interval);
+            for i in &self.xloop_interval {
+                std_x_interval += (i - avg_x_interval) * (i - avg_x_interval);
+            }
+            std_x_interval /= (self.xloop_interval.len() - 1) as f64;
+            std_x_interval = std_x_interval.sqrt();
+            println!("xloop interval std: {}", std_x_interval);
+            for t in 0..self.tput_vec.len() {
+                println!("tput {} rpc {}", 
+                         &self.tput_vec[t as usize], 
+                         &self.rpc_vec[t as usize]);
+            }
         }
     }
 }

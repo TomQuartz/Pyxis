@@ -450,6 +450,7 @@ pub struct KayakConfig {
     pub xloop_factor: u64,
     pub output_factor: u64,
     // TODO: add kayak configurations here
+    pub xloop_learning_rate: f64,
     // network configuration
     pub lb: ServerConfig,
     // [[]]
