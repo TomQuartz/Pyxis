@@ -845,7 +845,7 @@ impl Master {
         let alloc: *const Allocator = &self.heap;
 
         // let record_len = self.record_len;
-        let record_len = self.table_cfg[table_id as usize].record_len;
+        let record_len = self.table_cfg[table_id as usize - 1].record_len;
 
         // Create a generator for this request.
         let gen = Box::pin(move || {
