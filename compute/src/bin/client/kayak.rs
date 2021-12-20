@@ -384,13 +384,13 @@ impl LoadBalancer {
                             / (curr_rdtsc - self.output_last_rdtsc) as f64;
                         self.output_last_recvd = global_recvd;
                         self.output_last_rdtsc = curr_rdtsc;
-                        // println!(
-                        //     "rdtsc {} tput {:.2}",
-                        //     curr_rdtsc / (CPU_FREQUENCY / 1000),
-                        //     output_tput
-                        // )
-                        self.tput_vec.push(output_tput);
-                        self.rpc_vec.push((self.partition.load(Ordering::Relaxed) as f64) / 100.0);
+                        println!(
+                            "rdtsc {} tput {:.2}",
+                            curr_rdtsc / (CPU_FREQUENCY / 1000),
+                            output_tput
+                        )
+                        // self.tput_vec.push(output_tput);
+                        // self.rpc_vec.push((self.partition.load(Ordering::Relaxed) as f64) / 100.0);
                     }
 
                     if self.xloop_factor != 0
@@ -432,10 +432,8 @@ impl LoadBalancer {
                                     bounded_offset_X = grad;
                                 }
                             }
-                            if self.output_factor != 0 {
-                                println!("delta_X {:.2} delta_tput/delta_X {:.2}, grad {:.2}, bounded_offset_X {:.2}",
+                            debug!("delta_X {:.2} delta_tput/delta_X {:.2}, grad {:.2}, bounded_offset_X {:.2}",
                                     delta_X, delta_tput / delta_X, grad, bounded_offset_X);
-                            }
                             let mut new_X = bounded_offset_X + x;
                             if new_X > 100.0 || new_X < 0.0 {
                                 new_X = x - bounded_offset_X;
