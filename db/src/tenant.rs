@@ -32,7 +32,7 @@ pub struct Tenant {
     /// A map of all the data tables belonging to a tenant. Each data table
     /// has a unique identifier.
     // tables: RwLock<HashMap<TableId, Arc<Table>>>,
-    tables: HashMap<TableId, Arc<Table>>,
+    pub tables: HashMap<TableId, Arc<Table>>,
 }
 
 // Implementation of methods on tenant.

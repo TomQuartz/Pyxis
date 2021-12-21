@@ -241,6 +241,7 @@ impl TaskManager {
                 op @ OpCode::SandstormGetRpc => {
                     let req = request.parse_header::<GetRequest>();
                     let table_id = req.get_header().table_id as usize;
+                    trace!("dispatch kv req on table {}", table_id);
                     let table_cfg = &self.master_service.table_cfg[table_id - 1];
                     let num_responses = table_cfg.value_len / table_cfg.record_len;
                     let mut responses = vec![];
