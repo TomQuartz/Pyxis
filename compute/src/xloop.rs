@@ -589,7 +589,8 @@ pub struct TputGrad {
     upperbound: f64,
     lowerbound: f64,
     min_interval: f64,
-    min_delta: f64,
+    min_delta_rel: f64,
+    min_delta_abs: f64,
     max_err: f64,
     converged: bool,
     // best_y: f64,
@@ -629,7 +630,8 @@ impl TputGrad {
             min_step_rel: config.min_step_rel,
             min_step_abs: config.min_step_abs,
             min_interval: config.min_interval,
-            min_delta: config.min_delta,
+            min_delta_rel: config.min_delta_rel,
+            min_delta_abs: config.min_delta_abs,
             max_err: config.max_err,
             converged: true,
             upperbound: 10000.0,
@@ -654,6 +656,26 @@ impl TputGrad {
             curr_rdtsc - self.last_rdtsc > self.interval
         }
     }
+    pub fn sync(&mut self, curr_rdtsc: u64, recvd: usize) {
+        let delta_recvd = recvd - self.last_recvd;
+        let delta_t = curr_rdtsc - self.last_rdtsc;
+        // let tput = 2.4e6 * (recvd - self.last_recvd) as f64 / (curr_rdtsc - self.last_rdtsc) as f64;
+        let inv_tput = delta_t as f64 / delta_recvd as f64;
+        let delta_inv_tput = inv_tput - self.last_inv_tput;
+        self.last_rdtsc = curr_rdtsc;
+        self.last_recvd = recvd;
+        self.msg.clear();
+        write!(
+            self.msg,
+            "rdtsc {} inv_tput {:.2}({:.2}) tput {:.2}({}/{})",
+            curr_rdtsc,
+            inv_tput,
+            delta_inv_tput,
+            CPU_FREQUENCY as f64 / inv_tput / 1000.0,
+            delta_recvd,
+            delta_t,
+        );
+    }
     /// update
     pub fn update_x(
         &mut self,
@@ -670,7 +692,8 @@ impl TputGrad {
         let inv_tput = delta_t as f64 / delta_recvd as f64;
         // let delta_tput = tput - self.last_tput;
         let delta_inv_tput = inv_tput - self.last_inv_tput;
-        let min_delta = self.min_delta * inv_tput;
+        let min_delta_rel = self.min_delta_rel * delta_x.abs();
+        let min_delta = self.min_delta_abs.max(min_delta_rel);
         // interval
         if delta_x > 0.0 {
             if delta_inv_tput > min_delta {
@@ -690,44 +713,40 @@ impl TputGrad {
         // grad
         let mut step = 0f64;
         let mut step_raw = 0f64;
-        let last_converged = self.converged;
-        if relative_err(inv_tput, self.last_inv_tput) > self.max_err {
-            self.converged = false;
-            if self.start == 0 {
+        let rel_err = relative_err(inv_tput, self.last_inv_tput);
+        if self.converged {
+            // avoid updating if this is the first step after jumping out of convergence
+            if rel_err > self.max_err {
+                self.converged = false;
                 self.start = curr_rdtsc;
             }
-        }
-        if !self.converged && interval > self.min_interval {
-            step_raw = -self.lr * interval * delta_inv_tput / (delta_x + 1e-9);
-            let max_step = self.max_step_abs.min(self.max_step_rel * interval);
-            let min_step = self.min_step_abs.max(self.min_step_rel * interval);
-            step = clamp(step_raw, min_step, max_step);
-        } else if !self.converged {
-            // stop gradient descend and reset ub & lb
-            self.converged = true;
-            self.upperbound = 10000.0;
-            self.lowerbound = 0.0;
-            self.elapsed = curr_rdtsc - self.start;
-            self.start = 0;
+        } else {
+            if interval > self.min_interval {
+                step_raw = -self.lr * interval * delta_inv_tput / (delta_x + 1e-9);
+                let max_step = self.max_step_abs.min(self.max_step_rel * interval);
+                let min_step = self.min_step_abs.max(self.min_step_rel * interval);
+                step = clamp(step_raw, min_step, max_step);
+                // update
+                xinterface.update(step);
+            } else if rel_err < self.max_err {
+                self.converged = true;
+                self.upperbound = 10000.0;
+                self.lowerbound = 0.0;
+                self.elapsed = curr_rdtsc - self.start;
+                self.start = 0;
+            }
         }
         // sync
         self.last_rdtsc = curr_rdtsc;
         self.last_recvd = recvd;
-        // if !last_converged {
-        //     self.last_inv_tput = inv_tput;
-        // }
         // self.last_tput = tput;
         self.last_inv_tput = inv_tput;
         self.last_x = x;
-        // update
-        // avoid updating if this is the first step after jumping out of convergence
-        if step != 0f64 && !last_converged {
-            xinterface.update(step);
-        }
+        // output
         self.msg.clear();
         write!(
             self.msg,
-            "rdtsc {} x {:.2}({:.2}) inv_tput {:.2}({:.2}) tput {:.2}({}/{}) step {:.2}({:.2}) range {:.2}({:.2},{:.2}) ",
+            "rdtsc {} x {:.2}({:.2}) inv_tput {:.2}({:.2}~{:.2}%) min_delta {:.2}({:.2}) tput {:.2}({}/{}) step {:.2}({:.2}) range {:.2}({:.2},{:.2}) ",
             curr_rdtsc,
             x,
             delta_x,
@@ -735,7 +754,10 @@ impl TputGrad {
             // tput,
             delta_inv_tput,
             // delta_tput,
-            2.4e6 / inv_tput,
+            rel_err * 100.0,
+            min_delta,
+            min_delta_rel,
+            CPU_FREQUENCY as f64 / inv_tput / 1000.0,
             delta_recvd,
             delta_t,
             step,

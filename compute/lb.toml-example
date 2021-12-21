@@ -18,9 +18,10 @@ max_step_rel = 0.25
 max_step_abs = 1000
 min_step_rel = 0.05
 min_step_abs = 40
-min_interval = 120
-min_delta = 0.005
-max_err = 0.08
+min_interval = 400
+min_delta_rel = 0.02
+min_delta_abs = 4
+max_err = 0.05
 
 ############################### LB N/W CONFIG ##############################
 
@@ -66,25 +67,27 @@ num_records = 10000
 
 [[workloads]]
 extension = "pushback"
-kv = 8
+kv = 16
 order = 240
 table_id = 1
 skew = 0.99
 
 [[workloads]]
 extension = "pushback"
-kv = 4
-order = 51200
+kv = 2
+order = 9600
 table_id = 2
 skew = 0.99
 
 [[phases]]
-ratios = [80,20]
+ratios = [90,10]
 duration = 5
 
 [[phases]]
-ratios = [20,80]
+ratios = [10,90]
 duration = 5
+
+
 
 
 

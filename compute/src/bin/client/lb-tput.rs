@@ -284,6 +284,7 @@ struct Sampler {
     interval: u64,
     // last_recvd: usize,
     cum_ratio: Vec<Arc<(AtomicF64, AtomicF64)>>,
+    undetermined: Arc<AtomicUsize>,
     msg: String,
 }
 impl Sampler {
@@ -302,6 +303,7 @@ impl Sampler {
             type_order: (0..num_types).collect(),
             type_counter: type_counter,
             cum_ratio: cum_ratio,
+            undetermined: Arc::new(AtomicUsize::new(0)),
             last_rdtsc: 0,
             last_recvd: 0,
             interval: CPU_FREQUENCY / sample_factor,
@@ -318,13 +320,18 @@ impl Sampler {
         if self.last_rdtsc == 0 {
             self.last_rdtsc = curr_rdtsc;
             false
-        } else if curr_rdtsc - self.last_rdtsc > self.interval && recvd - self.last_recvd > 10000 {
+        } else if curr_rdtsc - self.last_rdtsc > self.interval
+        /* && recvd - self.last_recvd > 10000 */
+        {
             self.last_rdtsc = curr_rdtsc;
-            self.last_recvd = recvd;
+            // self.last_recvd = recvd;
             true
         } else {
             false
         }
+    }
+    fn undetermined_requests(&self) -> usize {
+        self.undetermined.load(Ordering::Relaxed)
     }
     fn sample_ratio(&mut self, curr_rdtsc: u64) {
         self.last_rdtsc = curr_rdtsc;
@@ -361,12 +368,12 @@ impl Sampler {
         self.type_counter[type_id].fetch_add(1, Ordering::Relaxed);
     }
     fn reset_counter(&self) {
+        self.undetermined.store(0, Ordering::Relaxed);
         for counter in &self.type_counter {
             counter.store(0, Ordering::Relaxed);
         }
     }
     fn sort_type(&mut self) {
-        let num_types = self.type_stats.len();
         let type_stats: Vec<f64> = self
             .type_stats
             .iter()
@@ -539,6 +546,7 @@ impl LoadBalancer {
         let partition = self.partition.get();
         let (lowerbound, upperbound) = self.sampler.get_range(type_id);
         if upperbound == 0f64 {
+            self.sampler.undetermined.fetch_add(1, Ordering::Relaxed);
             self.generator.rng.gen::<u32>() % 10000 < 5000
         } else if upperbound < partition {
             true
@@ -703,11 +711,15 @@ impl LoadBalancer {
                         // && global_recvd - self.xloop.last_recvd > 10000
                         && global_recvd > 10000
                     {
-                        self.xloop
-                            .update_x(&self.partition, curr_rdtsc, global_recvd);
-                        // reset even if not updated
-                        self.dispatcher.sender2storage.send_reset();
-                        self.dispatcher.sender2compute.send_reset();
+                        if self.sampler.undetermined_requests() == 0 {
+                            self.xloop
+                                .update_x(&self.partition, curr_rdtsc, global_recvd);
+                            // reset even if not updated
+                            self.dispatcher.sender2storage.send_reset();
+                            self.dispatcher.sender2compute.send_reset();
+                        } else {
+                            self.xloop.sync(curr_rdtsc, global_recvd);
+                        }
                         debug!("{}", self.xloop);
                     }
                     if self.output_factor != 0

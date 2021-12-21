@@ -495,8 +495,12 @@ pub struct LBConfig {
     pub max_step_abs: f64,
     pub min_step_rel: f64,
     pub min_step_abs: f64,
+    // the major criterion
     pub min_interval: f64,
-    pub min_delta: f64,
+    // not useful
+    pub min_delta_rel: f64,
+    pub min_delta_abs: f64,
+    // not useful
     pub max_err: f64,
     // network configuration
     pub lb: ServerConfig,
