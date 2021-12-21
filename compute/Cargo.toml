@@ -54,7 +54,7 @@ cfg-if = "1.0.0"
 # Add feature name in default features to enable cyclecounter for the given stage,
 # where stage name can be ["execution"].
 [features]
-default = []
+default = ["xtrace"]
 execution = []
 ml-model = []
 checksum = []

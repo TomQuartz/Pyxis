@@ -485,6 +485,8 @@ pub struct LBConfig {
     pub max_out: u32,
     pub xloop_factor: u64,
     pub output_factor: u64,
+    // profile ratio, cost, and sort
+    pub sample_factor: u64,
     // not used
     // pub moving_exp: f64,
     // tput
@@ -494,6 +496,7 @@ pub struct LBConfig {
     pub min_step_rel: f64,
     pub min_step_abs: f64,
     pub min_interval: f64,
+    pub min_delta: f64,
     pub max_err: f64,
     // network configuration
     pub lb: ServerConfig,

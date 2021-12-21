@@ -1,7 +1,7 @@
 ############################### LOAD GENERATOR CONFIG ##############################
 num_tenants = 1
 tenant_skew = 0.1
-duration = 30
+duration = 60
 
 learnable = true
 partition = 50
@@ -9,6 +9,7 @@ max_out = 32
 
 xloop_factor = 20
 output_factor = 0
+sample_factor = 40
 
 # tputgrad
 # lr and max_step is normalized by the length of interval
@@ -17,8 +18,9 @@ max_step_rel = 0.25
 max_step_abs = 1000
 min_step_rel = 0.05
 min_step_abs = 40
-min_interval = 80
-max_err = 0.05
+min_interval = 120
+min_delta = 0.005
+max_err = 0.08
 
 ############################### LB N/W CONFIG ##############################
 
@@ -58,23 +60,35 @@ mac_addr = "9c:dc:71:56:af:75"
 [[tables]]
 key_len = 30
 num_records = 10000 
+[[tables]]
+key_len = 30
+num_records = 10000 
+
+[[workloads]]
+extension = "pushback"
+kv = 8
+order = 240
+table_id = 1
+skew = 0.99
 
 [[workloads]]
 extension = "pushback"
 kv = 4
-order = 0
-table_id = 1
-skew = 0.99
-
-[[workloads]]
-extension = "pushback"
-kv = 0
-order = 25600
-table_id = 1
+order = 51200
+table_id = 2
 skew = 0.99
 
 [[phases]]
-ratios = [12,88]
+ratios = [80,20]
+duration = 5
+
+[[phases]]
+ratios = [20,80]
+duration = 5
+
+
+
+
 
 
 
