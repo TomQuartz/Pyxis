@@ -273,9 +273,10 @@ impl Sender {
             GetGenerator::SandstormExtension,
         );
         trace!(
-            "ext id: {} send key {:?}, from {}, to {}",
+            "ext id: {} send key {:?} table {}, from {}, to {}",
             id,
             key,
+            table,
             self.req_hdrs[endpoint].ip_header.src(),
             self.req_hdrs[endpoint].ip_header.dst(),
         );

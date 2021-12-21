@@ -458,9 +458,7 @@ fn main() {
     //     _ => {}
     // }
     for tenant in 1..=config.num_tenants {
-        for table_id in 1..=config.tables.len() {
-            master.fill_test(tenant, table_id as u64);
-        }
+        master.fill_test(tenant, &config.tables);
         master.load_test(tenant);
     }
     let master = Arc::new(master);
