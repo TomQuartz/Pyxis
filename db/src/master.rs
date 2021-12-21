@@ -156,40 +156,45 @@ impl Master {
     /// * `table_id`:  Identifier of the table to be added to the tenant. This table will contain
     ///                all the objects.
     /// * `num`:       The number of objects to be added to the data table.
-    pub fn fill_test(&mut self, tenant_id: TenantId, table_id: TableId /*, num: u32*/) {
+    pub fn fill_test(
+        &mut self,
+        tenant_id: TenantId,
+        table_configs: &Vec<TableConfig>, /*table_id: TableId, num: u32*/
+    ) {
         // Create a tenant containing the table.
         let mut tenant = Tenant::new(tenant_id);
-        tenant.create_table(table_id);
+        for (idx, table_config) in table_configs.iter().enumerate() {
+            let table_id = idx as u64 + 1;
+            tenant.create_table(table_id);
 
-        let table = tenant
-            .get_table(table_id)
-            .expect("Failed to init test table.");
+            let table = tenant
+                .get_table(table_id)
+                .expect("Failed to init test table.");
 
-        let table_config = &self.table_cfg[table_id as usize - 1];
+            let mut key = vec![0; table_config.key_len];
+            let mut val = vec![0; table_config.value_len];
+            let num_records = table_config.num_records;
 
-        let mut key = vec![0; table_config.key_len];
-        let mut val = vec![0; table_config.value_len];
-        let num_records = table_config.num_records;
+            // let mut key = vec![0; self.key_len];
+            // let mut val = vec![0; self.value_len];
 
-        // let mut key = vec![0; self.key_len];
-        // let mut val = vec![0; self.value_len];
+            // Allocate objects, and fill up the above table. Each object consists of a 30 Byte key
+            // and a 100 Byte value.
+            for i in 1..(num_records + 1) {
+                let value: [u8; 4] = unsafe { transmute((i % num_records + 1).to_le()) };
+                let temp: [u8; 4] = unsafe { transmute(i.to_le()) };
+                &key[0..4].copy_from_slice(&temp);
+                &val[0..4].copy_from_slice(&value);
 
-        // Allocate objects, and fill up the above table. Each object consists of a 30 Byte key
-        // and a 100 Byte value.
-        for i in 1..(num_records + 1) {
-            let value: [u8; 4] = unsafe { transmute((i % num_records + 1).to_le()) };
-            let temp: [u8; 4] = unsafe { transmute(i.to_le()) };
-            &key[0..4].copy_from_slice(&temp);
-            &val[0..4].copy_from_slice(&value);
+                let obj = self
+                    .heap
+                    .object(tenant_id, table_id, &key, &val)
+                    .expect("Failed to create test object.");
+                table.put(obj.0, obj.1);
+            }
 
-            let obj = self
-                .heap
-                .object(tenant_id, table_id, &key, &val)
-                .expect("Failed to create test object.");
-            table.put(obj.0, obj.1);
+            // Add the tenant.
         }
-
-        // Add the tenant.
         self.insert_tenant(tenant);
     }
     /*
@@ -730,7 +735,7 @@ impl Master {
     /// # Return
     ///
     /// An atomic reference counted handle to the tenant if it exists.
-    fn get_tenant(&self, tenant_id: TenantId) -> Option<Arc<Tenant>> {
+    pub fn get_tenant(&self, tenant_id: TenantId) -> Option<Arc<Tenant>> {
         // Acquire a read lock. The bucket is determined by the least significant byte of the
         // tenant id.
         let bucket = (tenant_id & 0xff) as usize & (TENANT_BUCKETS - 1);
@@ -912,9 +917,10 @@ impl Master {
             }
             if outcome == None {
                 warn!(
-                    "kv req with id {} key {:?} failed with status {:?}",
+                    "kv req with id {} key {:?} table {} failed with status {:?}",
                     rpc_stamp,
                     req.get_payload().split_at(key_length as usize).0,
+                    table_id,
                     status
                 );
             }
