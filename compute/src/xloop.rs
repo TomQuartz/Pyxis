@@ -589,13 +589,14 @@ pub struct TputGrad {
     upperbound: f64,
     lowerbound: f64,
     min_interval: f64,
+    min_delta: f64,
     max_err: f64,
     converged: bool,
     // best_y: f64,
     // best_x: f64,
     msg: String,
     start: u64,
-    stop: u64,
+    elapsed: u64,
     // trace
     pub xtrace: Vec<String>,
 }
@@ -628,13 +629,14 @@ impl TputGrad {
             min_step_rel: config.min_step_rel,
             min_step_abs: config.min_step_abs,
             min_interval: config.min_interval,
+            min_delta: config.min_delta,
             max_err: config.max_err,
-            converged: false,
+            converged: true,
             upperbound: 10000.0,
             lowerbound: 0.0,
             msg: String::new(),
             start: 0,
-            stop: 0,
+            elapsed: 0,
             xtrace: Vec::with_capacity(64000000),
         }
     }
@@ -658,10 +660,7 @@ impl TputGrad {
         xinterface: &impl XInterface<X = f64>,
         curr_rdtsc: u64,
         recvd: usize,
-    ) -> Option<i32> {
-        if self.start == 0 {
-            self.start = curr_rdtsc;
-        }
+    ) {
         let x = xinterface.get();
         let delta_x = x - self.last_x;
         // tput
@@ -671,18 +670,19 @@ impl TputGrad {
         let inv_tput = delta_t as f64 / delta_recvd as f64;
         // let delta_tput = tput - self.last_tput;
         let delta_inv_tput = inv_tput - self.last_inv_tput;
+        let min_delta = self.min_delta * inv_tput;
         // interval
         if delta_x > 0.0 {
-            if delta_inv_tput > 2.0 {
+            if delta_inv_tput > min_delta {
                 self.upperbound = x;
-            } else if delta_inv_tput < -2.0 {
+            } else if delta_inv_tput < -min_delta {
                 self.lowerbound = self.last_x;
             }
         } else if delta_x < 0.0 {
             // exclude delta_x = 0, for the first call to xloop or after reset
-            if delta_inv_tput < -2.0 {
+            if delta_inv_tput < -min_delta {
                 self.upperbound = self.last_x;
-            } else if delta_inv_tput > 2.0 {
+            } else if delta_inv_tput > min_delta {
                 self.lowerbound = x;
             }
         }
@@ -690,8 +690,12 @@ impl TputGrad {
         // grad
         let mut step = 0f64;
         let mut step_raw = 0f64;
-        if self.converged && relative_err(inv_tput, self.last_inv_tput) > self.max_err {
+        let last_converged = self.converged;
+        if relative_err(inv_tput, self.last_inv_tput) > self.max_err {
             self.converged = false;
+            if self.start == 0 {
+                self.start = curr_rdtsc;
+            }
         }
         if !self.converged && interval > self.min_interval {
             step_raw = -self.lr * interval * delta_inv_tput / (delta_x + 1e-9);
@@ -703,16 +707,21 @@ impl TputGrad {
             self.converged = true;
             self.upperbound = 10000.0;
             self.lowerbound = 0.0;
-            self.stop = curr_rdtsc;
+            self.elapsed = curr_rdtsc - self.start;
+            self.start = 0;
         }
         // sync
         self.last_rdtsc = curr_rdtsc;
         self.last_recvd = recvd;
+        // if !last_converged {
+        //     self.last_inv_tput = inv_tput;
+        // }
         // self.last_tput = tput;
         self.last_inv_tput = inv_tput;
         self.last_x = x;
         // update
-        if step != 0f64 {
+        // avoid updating if this is the first step after jumping out of convergence
+        if step != 0f64 && !last_converged {
             xinterface.update(step);
         }
         self.msg.clear();
@@ -736,9 +745,12 @@ impl TputGrad {
             self.upperbound,
         );
         if self.converged {
-            write!(self.msg, "elapsed {} ", (self.stop - self.start) / 2400000);
+            write!(
+                self.msg,
+                "elapsed {}ms ",
+                self.elapsed / (CPU_FREQUENCY / 1000)
+            );
         }
-        let mut balanced = None;
         /*
         // elastic scaling
         if converged{
@@ -786,7 +798,6 @@ impl TputGrad {
         if cfg!(feature = "xtrace") {
             self.xtrace.push(self.msg.clone());
         }
-        balanced
     }
 }
 

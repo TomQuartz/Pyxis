@@ -116,6 +116,7 @@ struct Slot {
     type_id: usize,
 }
 
+// this is a blackbox to lb, only used to generate requests
 struct Workload {
     // rng: Box<dyn Rng>,
     key_rng: Box<ZipfDistribution>,
@@ -135,6 +136,7 @@ impl Workload {
         let payload_len = key_offset + table.key_len;
         let mut payload = Vec::with_capacity(payload_len);
         payload.extend_from_slice(extension);
+        // TODO: introduce variation in kv and order, these fields will not be static
         payload.extend_from_slice(&unsafe { transmute::<u64, [u8; 8]>(config.table_id.to_le()) });
         payload.extend_from_slice(&unsafe { transmute::<u32, [u8; 4]>(config.kv.to_le()) });
         payload.extend_from_slice(&unsafe { transmute::<u32, [u8; 4]>(config.order.to_le()) });
@@ -162,6 +164,7 @@ impl Workload {
     }
 }
 
+// this is a blackbox to lb, only used to generate requests
 struct LoadGenerator {
     rng: Box<dyn Rng>,
     tenant_rng: Box<ZipfDistribution>,
@@ -185,7 +188,7 @@ impl LoadGenerator {
         let mut junctures = vec![];
         let mut cum_ratios = vec![];
         for phase in &config.phases {
-            cum_time += phase.duration;
+            cum_time += phase.duration * CPU_FREQUENCY;
             junctures.push(cum_time);
             let mut cum_sum = 0f32;
             let cum_ratio = phase
@@ -213,11 +216,7 @@ impl LoadGenerator {
             cum_ratios: cum_ratios,
         }
     }
-    fn gen_request(
-        &mut self,
-        mut curr_rdtsc: u64,
-        partition: f64,
-    ) -> (bool, usize, u32, u32, &[u8]) {
+    fn gen_request(&mut self, mut curr_rdtsc: u64) -> usize {
         let phase_id = if self.loop_interval > 0 {
             curr_rdtsc %= self.loop_interval;
             self.junctures.iter().position(|&t| t > curr_rdtsc).unwrap()
@@ -226,15 +225,170 @@ impl LoadGenerator {
         };
         let cum_ratio = &self.cum_ratios[phase_id];
         let rand_ratio = (self.rng.gen::<u32>() % 10000) as f32;
-        let workload_id = cum_ratio.iter().position(|&p| p > rand_ratio).unwrap();
+        let type_id = cum_ratio.iter().position(|&p| p > rand_ratio).unwrap();
+        type_id
+    }
+    fn gen_payload(&mut self, type_id: usize) -> (u32, u32, &[u8]) {
         (
-            partition > rand_ratio as f64,
-            workload_id,
+            // partition > rand_ratio as f64,
             self.tenant_rng.sample(&mut self.rng) as u32,
-            self.workloads[workload_id].name_len,
-            self.workloads[workload_id].sample_key(&mut self.rng),
+            self.workloads[type_id].name_len,
+            self.workloads[type_id].sample_key(&mut self.rng),
         )
     }
+}
+
+// keep track of workload stats
+// TODO: considered stale if diff(last,now)>thresh and both counter!=0(which means scheduling plan has changed)
+struct TypeStats {
+    cost_storage: Avg,
+    cost_compute: Avg,
+    // NOTE: we need two fields for storage, in case parition is in the middle of some type
+    overhead_storage: Avg,
+    // TODO: avoid using out-of-date response, set timestamp after xloop
+    // timestamp: u64,
+}
+impl TypeStats {
+    fn new() -> TypeStats {
+        TypeStats {
+            cost_storage: Avg::new(),
+            cost_compute: Avg::new(),
+            overhead_storage: Avg::new(),
+        }
+    }
+    fn update(&mut self, c_s: f64, c_c: f64, o_s: f64) {
+        if c_s > 0f64 {
+            // from storage
+            self.cost_storage.update(c_s);
+        } else {
+            // from compute
+            self.cost_compute.update(c_c);
+            self.overhead_storage.update(o_s);
+        }
+    }
+    fn get_key(&self) -> f64 {
+        (self.cost_storage.avg() - self.overhead_storage.avg()) / (self.cost_compute.avg() + 1e-9)
+    }
+    // fn reset(&mut self) {}
+}
+#[derive(Clone)]
+struct Sampler {
+    type_stats: Vec<Arc<RwLock<TypeStats>>>,
+    type_order: Vec<usize>,
+    // TODO: detects out-of-date type
+    // type_history: Vec<TypeStats>,
+    type_counter: Vec<Arc<AtomicUsize>>,
+    // sample factor
+    last_rdtsc: u64,
+    last_recvd: usize,
+    interval: u64,
+    // last_recvd: usize,
+    cum_ratio: Vec<Arc<(AtomicF64, AtomicF64)>>,
+    msg: String,
+}
+impl Sampler {
+    // TODO: reset, store cum_ratio
+    fn new(num_types: usize, sample_factor: u64) -> Sampler {
+        let mut type_stats = vec![];
+        let mut type_counter = vec![];
+        let mut cum_ratio = vec![];
+        for _ in 0..num_types {
+            type_stats.push(Arc::new(RwLock::new(TypeStats::new())));
+            type_counter.push(Arc::new(AtomicUsize::new(0)));
+            cum_ratio.push(Arc::new((AtomicF64::new(0.0), AtomicF64::new(0.0))));
+        }
+        Sampler {
+            type_stats: type_stats,
+            type_order: (0..num_types).collect(),
+            type_counter: type_counter,
+            cum_ratio: cum_ratio,
+            last_rdtsc: 0,
+            last_recvd: 0,
+            interval: CPU_FREQUENCY / sample_factor,
+            msg: String::new(),
+        }
+    }
+    fn get_range(&self, type_id: usize) -> (f64, f64) {
+        (
+            self.cum_ratio[type_id].0.load(Ordering::Acquire),
+            self.cum_ratio[type_id].1.load(Ordering::Acquire),
+        )
+    }
+    fn ready(&mut self, curr_rdtsc: u64, recvd: usize) -> bool {
+        if self.last_rdtsc == 0 {
+            self.last_rdtsc = curr_rdtsc;
+            false
+        } else if curr_rdtsc - self.last_rdtsc > self.interval && recvd - self.last_recvd > 10000 {
+            self.last_rdtsc = curr_rdtsc;
+            self.last_recvd = recvd;
+            true
+        } else {
+            false
+        }
+    }
+    fn sample_ratio(&mut self, curr_rdtsc: u64) {
+        self.last_rdtsc = curr_rdtsc;
+        let mut sum = 0usize;
+        let mut cum_sum = vec![];
+        for &idx in &self.type_order {
+            let cnt = self.type_counter[idx].load(Ordering::Relaxed);
+            sum += cnt;
+            cum_sum.push(sum as f64);
+        }
+        let mut prev = 0f64;
+        self.msg.clear();
+        for (&idx, &cnt) in self.type_order.iter().zip(cum_sum.iter()) {
+            let count = if cnt == prev { 0f64 } else { cnt };
+            self.cum_ratio[idx]
+                .0
+                .store(10000.0 * prev / sum as f64, Ordering::Release);
+            self.cum_ratio[idx]
+                .1
+                .store(10000.0 * count / sum as f64, Ordering::Release);
+            write!(
+                self.msg,
+                "{}({:.2},{}) ",
+                idx,
+                10000.0 * count / sum as f64,
+                cnt,
+            );
+            prev = cnt;
+        }
+        // debug!("{}", self.msg);
+        self.reset_counter();
+    }
+    fn inc_counter(&self, type_id: usize) {
+        self.type_counter[type_id].fetch_add(1, Ordering::Relaxed);
+    }
+    fn reset_counter(&self) {
+        for counter in &self.type_counter {
+            counter.store(0, Ordering::Relaxed);
+        }
+    }
+    fn sort_type(&mut self) {
+        let num_types = self.type_stats.len();
+        let type_stats: Vec<f64> = self
+            .type_stats
+            .iter()
+            .map(|s| s.read().unwrap().get_key())
+            .collect();
+        self.type_order.sort_by(|&idx1, &idx2| {
+            let key1 = type_stats[idx1];
+            let key2 = type_stats[idx2];
+            key1.partial_cmp(&key2).unwrap()
+        });
+        debug!("order {:?} stats {:?}", self.type_order, type_stats);
+    }
+    fn update_stats(&self, type_id: usize, c_s: f64, c_c: f64, o_s: f64) {
+        self.type_stats[type_id]
+            .write()
+            .unwrap()
+            .update(c_s, c_c, o_s);
+    }
+    // fn reset_stats(&self) {
+    //     // set history
+    //     // set timestamp
+    // }
 }
 
 /// Receives responses to PUSHBACK requests sent out by PushbackSend.
@@ -248,6 +402,7 @@ struct LoadBalancer {
     // num_types: usize,
     // multi_types: Vec<MultiType>,
     generator: LoadGenerator,
+    sampler: Sampler,
     // worker stats
     id: usize,
     init_rdtsc: u64,
@@ -313,6 +468,7 @@ impl LoadBalancer {
         net_port: CacheAligned<PortQueue>,
         // num_types: usize,
         partition: Arc<AtomicF64>,
+        sampler: Sampler,
         storage_load: Arc<ServerLoad>,
         compute_load: Arc<ServerLoad>,
         // kth: Vec<Vec<Arc<AtomicUsize>>>,
@@ -339,6 +495,7 @@ impl LoadBalancer {
             // compute_load: compute_load,
             dispatcher: LBDispatcher::new(config, net_port),
             generator: LoadGenerator::new(config),
+            sampler: sampler,
             // num_types: num_types,
             // multi_types: MultiType::new(&config.multi_kv, &config.multi_ord),
             // cum_prob: cum_prob,
@@ -378,12 +535,31 @@ impl LoadBalancer {
             output_last_recvd: 0,
         }
     }
-
+    fn storage_or_compute(&mut self, type_id: usize) -> bool {
+        let partition = self.partition.get();
+        let (lowerbound, upperbound) = self.sampler.get_range(type_id);
+        if upperbound == 0f64 {
+            self.generator.rng.gen::<u32>() % 10000 < 5000
+        } else if upperbound < partition {
+            true
+        } else if lowerbound < partition {
+            let ratio = 10000.0 * (partition - lowerbound) / (upperbound - lowerbound);
+            self.generator.rng.gen::<u32>() % 10000 < ratio as u32
+        } else {
+            false
+        }
+    }
     fn send_once(&mut self, slot_id: usize) {
         let curr = cycles::rdtsc();
-        let partition = self.partition.get();
-        let (to_storage, workload_id, tenant, name_len, request_payload) =
-            self.generator.gen_request(curr, partition);
+        let recvd = self.global_recvd.load(Ordering::Relaxed);
+        if self.id == 0 && self.sampler.ready(curr, recvd) {
+            // self.sampler.sort_type();
+            self.sampler.sample_ratio(curr);
+        }
+        let type_id = self.generator.gen_request(curr);
+        self.sampler.inc_counter(type_id);
+        let to_storage = self.storage_or_compute(type_id);
+        let (tenant, name_len, request_payload) = self.generator.gen_payload(type_id);
         if to_storage {
             let (ip, port) = self.dispatcher.sender2storage.send_invoke(
                 tenant,
@@ -404,7 +580,7 @@ impl LoadBalancer {
             self.xloop.compute_load.inc_outstanding(ip, port);
         }
         self.slots[slot_id].counter += 1;
-        self.slots[slot_id].type_id = workload_id;
+        self.slots[slot_id].type_id = type_id;
         self.outstanding_reqs.insert(curr, slot_id);
     }
 
@@ -524,7 +700,8 @@ impl LoadBalancer {
                     if self.learnable
                         && self.xloop.ready(curr_rdtsc)
                         && packet_recvd_signal
-                        && global_recvd - self.xloop.last_recvd > 10000
+                        // && global_recvd - self.xloop.last_recvd > 10000
+                        && global_recvd > 10000
                     {
                         self.xloop
                             .update_x(&self.partition, curr_rdtsc, global_recvd);
@@ -543,9 +720,11 @@ impl LoadBalancer {
                         self.output_last_recvd = global_recvd;
                         self.output_last_rdtsc = curr_rdtsc;
                         println!(
-                            "rdtsc {} tput {:.2}",
+                            "rdtsc {} tput {:.2} x {:.2} ratio {}",
                             curr_rdtsc / (CPU_FREQUENCY / 1000),
-                            output_tput
+                            output_tput,
+                            self.partition.get(),
+                            self.sampler.msg,
                         )
                         // self.tput.update(output_tput);
                         // if self.output {
@@ -669,6 +848,7 @@ fn setup_lb(
     core_id: usize,
     // num_types: usize,
     partition: Arc<AtomicF64>,
+    sampler: Sampler,
     storage_load: Arc<ServerLoad>,
     compute_load: Arc<ServerLoad>,
     // kth: Vec<Vec<Arc<AtomicUsize>>>,
@@ -686,6 +866,7 @@ fn setup_lb(
         ports[0].clone(),
         // num_types,
         partition,
+        sampler,
         storage_load,
         compute_load,
         // kth,
@@ -718,6 +899,7 @@ fn main() {
     net_context.start_schedulers();
     // setup shared data
     let partition = Arc::new(AtomicF64::new(config.partition * 100.0));
+    let sampler = Sampler::new(config.workloads.len(), config.sample_factor);
     let storage_servers: Vec<_> = config
         .storage
         .iter()
@@ -755,6 +937,7 @@ fn main() {
         let cfg = config.clone();
         // let kth_copy = kth.clone();
         let partition_copy = partition.clone();
+        let sampler_copy = sampler.clone();
         let recvd_copy = recvd.clone();
         let storage_load_copy = storage_load.clone();
         let compute_load_copy = compute_load.clone();
@@ -770,6 +953,7 @@ fn main() {
                         core_id,
                         // num_types,
                         partition_copy.clone(),
+                        sampler_copy.clone(),
                         storage_load_copy.clone(),
                         compute_load_copy.clone(),
                         // kth_copy.clone(),
