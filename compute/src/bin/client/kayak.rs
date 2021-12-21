@@ -284,7 +284,7 @@ impl LoadBalancer {
             xloop_last_rdtsc: cycles::rdtsc(),
             xloop_last_recvd: 0,
             xloop_last_tput: 0.0,
-            xloop_last_X: 10001.0,
+            xloop_last_X: 101.0,
             xloop_factor: config.xloop_factor,
             xloop_learning_rate: config.xloop_learning_rate,
             xloop_interval: Vec::new(),
@@ -384,13 +384,13 @@ impl LoadBalancer {
                             / (curr_rdtsc - self.output_last_rdtsc) as f64;
                         self.output_last_recvd = global_recvd;
                         self.output_last_rdtsc = curr_rdtsc;
-                        println!(
-                            "rdtsc {} tput {:.2}",
-                            curr_rdtsc / (CPU_FREQUENCY / 1000),
-                            output_tput
-                        )
-                        // self.tput_vec.push(output_tput);
-                        // self.rpc_vec.push((self.partition.load(Ordering::Relaxed) as f64) / 100.0);
+                        // println!(
+                        //     "rdtsc {} tput {:.2}",
+                        //     curr_rdtsc / (CPU_FREQUENCY / 1000),
+                        //     output_tput
+                        // )
+                        self.tput_vec.push(output_tput);
+                        self.rpc_vec.push((self.partition.load(Ordering::Relaxed) as f64) / 100.0);
                     }
 
                     if self.xloop_factor != 0
@@ -520,7 +520,7 @@ impl Drop for LoadBalancer {
             std_x_interval = std_x_interval.sqrt();
             println!("xloop interval std: {}", std_x_interval);
             for t in 0..self.tput_vec.len() {
-                println!("tput {} rpc {}", 
+                println!("tput {:.2} rpc {:.2}", 
                          &self.tput_vec[t as usize], 
                          &self.rpc_vec[t as usize]);
             }
