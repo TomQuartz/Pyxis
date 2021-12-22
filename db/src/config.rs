@@ -477,6 +477,7 @@ pub struct LBConfig {
     pub min_delta_abs: f64,
     // not useful
     pub max_err: f64,
+    pub min_err: f64,
     // network configuration
     pub lb: ServerConfig,
     // TODO: add utilization config

@@ -13,8 +13,12 @@ name = "compute"
 path = "src/bin/client/compute.rs"
 
 [[bin]]
-name = "lb-tput"
-path = "src/bin/client/lb-tput.rs"
+name = "lb-dyn"
+path = "src/bin/client/lb-dyn.rs"
+
+[[bin]]
+name = "lb-static"
+path = "src/bin/client/lb-static.rs"
 
 #[[bin]]
 #name = "lb-qgrad"
@@ -50,7 +54,7 @@ cfg-if = "1.0.0"
 # Add feature name in default features to enable cyclecounter for the given stage,
 # where stage name can be ["execution"].
 [features]
-default = ["xtrace"]
+default = []
 execution = []
 ml-model = []
 checksum = []

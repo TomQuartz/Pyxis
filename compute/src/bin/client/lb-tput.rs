@@ -99,9 +99,10 @@ impl XInterface for Partition {
         let x = self.x.load(Ordering::Relaxed);
         let mut new_x = x + delta_x;
         if new_x > self.upperbound {
-            new_x = self.upperbound;
+            new_x = self.upperbound - (new_x - self.upperbound);
         } else if new_x < self.lowerbound {
-            new_x = self.lowerbound + 1.0;
+            // bounce back
+            new_x = self.lowerbound + (self.lowerbound - new_x);
         }
         self.x.store(new_x, Ordering::Relaxed);
     }
@@ -720,7 +721,7 @@ impl LoadBalancer {
                         } else {
                             self.xloop.sync(curr_rdtsc, global_recvd);
                         }
-                        debug!("{}", self.xloop);
+                        debug!("{} ratio {}", self.xloop, self.sampler.msg);
                     }
                     if self.output_factor != 0
                         && (curr_rdtsc - self.output_last_rdtsc
@@ -733,7 +734,7 @@ impl LoadBalancer {
                         self.output_last_rdtsc = curr_rdtsc;
                         println!(
                             "rdtsc {} tput {:.2} x {:.2} ratio {}",
-                            curr_rdtsc / (CPU_FREQUENCY / 1000),
+                            curr_rdtsc,
                             output_tput,
                             self.partition.get(),
                             self.sampler.msg,
@@ -827,7 +828,7 @@ impl Drop for LoadBalancer {
         }
         if self.id == 0 && cfg!(feature = "xtrace") {
             let mut f = File::create("xtrace.log").unwrap();
-            writeln!(f, "{:?}\n", self.cfg);
+            // writeln!(f, "{:?}\n", self.cfg);
             for s in &self.xloop.xtrace {
                 writeln!(f, "{}", s);
             }
@@ -910,7 +911,12 @@ fn main() {
     let mut net_context = config_and_init_netbricks(&config.lb);
     net_context.start_schedulers();
     // setup shared data
-    let partition = Arc::new(AtomicF64::new(config.partition * 100.0));
+    let partition = if config.learnable {
+        5000.0
+    } else {
+        config.partition * 100.0
+    };
+    let partition = Arc::new(AtomicF64::new(partition));
     let sampler = Sampler::new(config.workloads.len(), config.sample_factor);
     let storage_servers: Vec<_> = config
         .storage
