@@ -1,7 +1,7 @@
 ############################### LOAD GENERATOR CONFIG ##############################
 num_tenants = 1
 tenant_skew = 0.1
-duration = 60
+duration = 90
 
 learnable = true
 partition = 50
@@ -21,7 +21,8 @@ min_step_abs = 40
 min_interval = 400
 min_delta_rel = 0.02
 min_delta_abs = 4
-max_err = 0.05
+max_err = 0.2
+min_err = 0.05
 
 ############################### LB N/W CONFIG ##############################
 
@@ -71,27 +72,43 @@ kv = 16
 order = 240
 table_id = 1
 skew = 0.99
-
+[[workloads]]
+extension = "pushback"
+kv = 8
+order = 51200
+table_id = 1
+skew = 0.99
 [[workloads]]
 extension = "pushback"
 kv = 2
-order = 9600
+order = 12800
+table_id = 2
+skew = 0.99
+[[workloads]]
+extension = "pushback"
+kv = 2
+order = 51200
 table_id = 2
 skew = 0.99
 
 [[phases]]
-ratios = [90,10]
+ratios = [100,0,0,0]
 duration = 5
-
 [[phases]]
-ratios = [10,90]
+ratios = [50,50,0,0]
 duration = 5
-
-
-
-
-
-
+[[phases]]
+ratios = [30,30,40,0]
+duration = 5
+[[phases]]
+ratios = [20,20,30,30]
+duration = 5
+[[phases]]
+ratios = [30,30,40,0]
+duration = 5
+[[phases]]
+ratios = [50,50,0,0]
+duration = 5
 
 
 

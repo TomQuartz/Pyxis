@@ -592,6 +592,7 @@ pub struct TputGrad {
     min_delta_rel: f64,
     min_delta_abs: f64,
     max_err: f64,
+    min_err: f64,
     converged: bool,
     // best_y: f64,
     // best_x: f64,
@@ -633,6 +634,7 @@ impl TputGrad {
             min_delta_rel: config.min_delta_rel,
             min_delta_abs: config.min_delta_abs,
             max_err: config.max_err,
+            min_err: config.min_err,
             converged: true,
             upperbound: 10000.0,
             lowerbound: 0.0,
@@ -692,6 +694,7 @@ impl TputGrad {
         let inv_tput = delta_t as f64 / delta_recvd as f64;
         // let delta_tput = tput - self.last_tput;
         let delta_inv_tput = inv_tput - self.last_inv_tput;
+        // let min_delta_rel = self.min_delta_rel * delta_x.abs();
         let min_delta_rel = self.min_delta_rel * delta_x.abs();
         let min_delta = self.min_delta_abs.max(min_delta_rel);
         // interval
@@ -728,7 +731,7 @@ impl TputGrad {
                 step = clamp(step_raw, min_step, max_step);
                 // update
                 xinterface.update(step);
-            } else if rel_err < self.max_err {
+            } else if rel_err < self.min_err {
                 self.converged = true;
                 self.upperbound = 10000.0;
                 self.lowerbound = 0.0;
