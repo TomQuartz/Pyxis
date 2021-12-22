@@ -723,7 +723,6 @@ impl TputGrad {
         // NOTE: we do not always update last_inv_tput after introducing tolerance, so copy before update
         let last_inv_tput = self.last_inv_tput;
         self.last_inv_tput = inv_tput;
-        self.last_x = x;
         // convergence
         if self.converged {
             // avoid updating if this is within #tolerance steps after jumping out of convergence
@@ -759,6 +758,7 @@ impl TputGrad {
             let mut step = 0f64;
             let mut step_raw = 0f64;
             // interval
+            // last_x used here, so update later
             if delta_x > 0.0 {
                 if delta_inv_tput > min_delta {
                     self.upperbound = x;
@@ -773,9 +773,12 @@ impl TputGrad {
                     self.lowerbound = x;
                 }
             }
+            self.last_x = x;
             let interval = self.upperbound - self.lowerbound;
             // convergence criterion
-            if interval < self.min_interval && rel_err < self.min_err {
+            if interval < self.min_interval
+            /* && rel_err < self.min_err */
+            {
                 self.converged = true;
                 self.anomalies = 0;
                 self.upperbound = 10000.0;
