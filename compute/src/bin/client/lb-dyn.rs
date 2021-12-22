@@ -709,8 +709,8 @@ impl LoadBalancer {
                     if self.learnable
                         && self.xloop.ready(curr_rdtsc)
                         && packet_recvd_signal
-                        // && global_recvd - self.xloop.last_recvd > 10000
-                        && global_recvd > 10000
+                        && global_recvd - self.xloop.last_recvd > 4000
+                    // && global_recvd > 10000
                     {
                         if self.sampler.undetermined_requests() == 0 {
                             self.xloop

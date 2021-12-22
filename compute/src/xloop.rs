@@ -592,6 +592,9 @@ pub struct TputGrad {
     min_delta_rel: f64,
     min_delta_abs: f64,
     max_err: f64,
+    tolerance: u32,
+    anomalies: u32,
+    // not useful
     min_err: f64,
     converged: bool,
     // best_y: f64,
@@ -634,6 +637,9 @@ impl TputGrad {
             min_delta_rel: config.min_delta_rel,
             min_delta_abs: config.min_delta_abs,
             max_err: config.max_err,
+            tolerance: config.tolerance,
+            anomalies: 0,
+            // not useful
             min_err: config.min_err,
             converged: true,
             upperbound: 10000.0,
@@ -694,86 +700,106 @@ impl TputGrad {
         let inv_tput = delta_t as f64 / delta_recvd as f64;
         // let delta_tput = tput - self.last_tput;
         let delta_inv_tput = inv_tput - self.last_inv_tput;
-        // let min_delta_rel = self.min_delta_rel * delta_x.abs();
-        let min_delta_rel = self.min_delta_rel * delta_x.abs();
-        let min_delta = self.min_delta_abs.max(min_delta_rel);
-        // interval
-        if delta_x > 0.0 {
-            if delta_inv_tput > min_delta {
-                self.upperbound = x;
-            } else if delta_inv_tput < -min_delta {
-                self.lowerbound = self.last_x;
-            }
-        } else if delta_x < 0.0 {
-            // exclude delta_x = 0, for the first call to xloop or after reset
-            if delta_inv_tput < -min_delta {
-                self.upperbound = self.last_x;
-            } else if delta_inv_tput > min_delta {
-                self.lowerbound = x;
-            }
-        }
-        let interval = self.upperbound - self.lowerbound;
-        // grad
-        let mut step = 0f64;
-        let mut step_raw = 0f64;
         let rel_err = relative_err(inv_tput, self.last_inv_tput);
+        self.msg.clear();
+        write!(
+            self.msg,
+            "rdtsc {} x {:.2}({:.2}) tput {:.2}({}/{}) inv_tput {:.2}({:.2}~{:.2}%) ",
+            curr_rdtsc,
+            x,
+            delta_x,
+            CPU_FREQUENCY as f64 / inv_tput / 1000.0,
+            delta_recvd,
+            delta_t,
+            inv_tput,
+            // tput,
+            delta_inv_tput,
+            // delta_tput,
+            rel_err * 100.0,
+        );
+        // sync
+        self.last_rdtsc = curr_rdtsc;
+        self.last_recvd = recvd;
+        // NOTE: we do not always update last_inv_tput after introducing tolerance, so copy before update
+        let last_inv_tput = self.last_inv_tput;
+        self.last_inv_tput = inv_tput;
+        self.last_x = x;
+        // convergence
         if self.converged {
-            // avoid updating if this is the first step after jumping out of convergence
+            // avoid updating if this is within #tolerance steps after jumping out of convergence
             if rel_err > self.max_err {
-                self.converged = false;
-                self.start = curr_rdtsc;
+                self.anomalies += 1;
+                if self.start == 0 {
+                    self.start = curr_rdtsc;
+                }
+                if self.anomalies == self.tolerance {
+                    self.converged = false;
+                    // compute gradient next time
+                } else {
+                    // fall back to previous history
+                    self.last_inv_tput = last_inv_tput;
+                }
+            } else {
+                // only consecutive anomalies are taken into account, so reset
+                self.anomalies = 0;
+                self.start = 0;
             }
+            write!(
+                self.msg,
+                "elapsed {}ms anomalies {}/{}",
+                self.elapsed / (CPU_FREQUENCY / 1000),
+                self.anomalies,
+                self.tolerance
+            );
         } else {
-            if interval > self.min_interval {
+            // thresh for bounding interval
+            let min_delta_rel = self.min_delta_rel * delta_x.abs();
+            let min_delta = self.min_delta_abs.max(min_delta_rel);
+            // grad
+            let mut step = 0f64;
+            let mut step_raw = 0f64;
+            // interval
+            if delta_x > 0.0 {
+                if delta_inv_tput > min_delta {
+                    self.upperbound = x;
+                } else if delta_inv_tput < -min_delta {
+                    self.lowerbound = self.last_x;
+                }
+            } else if delta_x < 0.0 {
+                // exclude delta_x = 0, for the first call to xloop or after reset
+                if delta_inv_tput < -min_delta {
+                    self.upperbound = self.last_x;
+                } else if delta_inv_tput > min_delta {
+                    self.lowerbound = x;
+                }
+            }
+            let interval = self.upperbound - self.lowerbound;
+            // convergence criterion
+            if interval < self.min_interval && rel_err < self.min_err {
+                self.converged = true;
+                self.anomalies = 0;
+                self.upperbound = 10000.0;
+                self.lowerbound = 0.0;
+                self.elapsed = curr_rdtsc - self.start;
+                self.start = 0;
+            } else {
                 step_raw = -self.lr * interval * delta_inv_tput / (delta_x + 1e-9);
                 let max_step = self.max_step_abs.min(self.max_step_rel * interval);
                 let min_step = self.min_step_abs.max(self.min_step_rel * interval);
                 step = clamp(step_raw, min_step, max_step);
                 // update
                 xinterface.update(step);
-            } else if rel_err < self.min_err {
-                self.converged = true;
-                self.upperbound = 10000.0;
-                self.lowerbound = 0.0;
-                self.elapsed = curr_rdtsc - self.start;
-                self.start = 0;
             }
-        }
-        // sync
-        self.last_rdtsc = curr_rdtsc;
-        self.last_recvd = recvd;
-        // self.last_tput = tput;
-        self.last_inv_tput = inv_tput;
-        self.last_x = x;
-        // output
-        self.msg.clear();
-        write!(
-            self.msg,
-            "rdtsc {} x {:.2}({:.2}) inv_tput {:.2}({:.2}~{:.2}%) min_delta {:.2}({:.2}) tput {:.2}({}/{}) step {:.2}({:.2}) range {:.2}({:.2},{:.2}) ",
-            curr_rdtsc,
-            x,
-            delta_x,
-            inv_tput,
-            // tput,
-            delta_inv_tput,
-            // delta_tput,
-            rel_err * 100.0,
-            min_delta,
-            min_delta_rel,
-            CPU_FREQUENCY as f64 / inv_tput / 1000.0,
-            delta_recvd,
-            delta_t,
-            step,
-            step_raw,
-            interval,
-            self.lowerbound,
-            self.upperbound,
-        );
-        if self.converged {
             write!(
                 self.msg,
-                "elapsed {}ms ",
-                self.elapsed / (CPU_FREQUENCY / 1000)
+                "min_delta {:.2}({:.2}) step {:.2}({:.2}) range {:.2}({:.2},{:.2}) ",
+                min_delta,
+                min_delta_rel,
+                step,
+                step_raw,
+                interval,
+                self.lowerbound,
+                self.upperbound,
             );
         }
         /*
