@@ -774,20 +774,21 @@ impl TputGrad {
                 }
             }
             let interval = self.upperbound - self.lowerbound;
-            if interval > self.min_interval {
-                step_raw = -self.lr * interval * delta_inv_tput / (delta_x + 1e-9);
-                let max_step = self.max_step_abs.min(self.max_step_rel * interval);
-                let min_step = self.min_step_abs.max(self.min_step_rel * interval);
-                step = clamp(step_raw, min_step, max_step);
-                // update
-                xinterface.update(step);
-            } else if rel_err < self.min_err {
+            // convergence criterion
+            if interval < self.min_interval && rel_err < self.min_err {
                 self.converged = true;
                 self.anomalies = 0;
                 self.upperbound = 10000.0;
                 self.lowerbound = 0.0;
                 self.elapsed = curr_rdtsc - self.start;
                 self.start = 0;
+            } else {
+                step_raw = -self.lr * interval * delta_inv_tput / (delta_x + 1e-9);
+                let max_step = self.max_step_abs.min(self.max_step_rel * interval);
+                let min_step = self.min_step_abs.max(self.min_step_rel * interval);
+                step = clamp(step_raw, min_step, max_step);
+                // update
+                xinterface.update(step);
             }
             write!(
                 self.msg,
