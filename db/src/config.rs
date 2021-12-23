@@ -504,12 +504,16 @@ pub struct LBConfig {
     pub tolerance: u32,
     // not useful
     pub min_err: f64,
+    // elastic
+    pub elastic: bool,
+    pub max_load: f64,
+    pub min_load: f64,
+    pub max_step: i32,
     // network configuration
     pub lb: ServerConfig,
     // TODO: add utilization config
     // NOTE: this is the number of storage ports, equal duration
     // NOTE: assumes no workstealing
-    // pub utilization: Vec<usize>
     // [[]]
     pub compute: Vec<NetConfig>,
     pub storage: Vec<NetConfig>,
@@ -517,6 +521,7 @@ pub struct LBConfig {
     pub tables: Vec<TableConfig>,
     pub workloads: Vec<WorkloadConfig>,
     pub phases: Vec<PhaseConfig>,
+    pub provisions: Vec<ProvisionConfig>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -563,6 +568,14 @@ pub struct PhaseConfig {
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
+pub struct ProvisionConfig {
+    pub storage: i32,
+    pub compute: i32,
+    pub duration: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(default)]
 pub struct StorageConfig {
     /// Number of tenants to intialize the tables.
     pub num_tenants: u32,
@@ -584,19 +597,11 @@ pub struct StorageConfig {
 }
 
 pub fn get_default_netbricks_config(config: &ServerConfig) -> NetbricksConfiguration {
-    // assert!(
-    //     (config.server.rx_queues as u32).is_power_of_two(),
-    //     "the number of ports should be power of two"
-    // );
-    assert!(
-        config.num_cores % config.server.rx_queues == 0,
-        "the number of server cores should be multiples of the number of ports"
-    );
     // General arguments supplied to netbricks.
     let net_config_name = String::from("storage");
     let dpdk_secondary: bool = false;
     let net_primary_core: i32 = 19;
-    // let net_queues: Vec<i32> = (0..config.server.num_ports).collect();
+    let net_queues: Vec<i32> = (0..config.server.rx_queues).collect();
     let net_strict_cores: bool = false;
     let net_pool_size: u32 = 32768 - 1;
     let net_cache_size: u32 = 512;
@@ -604,12 +609,10 @@ pub fn get_default_netbricks_config(config: &ServerConfig) -> NetbricksConfigura
 
     // Port configuration. Required to configure the physical network interface.
     let net_port_name = config.nic_pci.clone();
-    let net_port_rx_queues: Vec<i32> = (0..config.server.rx_queues).collect();
-    // let net_port_rx_queues: Vec<i32> = net_queues.clone();
-    let net_port_tx_queues: Vec<i32> = (0..config.num_cores).collect();
-    // let net_port_tx_queues: Vec<i32> = net_queues.clone();
+    let net_port_rx_queues: Vec<i32> = net_queues.clone();
+    let net_port_tx_queues: Vec<i32> = net_queues.clone();
     let net_port_rxd: i32 = 8192 / config.server.rx_queues;
-    let net_port_txd: i32 = 8192 / config.num_cores;
+    let net_port_txd: i32 = 8192 / config.server.rx_queues;
     let net_port_loopback: bool = false;
     let net_port_tcp_tso: bool = false;
     let net_port_csum_offload: bool = false;

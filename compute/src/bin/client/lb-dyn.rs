@@ -477,8 +477,8 @@ impl LoadBalancer {
         // num_types: usize,
         partition: Arc<AtomicF64>,
         sampler: Sampler,
-        storage_load: Arc<ServerLoad>,
-        compute_load: Arc<ServerLoad>,
+        // storage_load: Arc<ServerLoad>,
+        // compute_load: Arc<ServerLoad>,
         // kth: Vec<Vec<Arc<AtomicUsize>>>,
         global_recvd: Arc<AtomicUsize>,
         init_rdtsc: u64,
@@ -529,7 +529,7 @@ impl LoadBalancer {
                 lowerbound: 0.0,
             },
             learnable: config.learnable,
-            xloop: TputGrad::new(config, storage_load, compute_load),
+            xloop: TputGrad::new(config /*, storage_load, compute_load*/),
             // not used
             // bimodal: config.bimodal,
             // bimodal_interval: config.bimodal_interval,
@@ -577,7 +577,7 @@ impl LoadBalancer {
                 curr,
                 0, // not used
             );
-            self.xloop.storage_load.inc_outstanding(ip, port);
+            // self.xloop.storage_load.inc_outstanding(ip, port);
         } else {
             let (ip, port) = self.dispatcher.sender2compute.send_invoke(
                 tenant,
@@ -586,7 +586,7 @@ impl LoadBalancer {
                 curr,
                 0, // not used
             );
-            self.xloop.compute_load.inc_outstanding(ip, port);
+            // self.xloop.compute_load.inc_outstanding(ip, port);
         }
         self.slots[slot_id].counter += 1;
         self.slots[slot_id].type_id = type_id;
@@ -599,7 +599,7 @@ impl LoadBalancer {
             self.send_once(i);
         }
     }
-
+    /*
     fn update_load(
         &self,
         src_ip: u32,
@@ -630,7 +630,7 @@ impl LoadBalancer {
             );
         }
     }
-
+    */
     fn recv(&mut self) {
         // // Don't do anything after all responses have been received.
         // if self.finished.load(Ordering::Relaxed) == true && self.stop > 0 {
@@ -660,24 +660,24 @@ impl LoadBalancer {
                                     packet_recvd_signal = true;
                                     self.recvd += 1;
                                     self.global_recvd.fetch_add(1, Ordering::Relaxed);
-                                    // TODO: reimpl update, server will do smoothing and return avg
-                                    self.update_load(
-                                        src_ip,
-                                        src_port,
-                                        // curr_rdtsc,
-                                        hdr.server_load,
-                                        hdr.task_duration_cv,
-                                        // #[cfg(feature = "server_stats")]
-                                        // (curr_rdtsc - self.init_rdtsc),
-                                    );
+                                    // // TODO: reimpl update, server will do smoothing and return avg
+                                    // self.update_load(
+                                    //     src_ip,
+                                    //     src_port,
+                                    //     // curr_rdtsc,
+                                    //     hdr.server_load,
+                                    //     hdr.task_duration_cv,
+                                    //     // #[cfg(feature = "server_stats")]
+                                    //     // (curr_rdtsc - self.init_rdtsc),
+                                    // );
                                     // self.latencies[type_id].push(curr_rdtsc - timestamp);
                                     self.latencies.push(curr_rdtsc - timestamp);
                                     self.outstanding_reqs.remove(&timestamp);
-                                    if self.xloop.storage_load.ip2load.contains_key(&src_ip) {
-                                        self.xloop.storage_load.dec_outstanding(src_ip, src_port);
-                                    } else {
-                                        self.xloop.compute_load.dec_outstanding(src_ip, src_port);
-                                    }
+                                    // if self.xloop.storage_load.ip2load.contains_key(&src_ip) {
+                                    //     self.xloop.storage_load.dec_outstanding(src_ip, src_port);
+                                    // } else {
+                                    //     self.xloop.compute_load.dec_outstanding(src_ip, src_port);
+                                    // }
                                     self.send_once(slot_id);
                                 } else {
                                     warn!("no outstanding request");
@@ -862,8 +862,8 @@ fn setup_lb(
     // num_types: usize,
     partition: Arc<AtomicF64>,
     sampler: Sampler,
-    storage_load: Arc<ServerLoad>,
-    compute_load: Arc<ServerLoad>,
+    // storage_load: Arc<ServerLoad>,
+    // compute_load: Arc<ServerLoad>,
     // kth: Vec<Vec<Arc<AtomicUsize>>>,
     global_recvd: Arc<AtomicUsize>,
     init_rdtsc: u64,
@@ -880,8 +880,8 @@ fn setup_lb(
         // num_types,
         partition,
         sampler,
-        storage_load,
-        compute_load,
+        // storage_load,
+        // compute_load,
         // kth,
         global_recvd,
         init_rdtsc,
@@ -918,6 +918,7 @@ fn main() {
     };
     let partition = Arc::new(AtomicF64::new(partition));
     let sampler = Sampler::new(config.workloads.len(), config.sample_factor);
+    /*
     let storage_servers: Vec<_> = config
         .storage
         .iter()
@@ -938,6 +939,7 @@ fn main() {
         compute_servers,
         // config.moving_exp,
     ));
+    */
     // let num_types = config.multi_kv.len();
     // let mut kth = vec![];
     // for _ in 0..num_types {
@@ -957,8 +959,8 @@ fn main() {
         let partition_copy = partition.clone();
         let sampler_copy = sampler.clone();
         let recvd_copy = recvd.clone();
-        let storage_load_copy = storage_load.clone();
-        let compute_load_copy = compute_load.clone();
+        // let storage_load_copy = storage_load.clone();
+        // let compute_load_copy = compute_load.clone();
         let finished_copy = finished.clone();
         net_context.add_pipeline_to_core(
             core,
@@ -972,8 +974,8 @@ fn main() {
                         // num_types,
                         partition_copy.clone(),
                         sampler_copy.clone(),
-                        storage_load_copy.clone(),
-                        compute_load_copy.clone(),
+                        // storage_load_copy.clone(),
+                        // compute_load_copy.clone(),
                         // kth_copy.clone(),
                         recvd_copy.clone(),
                         init_rdtsc,

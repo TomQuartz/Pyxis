@@ -257,10 +257,6 @@ pub fn initialize_system(configuration: &NetbricksConfiguration) -> Result<NetBr
         let nrxq = port.rx_queues.len();
         let ntxq = port.tx_queues.len();
         let num_cores = ctx.active_cores.len();
-        assert!(
-            num_cores <= ntxq,
-            "we do not implement a lock for each txq, thus each thread must be mapped to a unique txq"
-        );
         for (core_id, &core) in ctx.active_cores.iter().enumerate() {
             let rx_q = port.rx_queues[core_id % nrxq];
             let tx_q = port.tx_queues[core_id % ntxq];

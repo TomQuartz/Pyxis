@@ -7,7 +7,7 @@ use std::fs::File;
 use std::io::Write as writef;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 
 pub const CPU_FREQUENCY: u64 = 2400000000;
@@ -259,6 +259,7 @@ pub struct ServerLoad {
     outstanding: AtomicUsize,
     // pub outs_trace: RefCell<Avg>,
     pub ip2load: HashMap<u32, Vec<RwLock<CoreLoad>>>,
+    pub ip_addrs: Vec<u32>,
     // num_queues: usize,
     // #[cfg(feature = "server_stats")]
     // ip2trace: HashMap<u32, RwLock<Vec<(usize, (u64, (f64, f64)))>>>,
@@ -273,6 +274,7 @@ impl ServerLoad {
         let mut ip2load = HashMap::new();
         // let mut ip2outs = HashMap::new();
         // let mut num_queues = 0usize;
+        let mut ip_addrs = vec![];
         for &(ip, num_ports) in &ip_and_ports {
             let mut server_load = vec![];
             // let mut outs = vec![];
@@ -283,8 +285,10 @@ impl ServerLoad {
             let ip = u32::from(Ipv4Addr::from_str(ip).unwrap());
             // ip2load.insert(ip, RwLock::new(MovingTimeAvg::new(moving_exp)));
             ip2load.insert(ip, server_load);
+            ip_addrs.push(ip);
             // ip2outs.insert(ip,outs);
         }
+        ip_addrs.sort();
         // #[cfg(feature = "server_stats")]
         // let mut ip2trace = HashMap::new();
         // #[cfg(feature = "server_stats")]
@@ -299,6 +303,7 @@ impl ServerLoad {
         ServerLoad {
             cluster_name: cluster_name.to_string(),
             ip2load: ip2load,
+            ip_addrs: ip_addrs,
             // ip2outs:ip2outs,
             outstanding: AtomicUsize::new(0),
             // outs_trace: RefCell::new(Avg::new()),
@@ -356,22 +361,28 @@ impl ServerLoad {
     // }
     pub fn aggr_server(&self, ip: u32) -> (f64, f64, f64) {
         let server_load = self.ip2load.get(&ip).unwrap();
-        let num_cores = server_load.len() as f64;
+        // let num_cores = server_load.len() as f64;
         // let mut total_outs = 0f64;
         let mut total_w = 0f64;
         let mut total_cv = 0f64;
+        let mut total_cores = 0f64;
         for core_load in server_load.iter() {
-            let (w, cv) = core_load.read().unwrap().avg();
-            // total_ql += ql;
-            total_w += w;
-            total_cv += cv;
+            let core_load = core_load.read().unwrap();
+            if core_load.waiting.counter > 10f64 {
+                let (w, cv) = core_load.avg();
+                // total_ql += ql;
+                total_w += w;
+                total_cv += cv;
+                total_cores += 1.0;
+            }
         }
         // let outs = self.ip2outs.get(&ip).unwrap();
         // for out in outs.iter(){
         //     total_outs+=out.load(Ordering::Acquire) as f64;
         // }
         // (total_ql / num_cores, total_cv / num_cores)
-        (total_w, total_cv, num_cores)
+        // (total_w, total_cv, num_cores)
+        (total_w, total_cv, total_cores)
         // server_load.read().unwrap().avg()
     }
     pub fn aggr_all(&self) -> (f64, f64, f64, f64) {
@@ -563,8 +574,8 @@ fn relative_err(x: f64, y: f64) -> f64 {
 }
 
 pub struct TputGrad {
-    pub storage_load: Arc<ServerLoad>,
-    pub compute_load: Arc<ServerLoad>,
+    // pub storage_load: Arc<ServerLoad>,
+    // pub compute_load: Arc<ServerLoad>,
     interval: u64,
     last_rdtsc: u64,
     pub last_recvd: usize,
@@ -596,7 +607,7 @@ pub struct TputGrad {
     anomalies: u32,
     // not useful
     min_err: f64,
-    converged: bool,
+    pub converged: bool,
     // best_y: f64,
     // best_x: f64,
     msg: String,
@@ -609,12 +620,12 @@ pub struct TputGrad {
 impl TputGrad {
     pub fn new(
         config: &LBConfig,
-        storage_load: Arc<ServerLoad>,
-        compute_load: Arc<ServerLoad>,
+        // storage_load: Arc<ServerLoad>,
+        // compute_load: Arc<ServerLoad>,
     ) -> TputGrad {
         TputGrad {
-            storage_load: storage_load,
-            compute_load: compute_load,
+            // storage_load: storage_load,
+            // compute_load: compute_load,
             interval: CPU_FREQUENCY / config.xloop_factor,
             last_rdtsc: 0,
             last_recvd: 0,
@@ -846,9 +857,9 @@ impl TputGrad {
             write!(self.msg,"storage {:.2}({:.2}+{:.2}) compute {:.2}({:.2}-{:.2}) range ({:.2},{:.2})",ql_storage,out_storage,w_compute,ql_compute,out_compute,w_compute,upperbound_compute,lowerbound_compute);
         }
         */
-        // reset avg of waiting, locally on lb
-        self.compute_load.reset();
-        self.storage_load.reset();
+        // // reset avg of waiting, locally on lb
+        // self.compute_load.reset();
+        // self.storage_load.reset();
         if cfg!(feature = "xtrace") {
             self.xtrace.push(self.msg.clone());
         }
@@ -861,6 +872,126 @@ impl fmt::Display for TputGrad {
     }
 }
 
+#[derive(Clone)]
+pub struct ElasticScaling {
+    pub compute_load: Arc<ServerLoad>,
+    // if elastic then use this, else use config.provision
+    pub compute_cores: Arc<AtomicI32>,
+    max_quota: i32,
+    max_load: f64,
+    min_load: f64,
+    max_step: i32,
+    // history
+    // last_inv_tput: f64,
+    last_provision: i32,
+    msg: String,
+}
+
+impl ElasticScaling {
+    pub fn new(config: &LBConfig) -> ElasticScaling {
+        let compute_servers: Vec<_> = config
+            .compute
+            .iter()
+            .map(|x| (&x.ip_addr, x.rx_queues))
+            .collect();
+        let compute_load = ServerLoad::new("compute", compute_servers);
+        // TODO: if elastic then set initial provision to 8 cores
+        let initial_provision = config.provisions[0].compute;
+        ElasticScaling {
+            compute_load: Arc::new(compute_load),
+            compute_cores: Arc::new(AtomicI32::new(initial_provision)),
+            last_provision: initial_provision,
+            max_quota: 8 * config.compute.len() as i32, // 8 cores each
+            max_load: config.max_load,
+            min_load: config.min_load,
+            max_step: config.max_step,
+            msg: String::new(),
+        }
+    }
+    // a wrapper around the actual update_load function
+    // perform ip check, ignore response packet in case provision has changed
+    pub fn update_load(
+        &self,
+        src_ip: u32,
+        src_port: u16,
+        queue_length: f64,
+        task_duration_cv: f64,
+    ) {
+        // set to -1 after the first rpc resp packet in that round
+        if queue_length < 0.0 || task_duration_cv == 0.0 {
+            return;
+        }
+        // might be from storage or out-of-date compute node
+        if let Ok(ip_idx) = self.compute_load.ip_addrs.binary_search(&src_ip) {
+            let core_idx = 8 * ip_idx + src_port as usize;
+            if core_idx < self.compute_cores.load(Ordering::Relaxed) as usize {
+                self.compute_load
+                    .update_load(src_ip, src_port, queue_length, task_duration_cv);
+            }
+        }
+    }
+    pub fn scale(&mut self) {
+        // load
+        let (outstanding, waiting, cv, ncores) = self.compute_load.aggr_all();
+        let ql = (outstanding - waiting) / (ncores + 1e-9);
+        let cv = cv / (ncores + 1e-9);
+        let load = 2.0 * ql / (1.0 + cv);
+        let load = ((load * load + 4.0 * load).sqrt() - load) / 2.0;
+        assert!(load < 1.0, "load must be lower than 1");
+        // provision
+        let provision = self.compute_cores.load(Ordering::Relaxed);
+        let delta_provision = provision - self.last_provision;
+        // sync
+        self.last_provision = provision;
+        // update
+        let mut step = 0i32;
+        if load == 0f64 {
+            step = 0 - provision;
+        }
+        if load < self.min_load {
+            if delta_provision > 0 {
+                // inc too much
+                step = -delta_provision / 2;
+            } else {
+                // still to dec
+                if provision > self.max_step {
+                    step = -self.max_step;
+                } else {
+                    step = -provision / 2;
+                }
+            }
+        } else if load > self.max_load {
+            if delta_provision < 0 {
+                // dec too much
+                step = -delta_provision / 2;
+            } else {
+                if provision + self.max_step > self.max_quota {
+                    step = self.max_quota - provision;
+                } else {
+                    step = self.max_step;
+                }
+            }
+        } /* else we have a resonable load on compute */
+        // convergence: step=0
+        // either because max_quota is reached or load is in accepted range
+        self.compute_cores
+            .store(provision + step, Ordering::Relaxed);
+        self.compute_load.reset();
+        self.msg.clear();
+        write!(
+            self.msg,
+            "cores {}({}) load {:.2}({:.2},{:.2}) step {}",
+            provision, delta_provision, load, ql, cv, step
+        );
+    }
+}
+impl fmt::Display for ElasticScaling {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.msg)
+    }
+}
+
+/*
 // inc by fixed step, dec by binary search
 pub struct ElasticScaling {
     // thresh
@@ -875,6 +1006,7 @@ pub struct ElasticScaling {
     last_state: i32,
     last_step: u32,
 }
+*/
 
 /*
 pub struct QueueGrad {
