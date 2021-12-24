@@ -31,7 +31,7 @@ use super::rpc::*;
 use super::sched::RoundRobin;
 use super::service::Service;
 use super::task::{Task, TaskPriority, TaskState};
-use super::wireformat::{self, GetGenerator, OpCode};
+use super::wireformat::*;
 
 use super::e2d2::common::EmptyMetadata;
 use super::e2d2::headers::*;
@@ -43,7 +43,7 @@ use atomic_float::AtomicF64;
 use config::NetConfig;
 use e2d2::allocators::*;
 use rand::{Rng, SeedableRng, XorShiftRng};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::fmt;
@@ -135,11 +135,13 @@ pub struct Sender {
     // The network interface over which requests will be sent out.
     net_port: CacheAligned<PortQueue>,
     // number of endpoints, either storage or compute
-    num_endpoints: usize,
+    // unit is core
+    num_endpoints: Cell<usize>,
     // udp+ip+mac header for sending reqs
     req_hdrs: Vec<PacketHeaders>,
     // The number of destination UDP ports a req can be sent to.
     dst_ports: Vec<u16>,
+    cumsum_ports: Vec<usize>,
     // // Mapping from type to dst_ports(cores)
     // type2core: HashMap<usize, Vec<u16>>,
     // Rng generator
@@ -158,13 +160,23 @@ impl Sender {
         endpoints: &Vec<NetConfig>,
         // shared_credits: Arc<RwLock<u32>>,
     ) -> Sender {
+        let mut req_hdrs = PacketHeaders::create_hdrs(src, net_port.txq() as u16, endpoints);
+        req_hdrs.sort_by_key(|hdrs| hdrs.ip_header.dst());
+        let dst_ports = endpoints.iter().map(|x| x.rx_queues as u16).collect();
+        let mut sum = 0usize;
+        let mut cumsum_ports = vec![];
+        for &nports in &dst_ports {
+            sum += nports as usize;
+            cumsum_ports.push(sum);
+        }
         Sender {
             // id: net_port.rxq() as usize,
-            num_endpoints: endpoints.len(),
-            req_hdrs: PacketHeaders::create_hdrs(src, net_port.txq() as u16, endpoints),
+            num_endpoints: Cell::new(sum),
+            req_hdrs: req_hdrs,
             net_port: net_port, //.clone()
             // TODO: make this a vector, different number of ports for each storage endpoint
-            dst_ports: endpoints.iter().map(|x| x.rx_queues as u16).collect(),
+            dst_ports: dst_ports,
+            cumsum_ports: cumsum_ports,
             rng: {
                 let seed: [u32; 4] = rand::random::<[u32; 4]>();
                 RefCell::new(XorShiftRng::from_seed(seed))
@@ -174,8 +186,23 @@ impl Sender {
         }
     }
 
-    fn get_endpoint(&self, _key: &[u8]) -> usize {
-        self.rng.borrow_mut().gen::<usize>() % self.num_endpoints
+    pub fn set_endpoints(&self, num_endpoints: usize) {
+        self.num_endpoints.set(num_endpoints);
+    }
+
+    fn get_endpoint(&self) -> (usize, u16) {
+        let num_endpoints = self.num_endpoints.get();
+        let endpoint_idx = self.rng.borrow_mut().gen::<usize>() % num_endpoints;
+        let server_idx = self
+            .cumsum_ports
+            .partition_point(|&cumsum| cumsum <= endpoint_idx);
+        let port_idx = endpoint_idx
+            - if server_idx > 0 {
+                self.cumsum_ports[server_idx - 1]
+            } else {
+                0
+            };
+        (server_idx, port_idx as u16)
     }
     /*
     pub fn return_credit(&self) {
@@ -233,16 +260,16 @@ impl Sender {
     // TODO: hash the target storage with LSB in key
     // for now, the vec len of req_hdrs=1
     pub fn send_get(&self, tenant: u32, table: u64, key: &[u8], id: u64) {
-        let endpoint = self.get_endpoint(key);
+        let (server_idx, port_idx) = self.get_endpoint();
         let request = rpc::create_get_rpc(
-            &self.req_hdrs[endpoint].mac_header,
-            &self.req_hdrs[endpoint].ip_header,
-            &self.req_hdrs[endpoint].udp_header,
+            &self.req_hdrs[server_idx].mac_header,
+            &self.req_hdrs[server_idx].ip_header,
+            &self.req_hdrs[server_idx].udp_header,
             tenant,
             table,
             key,
             id,
-            self.get_dst_port(endpoint),
+            port_idx,
             GetGenerator::SandstormClient,
         );
 
@@ -260,16 +287,16 @@ impl Sender {
     /// * `id`:     RPC identifier.
     #[allow(dead_code)]
     pub fn send_get_from_extension(&self, tenant: u32, table: u64, key: &[u8], id: u64) {
-        let endpoint = self.get_endpoint(key);
+        let (server_idx, port_idx) = self.get_endpoint();
         let request = rpc::create_get_rpc(
-            &self.req_hdrs[endpoint].mac_header,
-            &self.req_hdrs[endpoint].ip_header,
-            &self.req_hdrs[endpoint].udp_header,
+            &self.req_hdrs[server_idx].mac_header,
+            &self.req_hdrs[server_idx].ip_header,
+            &self.req_hdrs[server_idx].udp_header,
             tenant,
             table,
             key,
             id,
-            self.get_dst_port(endpoint),
+            port_idx,
             GetGenerator::SandstormExtension,
         );
         trace!(
@@ -277,8 +304,8 @@ impl Sender {
             id,
             key,
             table,
-            self.req_hdrs[endpoint].ip_header.src(),
-            self.req_hdrs[endpoint].ip_header.dst(),
+            self.req_hdrs[server_idx].ip_header.src(),
+            self.req_hdrs[server_idx].ip_header.dst(),
         );
         self.send_pkt(request);
         // let mut buffer = self.buffer.borrow_mut();
@@ -324,17 +351,17 @@ impl Sender {
     /// * `id`:     RPC identifier.
     #[allow(dead_code)]
     pub fn send_put(&self, tenant: u32, table: u64, key: &[u8], val: &[u8], id: u64) {
-        let endpoint = self.get_endpoint(key);
+        let (server_idx, port_idx) = self.get_endpoint();
         let request = rpc::create_put_rpc(
-            &self.req_hdrs[endpoint].mac_header,
-            &self.req_hdrs[endpoint].ip_header,
-            &self.req_hdrs[endpoint].udp_header,
+            &self.req_hdrs[server_idx].mac_header,
+            &self.req_hdrs[server_idx].ip_header,
+            &self.req_hdrs[server_idx].udp_header,
             tenant,
             table,
             key,
             val,
             id,
-            self.get_dst_port(endpoint),
+            port_idx,
         );
 
         self.send_pkt(request);
@@ -362,18 +389,18 @@ impl Sender {
         keys: &[u8],
         id: u64,
     ) {
-        let endpoint = self.get_endpoint(keys);
+        let (server_idx, port_idx) = self.get_endpoint();
         let request = rpc::create_multiget_rpc(
-            &self.req_hdrs[endpoint].mac_header,
-            &self.req_hdrs[endpoint].ip_header,
-            &self.req_hdrs[endpoint].udp_header,
+            &self.req_hdrs[server_idx].mac_header,
+            &self.req_hdrs[server_idx].ip_header,
+            &self.req_hdrs[server_idx].udp_header,
             tenant,
             table,
             k_len,
             n_keys,
             keys,
             id,
-            self.get_dst_port(endpoint),
+            port_idx,
         );
 
         self.send_pkt(request);
@@ -398,51 +425,54 @@ impl Sender {
         id: u64,
         _type_id: usize,
     ) -> (u32, u16) {
-        let endpoint = self.get_endpoint(payload);
-        let port = self.get_dst_port(endpoint);
+        let (server_idx, port_idx) = self.get_endpoint();
         let request = rpc::create_invoke_rpc(
-            &self.req_hdrs[endpoint].mac_header,
-            &self.req_hdrs[endpoint].ip_header,
-            &self.req_hdrs[endpoint].udp_header,
+            &self.req_hdrs[server_idx].mac_header,
+            &self.req_hdrs[server_idx].ip_header,
+            &self.req_hdrs[server_idx].udp_header,
             tenant,
             name_len,
             payload,
             id,
             // self.get_dst_port(endpoint),
-            port,
+            port_idx,
             // self.get_dst_port_by_type(type_id),
             // (id & 0xffff) as u16 & (self.dst_ports - 1),
         );
         trace!(
             "send req to dst ip {}",
-            self.req_hdrs[endpoint].ip_header.dst()
+            self.req_hdrs[server_idx].ip_header.dst()
         );
         self.send_pkt(request);
-        (self.req_hdrs[endpoint].ip_header.dst(), port)
-    }
-    #[cfg(feature = "queue_len")]
-    pub fn send_terminate(&self) {
-        for endpoint in 0..self.num_endpoints {
-            let mut request = rpc::create_terminate_rpc(
-                &self.req_hdrs[endpoint].mac_header,
-                &self.req_hdrs[endpoint].ip_header,
-                &self.req_hdrs[endpoint].udp_header,
-                self.get_dst_port(endpoint),
-                // self.get_dst_port_by_type(type_id),
-                // (id & 0xffff) as u16 & (self.dst_ports - 1),
-            );
-            self.send_pkt(request);
-        }
+        (self.req_hdrs[server_idx].ip_header.dst(), port_idx)
     }
 
     pub fn send_reset(&self) {
-        for endpoint in 0..self.num_endpoints {
-            for port in 0..self.dst_ports[endpoint] {
-                let mut request = rpc::create_reset_rpc(
-                    &self.req_hdrs[endpoint].mac_header,
-                    &self.req_hdrs[endpoint].ip_header,
-                    &self.req_hdrs[endpoint].udp_header,
-                    port,
+        for server_idx in 0..self.dst_ports.len() {
+            for port_idx in 0..self.dst_ports[server_idx] {
+                let request = rpc::create_reset_rpc(
+                    &self.req_hdrs[server_idx].mac_header,
+                    &self.req_hdrs[server_idx].ip_header,
+                    &self.req_hdrs[server_idx].udp_header,
+                    port_idx,
+                    // self.get_dst_port_by_type(type_id),
+                    // (id & 0xffff) as u16 & (self.dst_ports - 1),
+                );
+                self.send_pkt(request);
+            }
+        }
+    }
+    // set provision upon initialization and after scaling
+    // this message is sent to ALL compute nodes from lb, regardless of current 
+    pub fn send_scaling(&self, provision: u32) {
+        for server_idx in 0..self.dst_ports.len() {
+            for port_idx in 0..self.dst_ports[server_idx] {
+                let request = rpc::create_scaling_rpc(
+                    &self.req_hdrs[server_idx].mac_header,
+                    &self.req_hdrs[server_idx].ip_header,
+                    &self.req_hdrs[server_idx].udp_header,
+                    port_idx,
+                    provision,
                     // self.get_dst_port_by_type(type_id),
                     // (id & 0xffff) as u16 & (self.dst_ports - 1),
                 );
@@ -451,14 +481,14 @@ impl Sender {
         }
     }
 
-    /// Computes the destination UDP port given a tenant identifier.
-    #[inline]
-    fn get_dst_port(&self, endpoint: usize) -> u16 {
-        // The two least significant bytes of the tenant id % the total number of destination
-        // ports.
-        // (tenant & 0xffff) as u16 & (self.dst_ports - 1)
-        self.rng.borrow_mut().gen::<u16>() % self.dst_ports[endpoint]
-    }
+    // /// Computes the destination UDP port given a tenant identifier.
+    // #[inline]
+    // fn get_dst_port(&self, endpoint: usize) -> u16 {
+    //     // The two least significant bytes of the tenant id % the total number of destination
+    //     // ports.
+    //     // (tenant & 0xffff) as u16 & (self.dst_ports - 1)
+    //     self.rng.borrow_mut().gen::<u16>() % self.dst_ports[endpoint]
+    // }
 
     // #[inline]
     // fn get_dst_port_by_type(&self, type_id: usize) -> u16 {
@@ -601,7 +631,7 @@ pub struct Receiver {
     ip_addr: u32,
     // // The total number of responses received.
     // responses_recv: Cell<u64>,
-    pub reset: bool,
+    // pub reset: bool,
 }
 
 // Implementation of methods on Receiver.
@@ -613,7 +643,7 @@ impl Receiver {
         ip_addr: &str,
     ) -> Receiver {
         Receiver {
-            reset: false,
+            // reset: false,
             // stealing: !sib_port.is_none(),
             net_port: net_port,
             // sib_port: sib_port,
@@ -623,7 +653,13 @@ impl Receiver {
     }
     // TODO: makesure src ip is properly set
     // return pkt and (src ip, src udp port)
-    pub fn recv(&mut self) -> Option<Vec<(Packet<UdpHeader, EmptyMetadata>, (u32, u16))>> {
+    pub fn recv<F>(
+        &self,
+        mut filter: F,
+    ) -> Option<Vec<(Packet<UdpHeader, EmptyMetadata>, (u32, u16))>>
+    where
+        F: FnMut(Packet<UdpHeader, EmptyMetadata>) -> Option<Packet<UdpHeader, EmptyMetadata>>,
+    {
         // Allocate a vector of mutable MBuf pointers into which raw packets will be received.
         let mut mbuf_vector = Vec::with_capacity(self.max_rx_packets);
 
@@ -673,14 +709,9 @@ impl Receiver {
                 if let Some(packet) = self.check_mac(packet) {
                     if let Some((packet, src_ip)) = self.check_ip(packet) {
                         if let Some((packet, src_port)) = self.check_udp(packet) {
-                            if parse_rpc_opcode(&packet) == OpCode::ResetRpc {
-                                self.reset = true;
-                                packet.free_packet();
-                            } else {
+                            if let Some(packet) = filter(packet) {
                                 packets.push((packet, (src_ip, src_port)));
                             }
-                            // packets.push((packet, (src_ip, src_port)));
-                            // continue;
                         }
                     }
                 }
@@ -864,6 +895,7 @@ pub struct Dispatcher {
     // pub reset: Vec<Arc<AtomicBool>>,
     // time_avg: MovingTimeAvg,
     pub length: f64,
+    pub reset: Cell<bool>,
 }
 
 impl Dispatcher {
@@ -887,6 +919,7 @@ impl Dispatcher {
             // time_avg: MovingTimeAvg::new(moving_exp),
             // queue: RwLock::new(VecDeque::with_capacity(config.max_rx_packets)),
             length: -1.0,
+            reset: Cell::new(false),
             // length: MovingTimeAvg::new(moving_exp),
         }
     }
@@ -929,8 +962,23 @@ impl Dispatcher {
     //     sib_queue.length.swap(-1.0, Ordering::Relaxed);
     // }
     pub fn recv(&mut self) {
-        let current = cycles::rdtsc();
-        if let Some(mut packets) = self.receiver.recv() {
+        // let current = cycles::rdtsc();
+        let mut reset = false;
+        if let Some(packets) = self.receiver.recv(|pkt| match parse_rpc_opcode(&pkt) {
+            OpCode::ResetRpc => {
+                self.reset.replace(true);
+                pkt.free_packet();
+                None
+            }
+            OpCode::ScalingRpc => {
+                let pkt = pkt.parse_header::<InvokeRequest>();
+                let hdr = pkt.get_header();
+                self.sender.set_endpoints(hdr.args_length as usize);
+                pkt.free_packet();
+                None
+            }
+            _ => Some(pkt),
+        }) {
             if packets.len() > 0 {
                 let mut queue = self.queue.queue.write().unwrap();
                 queue.extend(packets.into_iter().map(|(packet, _)| packet));
@@ -941,13 +989,8 @@ impl Dispatcher {
         }
         self.length = 0.0;
     }
-    pub fn reset(&mut self) -> bool {
-        if self.receiver.reset {
-            self.receiver.reset = false;
-            true
-        } else {
-            false
-        }
+    pub fn reset(&self) -> bool {
+        self.reset.replace(false)
     }
     /*
     // a wrapper around Receiver.recv

@@ -569,8 +569,8 @@ pub struct PhaseConfig {
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
 pub struct ProvisionConfig {
-    pub storage: i32,
-    pub compute: i32,
+    pub storage: u32,
+    pub compute: u32,
     pub duration: u64,
 }
 

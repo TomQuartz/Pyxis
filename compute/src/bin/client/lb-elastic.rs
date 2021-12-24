@@ -185,12 +185,12 @@ impl LoadGenerator {
             workloads.push(Workload::new(workload, table));
         }
         // phases
-        let mut cum_time = 0u64;
+        let mut sum_time = 0u64;
         let mut junctures = vec![];
         let mut cum_ratios = vec![];
         for phase in &config.phases {
-            cum_time += phase.duration * CPU_FREQUENCY;
-            junctures.push(cum_time);
+            sum_time += phase.duration * CPU_FREQUENCY;
+            junctures.push(sum_time);
             let mut cum_sum = 0f32;
             let cum_ratio = phase
                 .ratios
@@ -212,7 +212,7 @@ impl LoadGenerator {
                     .expect("Couldn't create key RNG."),
             ),
             workloads: workloads,
-            loop_interval: cum_time,
+            loop_interval: sum_time,
             junctures: junctures,
             cum_ratios: cum_ratios,
         }
@@ -220,13 +220,15 @@ impl LoadGenerator {
     fn gen_request(&mut self, mut curr_rdtsc: u64) -> usize {
         let phase_id = if self.loop_interval > 0 {
             curr_rdtsc %= self.loop_interval;
-            self.junctures.iter().position(|&t| t > curr_rdtsc).unwrap()
+            // self.junctures.iter().position(|&t| t > curr_rdtsc).unwrap()
+            self.junctures.partition_point(|&t| t <= curr_rdtsc)
         } else {
             0
         };
         let cum_ratio = &self.cum_ratios[phase_id];
         let rand_ratio = (self.rng.gen::<u32>() % 10000) as f32;
-        let type_id = cum_ratio.iter().position(|&p| p > rand_ratio).unwrap();
+        // let type_id = cum_ratio.iter().position(|&p| p > rand_ratio).unwrap();
+        let type_id = cum_ratio.partition_point(|&p| p <= rand_ratio);
         type_id
     }
     fn gen_payload(&mut self, type_id: usize) -> (u32, u32, &[u8]) {
@@ -317,7 +319,7 @@ impl Sampler {
             self.cum_ratio[type_id].1.load(Ordering::Acquire),
         )
     }
-    fn ready(&mut self, curr_rdtsc: u64, recvd: usize) -> bool {
+    fn ready(&mut self, curr_rdtsc: u64 /*, recvd: usize*/) -> bool {
         if self.last_rdtsc == 0 {
             self.last_rdtsc = curr_rdtsc;
             false
@@ -404,6 +406,45 @@ impl fmt::Display for Sampler {
     }
 }
 
+// storage provision
+struct Provision {
+    max_quota: u32,
+    provisions: Vec<u32>,
+    loop_interval: u64,
+    junctures: Vec<u64>,
+    current: u32,
+}
+impl Provision {
+    fn new(config: &LBConfig) -> Provision {
+        // phases
+        let mut sum_time = 0u64;
+        let mut junctures = vec![];
+        let mut provisions = vec![];
+        for provision in &config.provisions {
+            sum_time += provision.duration * CPU_FREQUENCY;
+            junctures.push(sum_time);
+            provisions.push(provision.storage);
+        }
+        Provision {
+            max_quota: config.storage.iter().map(|cfg| cfg.rx_queues).sum::<i32>() as u32,
+            provisions: provisions,
+            loop_interval: sum_time,
+            junctures: junctures,
+            current: 0,
+        }
+    }
+    fn adjust(&mut self, mut curr_rdtsc: u64) -> u32 {
+        let phase_id = if self.loop_interval > 0 {
+            curr_rdtsc %= self.loop_interval;
+            self.junctures.partition_point(|&t| t <= curr_rdtsc)
+        } else {
+            0
+        };
+        self.current = self.provisions[phase_id];
+        self.current
+    }
+}
+
 /// Receives responses to PUSHBACK requests sent out by PushbackSend.
 struct LoadBalancer {
     dispatcher: LBDispatcher,
@@ -414,6 +455,7 @@ struct LoadBalancer {
     // record_len: usize,
     // num_types: usize,
     // multi_types: Vec<MultiType>,
+    storage_provision: Provision,
     generator: LoadGenerator,
     sampler: Sampler,
     // worker stats
@@ -509,6 +551,7 @@ impl LoadBalancer {
             // storage_load: storage_load,
             // compute_load: compute_load,
             dispatcher: LBDispatcher::new(config, net_port),
+            storage_provision: Provision::new(config),
             generator: LoadGenerator::new(config),
             sampler: sampler,
             elastic: elastic,
@@ -551,6 +594,23 @@ impl LoadBalancer {
             output_last_recvd: 0,
         }
     }
+    fn adjust_provision(&mut self, curr_rdtsc: u64) {
+        // storage
+        let prev_storage = self.storage_provision.current;
+        let current_storage = self.storage_provision.adjust(curr_rdtsc);
+        if self.id == 0 /* && current_storage !=0 */ && prev_storage != current_storage {
+            // this message is sent to all compute nodes, regardless of compute provision
+            self.dispatcher.sender2compute.send_scaling(current_storage);
+            self.dispatcher
+                .sender2storage
+                .set_endpoints(current_storage as usize);
+        }
+        // compute
+        let current_compute = self.elastic.compute_cores.load(Ordering::Relaxed);
+        self.dispatcher
+            .sender2compute
+            .set_endpoints(current_compute as usize);
+    }
     fn storage_or_compute(&mut self, type_id: usize) -> bool {
         let partition = self.partition.get();
         let (lowerbound, upperbound) = self.sampler.get_range(type_id);
@@ -568,8 +628,14 @@ impl LoadBalancer {
     }
     fn send_once(&mut self, slot_id: usize) {
         let curr = cycles::rdtsc();
-        let recvd = self.global_recvd.load(Ordering::Relaxed);
-        if self.id == 0 && self.sampler.ready(curr, recvd) {
+        // change storage cores
+        self.adjust_provision(curr);
+        // if self.storage_provision.current == 0 {
+        //     return;
+        // }
+        // sample ratio
+        // let recvd = self.global_recvd.load(Ordering::Relaxed);
+        if self.id == 0 && self.sampler.ready(curr /*, recvd*/) {
             // self.sampler.sort_type();
             self.sampler.sample_ratio(curr);
         }
@@ -600,6 +666,7 @@ impl LoadBalancer {
         self.slots[slot_id].counter += 1;
         self.slots[slot_id].type_id = type_id;
         self.outstanding_reqs.insert(curr, slot_id);
+        // self.outstanding_reqs.insert(curr, type_id);
     }
 
     fn send_all(&mut self) {
@@ -651,7 +718,7 @@ impl LoadBalancer {
 
         // Try to receive packets from the network port.
         // If there are packets, sample the latency of the server.
-        if let Some(mut packets) = self.dispatcher.receiver.recv() {
+        if let Some(mut packets) = self.dispatcher.receiver.recv(|pkt| Some(pkt)) {
             let curr_rdtsc = cycles::rdtsc();
             while let Some((packet, (src_ip, src_port))) = packets.pop() {
                 match parse_rpc_opcode(&packet) {
@@ -732,16 +799,18 @@ impl LoadBalancer {
                         if self.sampler.undetermined_requests() == 0 {
                             self.xloop
                                 .update_x(&self.partition, curr_rdtsc, global_recvd);
-                            if self.xloop.converged {
-                                self.elastic.scale();
+                            // short circuit scaling if anomalies > 0, which is always true if not converged
+                            if self.xloop.anomalies > 0 || self.elastic.scaling() {
+                                self.elastic.compute_load.reset();
+                                self.dispatcher.sender2compute.send_reset();
                             }
-                            // reset even if not updated
-                            self.dispatcher.sender2storage.send_reset(); // not actually needed
-                            self.dispatcher.sender2compute.send_reset();
+                            // skip reset if anomalies==0(implies convergence) and scaling has no update
                         } else {
                             self.xloop.sync(curr_rdtsc, global_recvd);
                         }
-                        debug!("{} {} ratio {} ", self.xloop, self.elastic, self.sampler);
+                        debug!("{} ratio {} {}", self.xloop, self.sampler, self.elastic);
+                        // self.xloop.msg.clear();
+                        self.elastic.msg.clear();
                     }
                     if self.output_factor != 0
                         && (curr_rdtsc - self.output_last_rdtsc
@@ -758,7 +827,7 @@ impl LoadBalancer {
                             output_tput,
                             self.partition.get(),
                             self.elastic.compute_cores.load(Ordering::Relaxed),
-                            self.sampler.msg,
+                            self.sampler,
                         )
                         // self.tput.update(output_tput);
                         // if self.output {
@@ -779,8 +848,12 @@ impl LoadBalancer {
                 self.tput = (self.global_recvd.load(Ordering::Relaxed) as f64)
                     * CPU_FREQUENCY as f64
                     / (self.stop - self.start) as f64;
-                self.dispatcher.sender2storage.send_reset(); // not actually needed
+                // self.dispatcher.sender2storage.send_reset();
                 self.dispatcher.sender2compute.send_reset();
+                // reset storage cores available to compute to max_quota
+                self.dispatcher
+                    .sender2compute
+                    .send_scaling(self.storage_provision.max_quota);
             }
         }
         // // The moment all response packets have been received, set the value of the

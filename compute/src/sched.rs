@@ -546,7 +546,7 @@ pub struct ComputeNodeWorker {
     manager: TaskManager,
     // this is dynamic, i.e. resp dst is set as req src upon recving new reqs
     resp_hdr: PacketHeaders,
-    id: usize,
+    // id: usize,
     queue_length: MovingTimeAvg,
     // reset: Arc<AtomicBool>,
     // last_run: u64,
@@ -573,7 +573,7 @@ impl ComputeNodeWorker {
         // #[cfg(feature = "queue_len")] timestamp: Arc<RwLock<Vec<u64>>>,
         // #[cfg(feature = "queue_len")] raw_length: Arc<RwLock<Vec<usize>>>,
         // #[cfg(feature = "queue_len")] terminate: Arc<AtomicBool>,
-        id: usize,
+        // id: usize,
     ) -> ComputeNodeWorker {
         ComputeNodeWorker {
             resp_hdr: PacketHeaders::create_hdr(
@@ -609,7 +609,7 @@ impl ComputeNodeWorker {
             // },
             manager: TaskManager::new(Arc::clone(&masterservice)),
             // manager: manager,
-            id: id,
+            // id: id,
             queue_length: MovingTimeAvg::new(config.moving_exp),
             // last_run: 0,
             // #[cfg(feature = "queue_len")]
@@ -893,7 +893,7 @@ impl Executable for ComputeNodeWorker {
             let get_resps = self.dispatcher.recv();
             if self.dispatcher.reset() {
                 self.task_duration_cv.reset();
-                self.queue_length.reset();
+                // self.queue_length.reset();
             }
             if let Some(resps) = get_resps {
                 for resp in resps.into_iter() {
@@ -901,8 +901,8 @@ impl Executable for ComputeNodeWorker {
                 }
             }
             let mut waiting = self.manager.waiting.len() as f64;
-            self.queue_length.update(cycles::rdtsc(), waiting);
-            let mut waiting_mean = self.queue_length.moving();
+            // self.queue_length.update(cycles::rdtsc(), waiting);
+            // let mut waiting_mean = self.queue_length.moving();
             while let Some(packet) = self.dispatcher.poll() {
                 self.dispatch(packet);
             }

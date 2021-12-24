@@ -145,7 +145,7 @@ fn setup_worker(
     sib_queue: Option<Arc<Queue>>,
     // reset: Vec<Arc<AtomicBool>>,
     master: Arc<Master>,
-    id: usize,
+    // id: usize,
 ) {
     if ports.len() != 1 {
         error!("Client should be configured with exactly 1 port!");
@@ -159,7 +159,7 @@ fn setup_worker(
         sib_queue,
         // reset,
         master,
-        id,
+        // id,
         // task_duration_cv,
     )) {
         Ok(_) => {
@@ -466,7 +466,7 @@ fn main() {
     net_context.start_schedulers();
     // setup shared data
     let rx_queues = config.storage.server.rx_queues as usize;
-    let workers_per_port = config.storage.num_cores as usize / rx_queues;
+    // let workers_per_port = config.storage.num_cores as usize / rx_queues;
     let mut queues = vec![];
     for _ in 0..rx_queues {
         queues.push(Arc::new(Queue::new(config.storage.max_rx_packets)));
@@ -495,7 +495,7 @@ fn main() {
         };
         // let creset = reset_vec[port_id].clone();
         let cmaster = master.clone();
-        let worker_id = core_id % (workers_per_port as usize);
+        // let worker_id = core_id % (workers_per_port as usize);
         net_context.add_pipeline_to_core(
             core,
             Arc::new(
@@ -510,7 +510,7 @@ fn main() {
                         None,
                         // creset.clone(),
                         cmaster.clone(),
-                        worker_id,
+                        // worker_id,
                     )
                 },
             ),
