@@ -284,7 +284,7 @@ impl LoadBalancer {
             xloop_last_rdtsc: cycles::rdtsc(),
             xloop_last_recvd: 0,
             xloop_last_tput: 0.0,
-            xloop_last_X: 101.0,
+            xloop_last_X: 45.0,
             xloop_factor: config.xloop_factor,
             xloop_learning_rate: config.xloop_learning_rate,
             xloop_interval: Vec::new(),

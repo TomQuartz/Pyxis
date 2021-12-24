@@ -2,6 +2,7 @@ import os
 import sys
 import re
 import matplotlib.pyplot as plt
+import numpy as np
 
 stop_list = ['\n']
 arg = sys.argv
@@ -25,8 +26,11 @@ def read(filename, split = " "):
 
 
 if __name__ == "__main__":
+    n = 32
+    core1 = 1
+    log_tput = 1
     num_curves = 4
-    labels = {1: 'kayak', 2: 'disaggr', 3: 'only C', 4: 'only S'}
+    labels = {1: 'disaggr', 2: 'kayak', 3: 'only C', 4: 'only S'}
     lat = {i: [] for i in range(1, num_curves + 1)}
     tput = {i: [] for i in range(1, num_curves + 1)}
     lat_all = []
@@ -41,23 +45,35 @@ if __name__ == "__main__":
         except:
             pass
     
-    
-    kayak_out = [1, 2, 4, 8, 16, 32, 64]
-    lb_out = [1, 2, 4, 8, 16, 32, 64, 128, 256]
-    only_c_out = [1, 2, 4, 8]
-    only_s_out = [1, 2, 4, 8, 16, 32]
-    split_pos = [0, len(kayak_out), len(lb_out), len(only_c_out), len(only_s_out)]
+    lb_out = [1, 2, 4, 8, 16, 32, 64]
+    kayak_out = [1, 2, 4]
+    only_c_out = [1, 2, 4]
+    only_s_out = [1, 2, 4, 8]
+    if core1:
+        lb_out += [1, 2, 4]
+        kayak_out += [1, 2, 4]
+        only_c_out += [1, 2, 4]
+        only_s_out += [1, 2, 4]
+
+    split_pos = [0, len(lb_out), len(kayak_out), len(only_c_out), len(only_s_out)]
     for i in range(1, 5):
         split_pos[i] += split_pos[i-1]
     for i in range(1, num_curves + 1):
         lat[i] = lat_all[split_pos[i-1]: split_pos[i]]
         tput[i] = tput_all[split_pos[i-1]: split_pos[i]]
     plt.cla()
-    plt.xlabel('Throughput/MOps')
+    plt.title('{}C1S/2type'.format(n))
+    if log_tput:
+        plt.xlabel('Log10 Throughput/MOps')
+    else:
+        plt.xlabel('Throughput/MOps')
     plt.ylabel('Latency/us')
     for j in range(1, num_curves + 1):
+        if log_tput:
+            for i in range(len(tput[j])):
+                tput[j][i] = np.log10(tput[j][i])
         plt.plot(tput[j], lat[j], label=labels[j])
-    plt.legend(loc='upper right')
+    plt.legend()
     file_path = os.path.dirname(os.path.realpath(__file__))
     file_path = os.path.join(file_path, arg[1][:-4]+'.png')
     # print(file_path)
