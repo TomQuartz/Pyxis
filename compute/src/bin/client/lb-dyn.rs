@@ -321,14 +321,8 @@ impl Sampler {
         if self.last_rdtsc == 0 {
             self.last_rdtsc = curr_rdtsc;
             false
-        } else if curr_rdtsc - self.last_rdtsc > self.interval
-        /* && recvd - self.last_recvd > 10000 */
-        {
-            self.last_rdtsc = curr_rdtsc;
-            // self.last_recvd = recvd;
-            true
         } else {
-            false
+            curr_rdtsc - self.last_rdtsc > self.interval
         }
     }
     fn undetermined_requests(&self) -> usize {
