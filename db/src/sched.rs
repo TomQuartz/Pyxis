@@ -525,7 +525,7 @@ pub struct StorageNodeWorker {
     manager: TaskManager,
     resp_hdr: PacketHeaders,
     // NOTE: this is not net_port.txq()
-    id: usize,
+    // id: usize,
 }
 impl StorageNodeWorker {
     pub fn new(
@@ -539,7 +539,7 @@ impl StorageNodeWorker {
         // worker
         // tx_port: CacheAligned<PortQueue>,
         masterservice: Arc<Master>,
-        id: usize,
+        // id: usize,
         // task_duration_cv: Arc<std::sync::RwLock<CoeffOfVar>>,
     ) -> StorageNodeWorker {
         StorageNodeWorker {
@@ -561,7 +561,7 @@ impl StorageNodeWorker {
             task_duration_cv: CoeffOfVar::new(),
             queue_length: MovingTimeAvg::new(config.moving_exp),
             manager: TaskManager::new(masterservice),
-            id: id,
+            // id: id,
         }
     }
     fn send_response(&mut self) {
