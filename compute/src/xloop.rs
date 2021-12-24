@@ -744,6 +744,7 @@ impl TputGrad {
                 }
                 if self.anomalies == self.tolerance {
                     self.converged = false;
+                    // anomalies still equals tolerance, will be reset to 0 after convergence
                     // compute gradient next time
                 } else {
                     // fall back to previous history
@@ -872,6 +873,7 @@ impl fmt::Display for TputGrad {
     }
 }
 
+// TODO: use compute cores, add compute_provision in provision
 #[derive(Clone)]
 pub struct ElasticScaling {
     pub compute_load: Arc<ServerLoad>,
@@ -884,7 +886,7 @@ pub struct ElasticScaling {
     // history
     // last_inv_tput: f64,
     last_provision: i32,
-    msg: String,
+    pub msg: String,
 }
 
 impl ElasticScaling {
@@ -896,12 +898,12 @@ impl ElasticScaling {
             .collect();
         let compute_load = ServerLoad::new("compute", compute_servers);
         // TODO: if elastic then set initial provision to 8 cores
-        let initial_provision = config.provisions[0].compute;
+        let initial_provision = config.provisions[0].compute as i32;
         ElasticScaling {
             compute_load: Arc::new(compute_load),
             compute_cores: Arc::new(AtomicI32::new(initial_provision)),
             last_provision: initial_provision,
-            max_quota: 8 * config.compute.len() as i32, // 8 cores each
+            max_quota: config.compute.iter().map(|cfg| cfg.rx_queues).sum::<i32>(), // 8 cores each
             max_load: config.max_load,
             min_load: config.min_load,
             max_step: config.max_step,
@@ -930,7 +932,7 @@ impl ElasticScaling {
             }
         }
     }
-    pub fn scale(&mut self) {
+    pub fn scaling(&mut self) -> bool {
         // load
         let (outstanding, waiting, cv, ncores) = self.compute_load.aggr_all();
         let ql = (outstanding - waiting) / (ncores + 1e-9);
@@ -965,6 +967,7 @@ impl ElasticScaling {
                 // dec too much
                 step = -delta_provision / 2;
             } else {
+                // still to inc
                 if provision + self.max_step > self.max_quota {
                     step = self.max_quota - provision;
                 } else {
@@ -974,15 +977,19 @@ impl ElasticScaling {
         } /* else we have a resonable load on compute */
         // convergence: step=0
         // either because max_quota is reached or load is in accepted range
-        self.compute_cores
-            .store(provision + step, Ordering::Relaxed);
-        self.compute_load.reset();
-        self.msg.clear();
+        if step != 0 {
+            self.compute_cores
+                .store(provision + step, Ordering::Relaxed);
+        }
+        // moved to fn recv in lb
+        // self.compute_load.reset();
+        // self.msg.clear();
         write!(
             self.msg,
             "cores {}({}) load {:.2}({:.2},{:.2}) step {}",
             provision, delta_provision, load, ql, cv, step
         );
+        step != 0
     }
 }
 impl fmt::Display for ElasticScaling {

@@ -672,7 +672,7 @@ impl LoadBalancer {
 
         // Try to receive packets from the network port.
         // If there are packets, sample the latency of the server.
-        if let Some(mut packets) = self.dispatcher.receiver.recv() {
+        if let Some(mut packets) = self.dispatcher.receiver.recv(|pkt| Some(pkt)) {
             let curr_rdtsc = cycles::rdtsc();
             while let Some((packet, (src_ip, src_port))) = packets.pop() {
                 match parse_rpc_opcode(&packet) {

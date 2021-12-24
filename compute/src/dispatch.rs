@@ -39,9 +39,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use atomic_float::AtomicF64;
-use db::sched::MovingTimeAvg;
 use db::dispatch::{Queue, Receiver, Sender};
 use db::e2d2::scheduler::Executable;
+use db::sched::MovingTimeAvg;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
 use std::sync::RwLock;
@@ -56,6 +56,7 @@ pub struct Dispatcher {
     // pub reset: Vec<Arc<AtomicBool>>,
     // time_avg: MovingTimeAvg,
     pub length: f64,
+    pub reset: Cell<bool>,
 }
 
 impl Dispatcher {
@@ -79,6 +80,7 @@ impl Dispatcher {
             // time_avg: MovingTimeAvg::new(moving_exp),
             // queue: RwLock::new(VecDeque::with_capacity(config.max_rx_packets)),
             length: -1.0,
+            reset: Cell::new(false),
         }
     }
     /// get a packet from common queue
@@ -120,7 +122,21 @@ impl Dispatcher {
     //     sib_queue.length.swap(-1.0, Ordering::Relaxed);
     // }
     pub fn recv(&mut self) -> Option<Vec<Packet<UdpHeader, EmptyMetadata>>> {
-        if let Some(mut packets) = self.receiver.recv() {
+        if let Some(mut packets) = self.receiver.recv(|pkt| match rpc::parse_rpc_opcode(&pkt) {
+            OpCode::ResetRpc => {
+                self.reset.replace(true);
+                pkt.free_packet();
+                None
+            }
+            OpCode::ScalingRpc => {
+                let pkt = pkt.parse_header::<InvokeRequest>();
+                let hdr = pkt.get_header();
+                self.sender.set_endpoints(hdr.args_length as usize);
+                pkt.free_packet();
+                None
+            }
+            _ => Some(pkt),
+        }) {
             let num_recvd = packets.len();
             if num_recvd > 0 {
                 let mut queue = self.queue.queue.write().unwrap();
@@ -140,13 +156,8 @@ impl Dispatcher {
         self.length = 0.0;
         None
     }
-    pub fn reset(&mut self) -> bool {
-        if self.receiver.reset {
-            self.receiver.reset = false;
-            true
-        } else {
-            false
-        }
+    pub fn reset(&self) -> bool {
+        self.reset.replace(false)
     }
     /*
     // a wrapper around Receiver.recv

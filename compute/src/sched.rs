@@ -893,7 +893,7 @@ impl Executable for ComputeNodeWorker {
             let get_resps = self.dispatcher.recv();
             if self.dispatcher.reset() {
                 self.task_duration_cv.reset();
-                self.queue_length.reset();
+                // self.queue_length.reset();
             }
             if let Some(resps) = get_resps {
                 for resp in resps.into_iter() {
@@ -901,8 +901,8 @@ impl Executable for ComputeNodeWorker {
                 }
             }
             let mut waiting = self.manager.waiting.len() as f64;
-            self.queue_length.update(cycles::rdtsc(), waiting);
-            let mut waiting_mean = self.queue_length.moving();
+            // self.queue_length.update(cycles::rdtsc(), waiting);
+            // let mut waiting_mean = self.queue_length.moving();
             while let Some(packet) = self.dispatcher.poll() {
                 self.dispatch(packet);
             }
