@@ -408,7 +408,7 @@ impl fmt::Display for Sampler {
 
 // storage provision
 struct Provision {
-    max_quota: u32,
+    // max_quota: u32,
     provisions: Vec<u32>,
     loop_interval: u64,
     junctures: Vec<u64>,
@@ -426,7 +426,7 @@ impl Provision {
             provisions.push(provision.storage);
         }
         Provision {
-            max_quota: config.storage.iter().map(|cfg| cfg.rx_queues).sum::<i32>() as u32,
+            // max_quota: config.storage.iter().map(|cfg| cfg.rx_queues).sum::<i32>() as u32,
             provisions: provisions,
             loop_interval: sum_time,
             junctures: junctures,
@@ -598,13 +598,13 @@ impl LoadBalancer {
         // storage
         let prev_storage = self.storage_provision.current;
         let current_storage = self.storage_provision.adjust(curr_rdtsc);
-        if self.id == 0 /* && current_storage !=0 */ && prev_storage != current_storage {
+        if self.id == 0 && prev_storage != current_storage {
             // this message is sent to all compute nodes, regardless of compute provision
             self.dispatcher.sender2compute.send_scaling(current_storage);
-            self.dispatcher
-                .sender2storage
-                .set_endpoints(current_storage as usize);
         }
+        self.dispatcher
+            .sender2storage
+            .set_endpoints(current_storage as usize);
         // compute
         let current_compute = self.elastic.compute_cores.load(Ordering::Relaxed);
         self.dispatcher
@@ -848,12 +848,12 @@ impl LoadBalancer {
                 self.tput = (self.global_recvd.load(Ordering::Relaxed) as f64)
                     * CPU_FREQUENCY as f64
                     / (self.stop - self.start) as f64;
-                // self.dispatcher.sender2storage.send_reset();
-                self.dispatcher.sender2compute.send_reset();
-                // reset storage cores available to compute to max_quota
-                self.dispatcher
-                    .sender2compute
-                    .send_scaling(self.storage_provision.max_quota);
+                // // self.dispatcher.sender2storage.send_reset();
+                // self.dispatcher.sender2compute.send_reset();
+                // // reset storage cores available to compute to max_quota
+                // self.dispatcher
+                //     .sender2compute
+                //     .send_scaling(self.storage_provision.max_quota);
             }
         }
         // // The moment all response packets have been received, set the value of the
