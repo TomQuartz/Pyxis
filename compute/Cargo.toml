@@ -13,6 +13,10 @@ name = "compute"
 path = "src/bin/client/compute.rs"
 
 [[bin]]
+name = "lb-elastic"
+path = "src/bin/client/lb-elastic.rs"
+
+[[bin]]
 name = "lb-dyn"
 path = "src/bin/client/lb-dyn.rs"
 
