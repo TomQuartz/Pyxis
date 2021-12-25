@@ -103,7 +103,7 @@ impl PacketHeaders {
             ip_header.set_src(src_ip);
         }
         if let Some(dst_ip) = Self::parse_ip(dst) {
-            ip_header.set_src(dst_ip);
+            ip_header.set_dst(dst_ip);
         }
         // Create a common mac header for response packets.
         let mut mac_header: MacHeader = MacHeader::new();
