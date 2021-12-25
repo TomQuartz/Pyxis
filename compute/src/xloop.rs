@@ -887,6 +887,7 @@ pub struct ElasticScaling {
     // last_inv_tput: f64,
     last_provision: i32,
     pub msg: String,
+    elastic: bool,
 }
 
 impl ElasticScaling {
@@ -897,7 +898,7 @@ impl ElasticScaling {
             .map(|x| (&x.ip_addr, x.rx_queues))
             .collect();
         let compute_load = ServerLoad::new("compute", compute_servers);
-        // TODO: if elastic then set initial provision to 8 cores
+        // TODO: if elastic then set initial provision to 32 cores
         let initial_provision = config.provisions[0].compute as i32;
         ElasticScaling {
             compute_load: Arc::new(compute_load),
@@ -908,6 +909,7 @@ impl ElasticScaling {
             min_load: config.min_load,
             max_step: config.max_step,
             msg: String::new(),
+            elastic: config.elastic,
         }
     }
     // a wrapper around the actual update_load function
@@ -933,6 +935,9 @@ impl ElasticScaling {
         }
     }
     pub fn scaling(&mut self) -> bool {
+        if !self.elastic {
+            return false;
+        }
         // load
         let (outstanding, waiting, cv, ncores) = self.compute_load.aggr_all();
         let ql = (outstanding - waiting) / (ncores + 1e-9);

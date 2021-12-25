@@ -214,7 +214,6 @@ struct LoadBalancer {
     learnable: bool,
     partition: Arc<AtomicF64>,
     // TODO: add kayak's params, e.g. xloop_factor
-
     xloop_last_rdtsc: u64,
     xloop_last_recvd: u64,
     xloop_last_tput: f64,
@@ -230,7 +229,7 @@ struct LoadBalancer {
     output_last_recvd: usize,
     finished: Arc<AtomicBool>,
     tput: f64,
-    // cfg: config::KayakConfig,
+    cfg: config::KayakConfig,
 }
 
 // Implementation of methods on LoadBalancer.
@@ -293,6 +292,7 @@ impl LoadBalancer {
             output_factor: config.output_factor,
             output_last_rdtsc: init_rdtsc,
             output_last_recvd: 0,
+            cfg: config.clone(),
         }
     }
 
@@ -390,17 +390,20 @@ impl LoadBalancer {
                         //     output_tput
                         // )
                         self.tput_vec.push(output_tput);
-                        self.rpc_vec.push((self.partition.load(Ordering::Relaxed) as f64) / 100.0);
+                        self.rpc_vec
+                            .push((self.partition.load(Ordering::Relaxed) as f64) / 100.0);
                     }
 
                     if self.xloop_factor != 0
                         && packet_recvd_signal
-                        && (curr_rdtsc - self.xloop_last_rdtsc
-                            > CPU_FREQUENCY / self.xloop_factor)
+                        && (curr_rdtsc - self.xloop_last_rdtsc > CPU_FREQUENCY / self.xloop_factor)
                         && global_recvd > 100
                         && global_recvd as u64 % self.xloop_factor == 0
                     {
-                        self.xloop_interval.push((curr_rdtsc - self.xloop_last_rdtsc) as f64 / (CPU_FREQUENCY / 1000) as f64);
+                        self.xloop_interval.push(
+                            (curr_rdtsc - self.xloop_last_rdtsc) as f64
+                                / (CPU_FREQUENCY / 1000) as f64,
+                        );
                         let xloop_tput = (global_recvd as u64 - self.xloop_last_recvd) as f64
                             * (CPU_FREQUENCY / 1000) as f64
                             / (curr_rdtsc - self.xloop_last_rdtsc) as f64;
@@ -504,8 +507,8 @@ impl Drop for LoadBalancer {
             println!("PUSHBACK Throughput {:.2}", self.tput);
         }
         if self.id == 0 {
-            let mut avg_x_interval:f64 = 0.0;
-            let mut std_x_interval:f64 = 0.0;
+            let mut avg_x_interval: f64 = 0.0;
+            let mut std_x_interval: f64 = 0.0;
             // println!("xloop learning rate: {}", self.xloop_learning_rate);
             println!("number of xloop tunes: {}", self.xloop_interval.len());
             for i in &self.xloop_interval {
@@ -520,9 +523,10 @@ impl Drop for LoadBalancer {
             std_x_interval = std_x_interval.sqrt();
             println!("xloop interval std: {}", std_x_interval);
             for t in 0..self.tput_vec.len() {
-                println!("tput {:.2} rpc {:.2}", 
-                         &self.tput_vec[t as usize], 
-                         &self.rpc_vec[t as usize]);
+                println!(
+                    "tput {:.2} rpc {:.2}",
+                    &self.tput_vec[t as usize], &self.rpc_vec[t as usize]
+                );
             }
         }
     }
@@ -536,6 +540,19 @@ impl Executable for LoadBalancer {
             return;
         }
         if self.start == 0 {
+            let storage_cores = self.cfg.provision.storage;
+            let compute_cores = self.cfg.provision.compute;
+            if self.id == 0 {
+                // this message is sent to all compute nodes, regardless of compute provision
+                self.dispatcher.sender2compute.send_scaling(storage_cores);
+            }
+            self.dispatcher
+                .sender2storage
+                .set_endpoints(storage_cores as usize);
+            // compute
+            self.dispatcher
+                .sender2compute
+                .set_endpoints(compute_cores as usize);
             self.send_all();
         }
         self.recv();
