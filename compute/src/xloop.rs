@@ -604,7 +604,7 @@ pub struct TputGrad {
     min_delta_abs: f64,
     max_err: f64,
     tolerance: u32,
-    anomalies: u32,
+    pub anomalies: u32,
     // not useful
     min_err: f64,
     pub converged: bool,
