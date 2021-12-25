@@ -453,6 +453,7 @@ pub struct KayakConfig {
     pub xloop_learning_rate: f64,
     // network configuration
     pub lb: ServerConfig,
+    pub provision: ProvisionConfig,
     // [[]]
     pub compute: Vec<NetConfig>,
     pub storage: Vec<NetConfig>,
@@ -511,7 +512,6 @@ pub struct LBConfig {
     pub max_step: i32,
     // network configuration
     pub lb: ServerConfig,
-    pub provision: ProvisionConfig,
     // TODO: add utilization config
     // NOTE: this is the number of storage ports, equal duration
     // NOTE: assumes no workstealing
