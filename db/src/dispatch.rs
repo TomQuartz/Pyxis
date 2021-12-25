@@ -76,11 +76,13 @@ pub struct PacketHeaders {
 }
 
 impl PacketHeaders {
-    fn parse_ip(config: &NetConfig)->u32{
-        Ipv4Addr::from_str(&config.ip_addr).and_then(|addr|Ok(u32::from(addr))).unwrap()
+    fn parse_ip(config: &NetConfig) -> Option<u32> {
+        Ipv4Addr::from_str(&config.ip_addr)
+            .and_then(|addr| Ok(u32::from(addr)))
+            .ok()
     }
-    pub fn sort(configs: &mut Vec<NetConfig>){
-        configs.sort_by_key(|cfg|Self::parse_ip(cfg));
+    pub fn sort(configs: &mut Vec<NetConfig>) {
+        configs.sort_by_key(|cfg| Self::parse_ip(cfg).unwrap());
     }
     pub fn new(src: &NetConfig, dst: &NetConfig) -> PacketHeaders {
         // Create a common udp header for response packets.
@@ -96,20 +98,22 @@ impl PacketHeaders {
         ip_header.set_ihl(common::PACKET_IP_IHL);
         ip_header.set_length(common::PACKET_IP_LEN);
         ip_header.set_protocol(0x11);
-        ip_header.set_src(Self::parse_ip(src));
-        ip_header.set_dst(Self::parse_ip(dst));
-
+        // NOTE: unwrap may panic since dst may be default
+        if let Some(src_ip) = Self::parse_ip(src) {
+            ip_header.set_src(src_ip);
+        }
+        if let Some(dst_ip) = Self::parse_ip(dst) {
+            ip_header.set_src(dst_ip);
+        }
         // Create a common mac header for response packets.
         let mut mac_header: MacHeader = MacHeader::new();
         mac_header.set_etype(common::PACKET_ETYPE);
-        mac_header.src = config::parse_mac(&src.mac_addr).unwrap();
-        mac_header.dst = config::parse_mac(&dst.mac_addr).unwrap();
-        // if let Ok(mac_src_addr) = config::parse_mac(&src.mac_addr) {
-        //     mac_header.src = mac_src_addr;
-        // }
-        // if let Ok(mac_dst_addr) = config::parse_mac(&dst.mac_addr) {
-        //     mac_header.dst = mac_dst_addr;
-        // }
+        if let Ok(mac_src_addr) = config::parse_mac(&src.mac_addr) {
+            mac_header.src = mac_src_addr;
+        }
+        if let Ok(mac_dst_addr) = config::parse_mac(&dst.mac_addr) {
+            mac_header.dst = mac_dst_addr;
+        }
         PacketHeaders {
             udp_header: udp_header,
             ip_header: ip_header,
@@ -468,7 +472,7 @@ impl Sender {
         }
     }
     // set provision upon initialization and after scaling
-    // this message is sent to ALL compute nodes from lb, regardless of current 
+    // this message is sent to ALL compute nodes from lb, regardless of current
     pub fn send_scaling(&self, provision: u32) {
         for server_idx in 0..self.dst_ports.len() {
             for port_idx in 0..self.dst_ports[server_idx] {
