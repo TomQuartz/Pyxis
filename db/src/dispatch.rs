@@ -76,6 +76,12 @@ pub struct PacketHeaders {
 }
 
 impl PacketHeaders {
+    fn parse_ip(config: &NetConfig)->u32{
+        Ipv4Addr::from_str(&config.ip_addr).and_then(|addr|Ok(u32::from(addr))).unwrap()
+    }
+    pub fn sort(configs: &mut Vec<NetConfig>){
+        configs.sort_by_key(|cfg|Self::parse_ip(cfg));
+    }
     pub fn new(src: &NetConfig, dst: &NetConfig) -> PacketHeaders {
         // Create a common udp header for response packets.
         let mut udp_header: UdpHeader = UdpHeader::new();
@@ -90,22 +96,20 @@ impl PacketHeaders {
         ip_header.set_ihl(common::PACKET_IP_IHL);
         ip_header.set_length(common::PACKET_IP_LEN);
         ip_header.set_protocol(0x11);
-        if let Ok(ip_src_addr) = Ipv4Addr::from_str(&src.ip_addr) {
-            ip_header.set_src(u32::from(ip_src_addr));
-        }
-        if let Ok(ip_dst_addr) = Ipv4Addr::from_str(&dst.ip_addr) {
-            ip_header.set_dst(u32::from(ip_dst_addr));
-        }
+        ip_header.set_src(Self::parse_ip(src));
+        ip_header.set_dst(Self::parse_ip(dst));
 
         // Create a common mac header for response packets.
         let mut mac_header: MacHeader = MacHeader::new();
         mac_header.set_etype(common::PACKET_ETYPE);
-        if let Ok(mac_src_addr) = config::parse_mac(&src.mac_addr) {
-            mac_header.src = mac_src_addr;
-        }
-        if let Ok(mac_dst_addr) = config::parse_mac(&dst.mac_addr) {
-            mac_header.dst = mac_dst_addr;
-        }
+        mac_header.src = config::parse_mac(&src.mac_addr).unwrap();
+        mac_header.dst = config::parse_mac(&dst.mac_addr).unwrap();
+        // if let Ok(mac_src_addr) = config::parse_mac(&src.mac_addr) {
+        //     mac_header.src = mac_src_addr;
+        // }
+        // if let Ok(mac_dst_addr) = config::parse_mac(&dst.mac_addr) {
+        //     mac_header.dst = mac_dst_addr;
+        // }
         PacketHeaders {
             udp_header: udp_header,
             ip_header: ip_header,
@@ -160,9 +164,10 @@ impl Sender {
         endpoints: &Vec<NetConfig>,
         // shared_credits: Arc<RwLock<u32>>,
     ) -> Sender {
-        let mut req_hdrs = PacketHeaders::create_hdrs(src, net_port.txq() as u16, endpoints);
-        req_hdrs.sort_by_key(|hdrs| hdrs.ip_header.dst());
+        let mut endpoints = endpoints.clone();
+        PacketHeaders::sort(&mut endpoints);
         let dst_ports = endpoints.iter().map(|x| x.rx_queues as u16).collect();
+        let req_hdrs = PacketHeaders::create_hdrs(src, net_port.txq() as u16, &mut endpoints);
         let mut sum = 0usize;
         let mut cumsum_ports = vec![];
         for &nports in &dst_ports {
