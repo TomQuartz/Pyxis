@@ -570,13 +570,14 @@ impl StorageNodeWorker {
     }
     fn run_tasks(&mut self, queue_length: &mut f64) {
         while let Some(task) = self.manager.ready.pop_front() {
-            // let start = cycles::rdtsc();
+            let start = cycles::rdtsc();
             let cv = self.task_duration_cv.cv();
+            println!(cv)
             self.manager.run_task(task, queue_length, cv);
             self.send_response();
-            // let end = cycles::rdtsc();
-            // let duration = (end - start) as f64;
-            // self.task_duration_cv.update(duration);
+            let end = cycles::rdtsc();
+            let duration = (end - start) as f64;
+            self.task_duration_cv.update(duration);
         }
     }
     // fn handle_request(
@@ -632,10 +633,10 @@ impl Executable for StorageNodeWorker {
         loop {
             // let mut waiting = 0f64;
             self.dispatcher.recv();
-            // if self.dispatcher.reset() {
-            //     self.task_duration_cv.reset();
-            //     self.queue_length.reset();
-            // }
+            if self.dispatcher.reset() {
+                self.task_duration_cv.reset();
+                // self.queue_length.reset();
+            }
             while let Some(packet) = self.dispatcher.poll() {
                 self.manager.create_task(&mut self.resp_hdr, packet);
             }
