@@ -81,9 +81,9 @@ impl PacketHeaders {
             .and_then(|addr| Ok(u32::from(addr)))
             .ok()
     }
-    pub fn sort(configs: &mut Vec<NetConfig>) {
-        configs.sort_by_key(|cfg| Self::parse_ip(cfg).unwrap());
-    }
+    // pub fn sort(configs: &mut Vec<NetConfig>) {
+    //     configs.sort_by_key(|cfg| Self::parse_ip(cfg).unwrap());
+    // }
     pub fn new(src: &NetConfig, dst: &NetConfig) -> PacketHeaders {
         // Create a common udp header for response packets.
         let mut udp_header: UdpHeader = UdpHeader::new();
@@ -98,7 +98,6 @@ impl PacketHeaders {
         ip_header.set_ihl(common::PACKET_IP_IHL);
         ip_header.set_length(common::PACKET_IP_LEN);
         ip_header.set_protocol(0x11);
-        // NOTE: unwrap may panic since dst may be default
         if let Some(src_ip) = Self::parse_ip(src) {
             ip_header.set_src(src_ip);
         }
@@ -168,10 +167,11 @@ impl Sender {
         endpoints: &Vec<NetConfig>,
         // shared_credits: Arc<RwLock<u32>>,
     ) -> Sender {
-        let mut endpoints = endpoints.clone();
-        PacketHeaders::sort(&mut endpoints);
+        // assume that endpoints is sorted by ip
+        // let mut endpoints = endpoints.clone();
+        // PacketHeaders::sort(&mut endpoints);
         let dst_ports = endpoints.iter().map(|x| x.rx_queues as u16).collect();
-        let req_hdrs = PacketHeaders::create_hdrs(src, net_port.txq() as u16, &mut endpoints);
+        let req_hdrs = PacketHeaders::create_hdrs(src, net_port.txq() as u16, endpoints);
         let mut sum = 0usize;
         let mut cumsum_ports = vec![];
         for &nports in &dst_ports {

@@ -65,6 +65,8 @@ use splinter::sched::{ComputeNodeWorker, TaskManager};
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::Write;
+use std::net::Ipv4Addr;
+use std::str::FromStr;
 use std::sync::Arc;
 
 // #[macro_use]
@@ -185,8 +187,10 @@ fn setup_worker(
 
 fn main() {
     db::env_logger::init().expect("ERROR: failed to initialize logger!");
-    // TODO
-    let config: ComputeConfig = config::load("compute.toml");
+    let mut config: ComputeConfig = config::load("compute.toml");
+    config
+        .storage
+        .sort_by_key(|server| u32::from(Ipv4Addr::from_str(&server.ip_addr).unwrap()));
     warn!("Starting up compute node with config {:?}", config);
 
     let mut master = Master::new(&vec![]);

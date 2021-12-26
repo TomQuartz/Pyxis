@@ -605,6 +605,7 @@ impl LoadBalancer {
         self.dispatcher
             .sender2storage
             .set_endpoints(current_storage as usize);
+        self.elastic.storage_cores = current_storage;
         // compute
         let current_compute = self.elastic.compute_cores.load(Ordering::Relaxed);
         self.dispatcher
@@ -756,12 +757,11 @@ impl LoadBalancer {
                                     // self.latencies[type_id].push(curr_rdtsc - timestamp);
                                     self.latencies.push(curr_rdtsc - timestamp);
                                     self.outstanding_reqs.remove(&timestamp);
-                                    // if self.xloop.storage_load.ip2load.contains_key(&src_ip) {
-                                    //     self.xloop.storage_load.dec_outstanding(src_ip, src_port);
-                                    // } else {
-                                    //     self.xloop.compute_load.dec_outstanding(src_ip, src_port);
-                                    // }
-                                    self.elastic.compute_load.dec_outstanding(src_ip, src_port);
+                                    if self.elastic.storage_load.ip2load.contains_key(&src_ip) {
+                                        self.elastic.storage_load.dec_outstanding(src_ip, src_port);
+                                    } else {
+                                        self.elastic.compute_load.dec_outstanding(src_ip, src_port);
+                                    }
                                     self.send_once(slot_id);
                                 } else {
                                     warn!("no outstanding request");
@@ -803,6 +803,8 @@ impl LoadBalancer {
                             if self.xloop.anomalies > 0 || self.elastic.scaling() {
                                 self.elastic.compute_load.reset();
                                 self.dispatcher.sender2compute.send_reset();
+                                self.elastic.storage_load.reset();
+                                self.dispatcher.sender2storage.send_reset();
                             }
                             // skip reset if anomalies==0(implies convergence) and scaling has no update
                         } else {
@@ -1000,7 +1002,13 @@ fn setup_lb(
 fn main() {
     db::env_logger::init().expect("ERROR: failed to initialize logger!");
 
-    let config: config::LBConfig = config::load("lb.toml");
+    let mut config: config::LBConfig = config::load("lb.toml");
+    config
+        .compute
+        .sort_by_key(|server| u32::from(Ipv4Addr::from_str(&server.ip_addr).unwrap()));
+    config
+        .storage
+        .sort_by_key(|server| u32::from(Ipv4Addr::from_str(&server.ip_addr).unwrap()));
     warn!("Starting up Sandstorm client with config {:?}", config);
 
     // Setup Netbricks.

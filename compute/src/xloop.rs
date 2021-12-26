@@ -260,6 +260,7 @@ pub struct ServerLoad {
     // pub outs_trace: RefCell<Avg>,
     pub ip2load: HashMap<u32, Vec<RwLock<CoreLoad>>>,
     pub ip_addrs: Vec<u32>,
+    pub cumsum_ports: Vec<usize>,
     // num_queues: usize,
     // #[cfg(feature = "server_stats")]
     // ip2trace: HashMap<u32, RwLock<Vec<(usize, (u64, (f64, f64)))>>>,
@@ -268,13 +269,17 @@ pub struct ServerLoad {
 impl ServerLoad {
     pub fn new(
         cluster_name: &str,
-        ip_and_ports: Vec<(&String, i32)>,
+        mut ip_and_ports: Vec<(&String, i32)>,
         // moving_exp: f64,
     ) -> ServerLoad {
+        // NOTE: assume that ip_and_ports is sorted by ip
+        // ip_and_ports.sort_by_key(|&(ip,ports)|u32::from(Ipv4Addr::from_str(ip).unwrap()));
         let mut ip2load = HashMap::new();
         // let mut ip2outs = HashMap::new();
         // let mut num_queues = 0usize;
         let mut ip_addrs = vec![];
+        let mut cumsum_ports = vec![];
+        let mut sum = 0usize;
         for &(ip, num_ports) in &ip_and_ports {
             let mut server_load = vec![];
             // let mut outs = vec![];
@@ -286,9 +291,11 @@ impl ServerLoad {
             // ip2load.insert(ip, RwLock::new(MovingTimeAvg::new(moving_exp)));
             ip2load.insert(ip, server_load);
             ip_addrs.push(ip);
+            cumsum_ports.push(sum);
+            sum += num_ports as usize;
             // ip2outs.insert(ip,outs);
         }
-        ip_addrs.sort();
+        // ip_addrs.sort();
         // #[cfg(feature = "server_stats")]
         // let mut ip2trace = HashMap::new();
         // #[cfg(feature = "server_stats")]
@@ -304,6 +311,7 @@ impl ServerLoad {
             cluster_name: cluster_name.to_string(),
             ip2load: ip2load,
             ip_addrs: ip_addrs,
+            cumsum_ports: cumsum_ports,
             // ip2outs:ip2outs,
             outstanding: AtomicUsize::new(0),
             // outs_trace: RefCell::new(Avg::new()),
@@ -404,6 +412,24 @@ impl ServerLoad {
         // (total_ql / num_servers, total_cv / num_servers)
         let total_outs = self.outstanding.load(Ordering::Acquire) as f64;
         (total_outs, total_w, total_cv, num_cores)
+    }
+    pub fn calc_load(&self) -> f64 {
+        let (outstanding, waiting, cv, ncores) = self.aggr_all();
+        let ql = (outstanding - waiting).max(0f64) / (ncores + 1e-9);
+        let cv = cv / (ncores + 1e-9);
+        let load = 2.0 * ql / (1.0 + cv);
+        let load = ((load * load + 4.0 * load).sqrt() - load) / 2.0;
+        assert!(
+            load < 1.0,
+            "load {:.2}x{:.2} ql {:.2}({:.2}-{:.2}) cv {:.2}",
+            load,
+            ncores,
+            ql,
+            outstanding / (ncores + 1e-9),
+            waiting / (ncores + 1e-9),
+            cv,
+        );
+        load
     }
     // pub fn mean_server(&self, ip: u32) -> (f64,f64) {
     //     let server_load = self.ip2load.get(&ip).unwrap();
@@ -877,11 +903,15 @@ impl fmt::Display for TputGrad {
 #[derive(Clone)]
 pub struct ElasticScaling {
     pub compute_load: Arc<ServerLoad>,
+    pub storage_load: Arc<ServerLoad>,
     // if elastic then use this, else use config.provision
     pub compute_cores: Arc<AtomicI32>,
+    pub storage_cores: u32,
     max_quota: i32,
-    max_load: f64,
-    min_load: f64,
+    max_load_abs: f64,
+    max_load_rel: f64,
+    min_load_abs: f64,
+    min_load_rel: f64,
     max_step: i32,
     // history
     // last_inv_tput: f64,
@@ -898,15 +928,25 @@ impl ElasticScaling {
             .map(|x| (&x.ip_addr, x.rx_queues))
             .collect();
         let compute_load = ServerLoad::new("compute", compute_servers);
+        let storage_servers: Vec<_> = config
+            .storage
+            .iter()
+            .map(|x| (&x.ip_addr, x.rx_queues))
+            .collect();
+        let storage_load = ServerLoad::new("storage", storage_servers);
         // TODO: if elastic then set initial provision to 32 cores
         let initial_provision = config.provisions[0].compute as i32;
         ElasticScaling {
             compute_load: Arc::new(compute_load),
+            storage_load: Arc::new(storage_load),
             compute_cores: Arc::new(AtomicI32::new(initial_provision)),
+            storage_cores: config.provisions[0].storage,
             last_provision: initial_provision,
             max_quota: config.compute.iter().map(|cfg| cfg.rx_queues).sum::<i32>(), // 8 cores each
-            max_load: config.max_load,
-            min_load: config.min_load,
+            max_load_abs: config.max_load_abs,
+            max_load_rel: config.max_load_rel,
+            min_load_abs: config.min_load_abs,
+            min_load_rel: config.min_load_rel,
             max_step: config.max_step,
             msg: String::new(),
             elastic: config.elastic,
@@ -926,10 +966,16 @@ impl ElasticScaling {
             return;
         }
         // might be from storage or out-of-date compute node
-        if let Ok(ip_idx) = self.compute_load.ip_addrs.binary_search(&src_ip) {
-            let core_idx = 8 * ip_idx + src_port as usize;
+        if let Ok(server_idx) = self.compute_load.ip_addrs.binary_search(&src_ip) {
+            let core_idx = self.compute_load.cumsum_ports[server_idx] + src_port as usize;
             if core_idx < self.compute_cores.load(Ordering::Relaxed) as usize {
                 self.compute_load
+                    .update_load(src_ip, src_port, queue_length, task_duration_cv);
+            }
+        } else if let Ok(server_idx) = self.storage_load.ip_addrs.binary_search(&src_ip) {
+            let core_idx = self.storage_load.cumsum_ports[server_idx] + src_port as usize;
+            if core_idx < self.storage_cores as usize {
+                self.storage_load
                     .update_load(src_ip, src_port, queue_length, task_duration_cv);
             }
         }
@@ -938,13 +984,28 @@ impl ElasticScaling {
         if !self.elastic {
             return false;
         }
-        // load
-        let (outstanding, waiting, cv, ncores) = self.compute_load.aggr_all();
-        let ql = (outstanding - waiting) / (ncores + 1e-9);
-        let cv = cv / (ncores + 1e-9);
-        let load = 2.0 * ql / (1.0 + cv);
-        let load = ((load * load + 4.0 * load).sqrt() - load) / 2.0;
-        assert!(load < 1.0, "load must be lower than 1");
+        // // load
+        // let (outstanding, waiting, cv, ncores) = self.compute_load.aggr_all();
+        // let ql = (outstanding - waiting).max(0f64) / (ncores + 1e-9);
+        // let cv = cv / (ncores + 1e-9);
+        // let load = 2.0 * ql / (1.0 + cv);
+        // let load = ((load * load + 4.0 * load).sqrt() - load) / 2.0;
+        // assert!(
+        //     load < 1.0,
+        //     "load {:.2}x{:.2} ql {:.2}({:.2}-{:.2}) cv {:.2}",
+        //     load,
+        //     ncores,
+        //     ql,
+        //     outstanding / (ncores + 1e-9),
+        //     waiting / (ncores + 1e-9),
+        //     cv,
+        // );
+        let load_compute = self.compute_load.calc_load();
+        let load_storage = self.storage_load.calc_load();
+        let min_load_rel = self.min_load_rel * load_storage;
+        let max_load_rel = self.max_load_rel * load_storage;
+        let min_load = self.min_load_abs.min(min_load_rel);
+        let max_load = self.max_load_abs.min(max_load_rel);
         // provision
         let provision = self.compute_cores.load(Ordering::Relaxed);
         let delta_provision = provision - self.last_provision;
@@ -952,10 +1013,10 @@ impl ElasticScaling {
         self.last_provision = provision;
         // update
         let mut step = 0i32;
-        if load == 0f64 {
+        if load_compute == 0f64 {
             step = 0 - provision;
         }
-        if load < self.min_load {
+        if load_compute < min_load {
             if delta_provision > 0 {
                 // inc too much
                 step = -delta_provision / 2;
@@ -967,7 +1028,7 @@ impl ElasticScaling {
                     step = -provision / 2;
                 }
             }
-        } else if load > self.max_load {
+        } else if load_compute > max_load {
             if delta_provision < 0 {
                 // dec too much
                 step = -delta_provision / 2;
@@ -991,8 +1052,16 @@ impl ElasticScaling {
         // self.msg.clear();
         write!(
             self.msg,
-            "cores {}({}) load {:.2}({:.2},{:.2}) step {}",
-            provision, delta_provision, load, ql, cv, step
+            "cores {}({},{}) load {:.2},{:.2} min {:.2}({:.2}) max {:.2}({:.2})",
+            provision,
+            delta_provision,
+            step,
+            load_compute,
+            load_storage,
+            min_load,
+            min_load_rel,
+            max_load,
+            max_load_rel,
         );
         step != 0
     }
