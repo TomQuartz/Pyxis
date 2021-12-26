@@ -139,6 +139,7 @@ impl TimeAvg {
     }
 }
 */
+#[derive(Clone)]
 pub struct Avg {
     counter: f64,
     lastest: f64,
@@ -320,12 +321,12 @@ impl ServerLoad {
             // ip2trace: ip2trace,
         }
     }
-    pub fn inc_outstanding(&self, src_ip: u32, src_port: u16) {
+    pub fn inc_outstanding(&self /*, src_ip: u32, src_port: u16*/) {
         // let outs = self.ip2outs.get(&src_ip).unwrap();
         // outs[src_port as usize].fetch_add(1,Ordering::SeqCst)
         self.outstanding.fetch_add(1, Ordering::SeqCst);
     }
-    pub fn dec_outstanding(&self, src_ip: u32, src_port: u16) {
+    pub fn dec_outstanding(&self /*, src_ip: u32, src_port: u16*/) {
         // let outs = self.ip2outs.get(&src_ip).unwrap();
         // outs[src_port as usize].fetch_sub(1,Ordering::SeqCst)
         self.outstanding.fetch_sub(1, Ordering::SeqCst);
@@ -393,7 +394,7 @@ impl ServerLoad {
         (total_w, total_cv, total_cores)
         // server_load.read().unwrap().avg()
     }
-    pub fn aggr_all(&self) -> (f64, f64, f64, f64) {
+    pub fn aggr_all(&self) -> (f64, f64, f64) {
         // let mut total_ql = 0f64;
         // let mut total_outs = 0f64;
         let mut total_w = 0f64;
@@ -410,26 +411,8 @@ impl ServerLoad {
             num_cores += ncores;
         }
         // (total_ql / num_servers, total_cv / num_servers)
-        let total_outs = self.outstanding.load(Ordering::Acquire) as f64;
-        (total_outs, total_w, total_cv, num_cores)
-    }
-    pub fn calc_load(&self) -> f64 {
-        let (outstanding, waiting, cv, ncores) = self.aggr_all();
-        let ql = (outstanding - waiting).max(0f64) / (ncores + 1e-9);
-        let cv = cv / (ncores + 1e-9);
-        let load = 2.0 * ql / (1.0 + cv);
-        let load = ((load * load + 4.0 * load).sqrt() - load) / 2.0;
-        assert!(
-            load < 1.0,
-            "load {:.2}x{:.2} ql {:.2}({:.2}-{:.2}) cv {:.2}",
-            load,
-            ncores,
-            ql,
-            outstanding / (ncores + 1e-9),
-            waiting / (ncores + 1e-9),
-            cv,
-        );
-        load
+        // let total_outs = self.outstanding.load(Ordering::Acquire) as f64;
+        (/*total_outs, */ total_w, total_cv, num_cores)
     }
     // pub fn mean_server(&self, ip: u32) -> (f64,f64) {
     //     let server_load = self.ip2load.get(&ip).unwrap();
@@ -900,10 +883,13 @@ impl fmt::Display for TputGrad {
 }
 
 // TODO: use compute cores, add compute_provision in provision
+// TODO: snapshot outstanding when updating load
 #[derive(Clone)]
 pub struct ElasticScaling {
     pub compute_load: Arc<ServerLoad>,
+    pub compute_outs: Avg, // snapshot
     pub storage_load: Arc<ServerLoad>,
+    pub storage_outs: Avg, // snapshot
     // if elastic then use this, else use config.provision
     pub compute_cores: Arc<AtomicI32>,
     pub storage_cores: u32,
@@ -938,7 +924,9 @@ impl ElasticScaling {
         let initial_provision = config.provisions[0].compute as i32;
         ElasticScaling {
             compute_load: Arc::new(compute_load),
+            compute_outs: Avg::new(),
             storage_load: Arc::new(storage_load),
+            storage_outs: Avg::new(),
             compute_cores: Arc::new(AtomicI32::new(initial_provision)),
             storage_cores: config.provisions[0].storage,
             last_provision: initial_provision,
@@ -951,6 +939,18 @@ impl ElasticScaling {
             msg: String::new(),
             elastic: config.elastic,
         }
+    }
+    pub fn reset(&mut self) {
+        self.compute_load.reset();
+        self.compute_outs.reset();
+        self.storage_load.reset();
+        self.storage_outs.reset();
+    }
+    pub fn snapshot(&mut self) {
+        let compute_outs = self.compute_load.outstanding.load(Ordering::Relaxed);
+        self.compute_outs.update(compute_outs as f64);
+        let storage_outs = self.storage_load.outstanding.load(Ordering::Relaxed);
+        self.storage_outs.update(storage_outs as f64);
     }
     // a wrapper around the actual update_load function
     // perform ip check, ignore response packet in case provision has changed
@@ -980,6 +980,23 @@ impl ElasticScaling {
             }
         }
     }
+    fn ql2load(ql_raw: f64, cv: f64) -> f64 {
+        let load = 2.0 * ql_raw / (1.0 + cv);
+        ((load * load + 4.0 * load).sqrt() - load) / 2.0
+    }
+    pub fn calc_load(&self) -> (f64, f64) {
+        let (w_compute, cv_compute, ncores_compute) = self.compute_load.aggr_all();
+        let (_, cv_storage, ncores_storage) = self.storage_load.aggr_all();
+        let out_compute = self.compute_outs.avg();
+        let out_storage = self.storage_outs.avg();
+        let ql_compute = (out_compute - w_compute).max(0f64) / (ncores_compute + 1e-9);
+        let ql_storage = (out_storage + w_compute) / (ncores_storage + 1e-9);
+        let cv_compute = cv_compute / (ncores_compute + 1e-9);
+        let cv_storage = cv_storage / (ncores_storage + 1e-9);
+        let load_compute = Self::ql2load(ql_compute, cv_compute);
+        let load_storage = Self::ql2load(ql_storage, cv_storage);
+        (load_compute, load_storage)
+    }
     pub fn scaling(&mut self) -> bool {
         if !self.elastic {
             return false;
@@ -1000,8 +1017,7 @@ impl ElasticScaling {
         //     waiting / (ncores + 1e-9),
         //     cv,
         // );
-        let load_compute = self.compute_load.calc_load();
-        let load_storage = self.storage_load.calc_load();
+        let (load_compute, load_storage) = self.calc_load();
         let min_load_rel = self.min_load_rel * load_storage;
         let max_load_rel = self.max_load_rel * load_storage;
         let min_load = self.min_load_abs.min(min_load_rel);

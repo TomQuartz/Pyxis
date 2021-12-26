@@ -652,7 +652,7 @@ impl LoadBalancer {
                 curr,
                 0, // not used
             );
-            // self.xloop.storage_load.inc_outstanding(ip, port);
+            self.elastic.storage_load.inc_outstanding(/*ip, port*/);
         } else {
             let (ip, port) = self.dispatcher.sender2compute.send_invoke(
                 tenant,
@@ -661,8 +661,7 @@ impl LoadBalancer {
                 curr,
                 0, // not used
             );
-            // self.xloop.compute_load.inc_outstanding(ip, port);
-            self.elastic.compute_load.inc_outstanding(ip, port);
+            self.elastic.compute_load.inc_outstanding(/*ip, port*/);
         }
         self.slots[slot_id].counter += 1;
         self.slots[slot_id].type_id = type_id;
@@ -758,9 +757,9 @@ impl LoadBalancer {
                                     self.latencies.push(curr_rdtsc - timestamp);
                                     self.outstanding_reqs.remove(&timestamp);
                                     if self.elastic.storage_load.ip2load.contains_key(&src_ip) {
-                                        self.elastic.storage_load.dec_outstanding(src_ip, src_port);
+                                        self.elastic.storage_load.dec_outstanding(/*src_ip, src_port*/);
                                     } else {
-                                        self.elastic.compute_load.dec_outstanding(src_ip, src_port);
+                                        self.elastic.compute_load.dec_outstanding(/*src_ip, src_port*/);
                                     }
                                     self.send_once(slot_id);
                                 } else {
@@ -801,9 +800,12 @@ impl LoadBalancer {
                                 .update_x(&self.partition, curr_rdtsc, global_recvd);
                             // short circuit scaling if anomalies > 0, which is always true if not converged
                             if self.xloop.anomalies > 0 || self.elastic.scaling() {
-                                self.elastic.compute_load.reset();
+                                self.elastic.reset();
+                                // self.elastic.compute_load.reset();
+                                // self.elastic.compute_outs.reset();
                                 self.dispatcher.sender2compute.send_reset();
-                                self.elastic.storage_load.reset();
+                                // self.elastic.storage_load.reset();
+                                // self.elastic.storage_outs.reset();
                                 self.dispatcher.sender2storage.send_reset();
                             }
                             // skip reset if anomalies==0(implies convergence) and scaling has no update
@@ -842,6 +844,9 @@ impl LoadBalancer {
                     }
                 }
             }
+        }
+        if self.id == 0 {
+            self.elastic.snapshot();
         }
         let curr_rdtsc = cycles::rdtsc();
         if curr_rdtsc - self.start > self.duration {
