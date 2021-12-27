@@ -1,15 +1,15 @@
 ############################### LOAD GENERATOR CONFIG ##############################
 num_tenants = 1
 tenant_skew = 0.1
-duration = 30
+duration = 20
 
 learnable = true
 partition = 50
-max_out = 8
+max_out = 32
 
-xloop_factor = 20000
+xloop_factor = 2000
 output_factor = 0
-xloop_learning_rate = 0.25
+xloop_learning_rate = 0.5
 
 ############################### LB N/W CONFIG ##############################
 
@@ -21,6 +21,10 @@ num_cores = 8
 rx_queues = 8
 ip_addr = "10.10.1.1"
 mac_addr = "9c:dc:71:5e:2f:21"
+
+[provision]
+storage = 1
+compute = 32
 
 [[compute]]
 rx_queues = 8
@@ -48,24 +52,24 @@ mac_addr = "9c:dc:71:5d:97:d1"
 
 [[tables]]
 key_len = 30
-num_records = 10000 
+num_records = 10000
+[[tables]]
+key_len = 30
+num_records = 10000
 
 [[workloads]]
 extension = "pushback"
 kv = 4
-order = 0
+order = 120
 table_id = 1
 skew = 0.99
 
 [[workloads]]
 extension = "pushback"
-kv = 0
-order = 25600
-table_id = 1
+kv = 1
+order = 120000
+table_id = 2
 skew = 0.99
 
 [[phases]]
-ratios = [12, 88]
-
-
-
+ratios = [10, 90]

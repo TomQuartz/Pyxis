@@ -1,7 +1,7 @@
 ############################### LOAD GENERATOR CONFIG ##############################
 num_tenants = 1
 tenant_skew = 0.1
-duration = 90
+duration = 20
 
 learnable = true
 partition = 50
@@ -25,6 +25,9 @@ max_err = 0.12
 tolerance = 3
 min_err = 0.04
 
+# elastic
+elastic = false
+
 ############################### LB N/W CONFIG ##############################
 
 [lb]
@@ -34,82 +37,55 @@ num_cores = 8
 [lb.server]
 rx_queues = 8
 ip_addr = "10.10.1.1"
-mac_addr = "9c:dc:71:5e:2f:71"
+mac_addr = "9c:dc:71:5e:2f:21"
 
 [[compute]]
 rx_queues = 8
 ip_addr = "10.10.1.5"
-mac_addr = "9c:dc:71:5b:22:61"
+mac_addr = "9c:dc:71:49:a8:91"
 [[compute]]
 rx_queues = 8
 ip_addr = "10.10.1.3"
-mac_addr = "9c:dc:71:56:fd:c5"
+mac_addr = "9c:dc:71:5d:f1:11"
 [[compute]]
 rx_queues = 8
 ip_addr = "10.10.1.4"
-mac_addr = "9c:dc:71:56:fd:85"
+mac_addr = "9c:dc:71:5d:e5:31"
 [[compute]]
 rx_queues = 8
 ip_addr = "10.10.1.2"
-mac_addr = "9c:dc:71:56:bf:05"
-
+mac_addr = "9c:dc:71:5c:ef:f1"
 [[storage]]
 rx_queues = 8
 ip_addr = "10.10.1.6"
-mac_addr = "9c:dc:71:56:af:75"
+mac_addr = "9c:dc:71:5d:97:d1"
 
 ############################### LB WORKLOAD CONFIG ##############################
 
 [[tables]]
 key_len = 30
-num_records = 10000 
+num_records = 10000
 [[tables]]
 key_len = 30
-num_records = 10000 
+num_records = 10000
 
 [[workloads]]
 extension = "pushback"
-kv = 8
-order = 240
+kv = 4
+order = 120
 table_id = 1
 skew = 0.99
+
 [[workloads]]
 extension = "pushback"
-kv = 8
-order = 51200
-table_id = 1
-skew = 0.99
-[[workloads]]
-extension = "pushback"
-kv = 2
-order = 12800
-table_id = 2
-skew = 0.99
-[[workloads]]
-extension = "pushback"
-kv = 2
-order = 51200
+kv = 1
+order = 120000
 table_id = 2
 skew = 0.99
 
 [[phases]]
-ratios = [100,0,0,0]
-duration = 5
-[[phases]]
-ratios = [50,50,0,0]
-duration = 5
-[[phases]]
-ratios = [30,30,40,0]
-duration = 5
-[[phases]]
-ratios = [20,20,30,30]
-duration = 5
-[[phases]]
-ratios = [30,30,40,0]
-duration = 5
-[[phases]]
-ratios = [50,50,0,0]
-duration = 5
+ratios = [10, 90]
 
-
-
+[[provisions]]
+storage = 1
+compute = 32
