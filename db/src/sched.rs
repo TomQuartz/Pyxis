@@ -572,7 +572,6 @@ impl StorageNodeWorker {
         while let Some(task) = self.manager.ready.pop_front() {
             let start = cycles::rdtsc();
             let cv = self.task_duration_cv.cv();
-            println!(cv)
             self.manager.run_task(task, queue_length, cv);
             self.send_response();
             let end = cycles::rdtsc();
