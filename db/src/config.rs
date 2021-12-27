@@ -507,8 +507,10 @@ pub struct LBConfig {
     pub min_err: f64,
     // elastic
     pub elastic: bool,
-    pub max_load: f64,
-    pub min_load: f64,
+    pub max_load_abs: f64,
+    pub max_load_rel: f64,
+    pub min_load_abs: f64,
+    pub min_load_rel: f64,
     pub max_step: i32,
     // network configuration
     pub lb: ServerConfig,
