@@ -603,7 +603,13 @@ fn setup_lb(
 fn main() {
     db::env_logger::init().expect("ERROR: failed to initialize logger!");
 
-    let config: config::KayakConfig = config::load("kayak.toml");
+    let mut config: config::KayakConfig = config::load("kayak.toml");
+    config
+        .compute
+        .sort_by_key(|server| u32::from(Ipv4Addr::from_str(&server.ip_addr).unwrap()));
+    config
+        .storage
+        .sort_by_key(|server| u32::from(Ipv4Addr::from_str(&server.ip_addr).unwrap()));
     warn!("Starting up Sandstorm client with config {:?}", config);
 
     // Setup Netbricks.
