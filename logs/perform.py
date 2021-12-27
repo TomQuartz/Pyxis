@@ -27,7 +27,7 @@ def read(filename, split = " "):
 
 if __name__ == "__main__":
     n = 32
-    core1 = 1
+    out1 = 1
     log_tput = 1
     num_curves = 4
     labels = {1: 'disaggr', 2: 'kayak', 3: 'only C', 4: 'only S'}
@@ -45,14 +45,14 @@ if __name__ == "__main__":
         except:
             pass
     
-    lb_out = [1, 2, 4, 8, 16, 32, 64]
-    kayak_out = [1, 2, 4]
-    only_c_out = [1, 2, 4]
+    lb_out = [1, 2, 4, 8, 16, 32]
+    kayak_out = [1, 2]
+    only_c_out = [1, 2]
     only_s_out = [1, 2, 4, 8]
-    if core1:
-        lb_out += [1, 2, 4]
-        kayak_out += [1, 2, 4]
-        only_c_out += [1, 2, 4]
+    if out1:
+        lb_out += [2, 4]
+        kayak_out += [2, 4]
+        only_c_out += [2, 4]
         only_s_out += [1, 2, 4]
 
     split_pos = [0, len(lb_out), len(kayak_out), len(only_c_out), len(only_s_out)]

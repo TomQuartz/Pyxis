@@ -6,7 +6,7 @@ LB_PATH="lb.toml"
 
 LOG_PATH="../logs/test_single-type-32C1S/"
 
-date="20211223"
+date=`date +%Y-%m-%d`
 
 if [ ! -d ${LOG_PATH} ]; then
     mkdir -p ${LOG_PATH}
@@ -28,7 +28,7 @@ line_max_out_kayak=8
 line_xloop_factor=10
 line_learn_rate=12
 
-maxout=(16 32)
+maxout=(32)
 partition=(100 0)
 
 sed -i -e "${line_learnable_kayak}c learnable = false" ${KAYAK_PATH}

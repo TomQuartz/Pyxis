@@ -5,7 +5,7 @@ LB_PATH="lb.toml"
 
 LOG_PATH="../logs/lb_converge/"
 
-date="20211223"
+date=`date +%Y-%m-%d`
 
 if [ ! -d ${LOG_PATH} ]; then
     mkdir -p ${LOG_PATH}

@@ -6,7 +6,7 @@ LB_PATH="lb.toml"
 
 LOG_PATH="../logs/nCmS/"
 
-date="20211223"
+date=`date +%Y-%m-%d`
 
 if [ ! -d ${LOG_PATH} ]; then
     mkdir -p ${LOG_PATH}
@@ -25,19 +25,19 @@ OUTPUT=${LOG_PATH}${OUTPUT_FILE}
 line_learnable_lb=6
 line_partition_lb=7
 line_max_out_lb=8
-line_num_cores_lb=33
-line_rx_queues_lb=35
+line_num_cores_lb=36
+# line_rx_queues_lb=35
 maxout=(1 2 4 8 16 32 64 128)
 sed -i -e "${line_learnable_lb}c learnable = true" ${LB_PATH}
 sed -i -e "${line_partition_lb}c partition = 50" ${LB_PATH}
 sed -i -e "${line_num_cores_lb}c num_cores = 8" ${LB_PATH}
-sed -i -e "${line_rx_queues_lb}c rx_queues = 8" ${LB_PATH}
+# sed -i -e "${line_rx_queues_lb}c rx_queues = 8" ${LB_PATH}
 echo "lb:" >> ${OUTPUT}
 for t in ${maxout[@]}
 do
     sed -i -e "${line_max_out_lb}c max_out = ${t}" ${LB_PATH}
     echo "max_out = ${t}" >> ${OUTPUT}
-    sudo ../scripts/run-dyn >> ${OUTPUT}
+    sudo ../scripts/run-elastic >> ${OUTPUT}
     echo "" >> ${OUTPUT}
 done
 
@@ -57,7 +57,7 @@ maxout=(1 2 4 8 16 32)
 sed -i -e "${line_learnable}c learnable = true" ${KAYAK_PATH}
 sed -i -e "${line_partition}c partition = 50" ${KAYAK_PATH}
 sed -i -e "${line_num_cores_kayak}c num_cores = 8" ${KAYAK_PATH}
-sed -i -e "${line_rx_queues_kayak}c rx_queues = 8" ${KAYAK_PATH}
+# sed -i -e "${line_rx_queues_kayak}c rx_queues = 8" ${KAYAK_PATH}
 # sed -i -e "${line_xloop_factor}c xloop_factor = ${x_factor}" ${KAYAK_PATH}
 # sed -i -e "${line_learn_rate}c xloop_learning_rate = ${learn_rate}" ${KAYAK_PATH}  
 
@@ -75,7 +75,7 @@ done
 
 
 # only C
-maxout=(1 2 4 8 16 32)
+maxout=(1 2 4 8 16)
 sed -i -e "${line_learnable}c learnable = false" ${KAYAK_PATH}
 sed -i -e "${line_partition}c partition = 0" ${KAYAK_PATH}
 echo "only C:" >> ${OUTPUT}
@@ -89,7 +89,7 @@ done
 
 
 # only S
-maxout=(1 2 4 8 16 32)
+maxout=(1 2 4 8 16)
 sed -i -e "${line_learnable}c learnable = false" ${KAYAK_PATH}
 sed -i -e "${line_partition}c partition = 100" ${KAYAK_PATH}
 echo "only S:" >> ${OUTPUT}

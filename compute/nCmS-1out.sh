@@ -6,7 +6,7 @@ LB_PATH="lb.toml"
 
 LOG_PATH="../logs/nCmS/"
 
-date="20211223"
+date=`date +%Y-%m-%d`
 
 if [ ! -d ${LOG_PATH} ]; then
     mkdir -p ${LOG_PATH}
@@ -25,8 +25,7 @@ OUTPUT=${LOG_PATH}${OUTPUT_FILE}
 line_learnable_lb=6
 line_partition_lb=7
 line_max_out_lb=8
-line_num_cores_lb=33
-line_rx_queues_lb=35
+line_num_cores_lb=36
 sed -i -e "${line_learnable_lb}c learnable = true" ${LB_PATH}
 sed -i -e "${line_partition_lb}c partition = 50" ${LB_PATH}
 sed -i -e "${line_max_out_lb}c max_out = 1" ${LB_PATH}
@@ -35,9 +34,8 @@ cores=(1 2 4)
 for c in ${cores[@]}
 do
     sed -i -e "${line_num_cores_lb}c num_cores = ${c}" ${LB_PATH}
-    sed -i -e "${line_rx_queues_lb}c rx_queues = ${c}" ${LB_PATH}
     echo "num_cores = ${c}" >> ${OUTPUT}
-    sudo ../scripts/run-dyn >> ${OUTPUT}
+    sudo ../scripts/run-elastic >> ${OUTPUT}
     echo "" >> ${OUTPUT}
 done
 
@@ -49,7 +47,6 @@ line_max_out_kayak=8
 line_xloop_factor=10
 line_learn_rate=12
 line_num_cores_kayak=19
-line_rx_queues_kayak=21
 # x_factor=4000
 # learn_rate=0.25
 
@@ -66,7 +63,6 @@ echo "kayak:" >> ${OUTPUT}
 for c in ${cores[@]}
 do
     sed -i -e "${line_num_cores_kayak}c num_cores = ${c}" ${KAYAK_PATH}
-    sed -i -e "${line_rx_queues_kayak}c rx_queues = ${c}" ${KAYAK_PATH}
     echo "num_cores = ${c}" >> ${OUTPUT}
     sudo ../scripts/run-kayak >> ${OUTPUT}
     echo "" >> ${OUTPUT}
@@ -80,7 +76,6 @@ echo "only C:" >> ${OUTPUT}
 for c in ${cores[@]}
 do
     sed -i -e "${line_num_cores_kayak}c num_cores = ${c}" ${KAYAK_PATH}
-    sed -i -e "${line_rx_queues_kayak}c rx_queues = ${c}" ${KAYAK_PATH}
     echo "num_cores = ${c}" >> ${OUTPUT}
     sudo ../scripts/run-kayak >> ${OUTPUT}
     echo "" >> ${OUTPUT}
@@ -94,7 +89,6 @@ echo "only S:" >> ${OUTPUT}
 for c in ${cores[@]}
 do
     sed -i -e "${line_num_cores_kayak}c num_cores = ${c}" ${KAYAK_PATH}
-    sed -i -e "${line_rx_queues_kayak}c rx_queues = ${c}" ${KAYAK_PATH}
     echo "num_cores = ${c}" >> ${OUTPUT}
     sudo ../scripts/run-kayak >> ${OUTPUT}
     echo "" >> ${OUTPUT}
