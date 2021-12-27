@@ -629,10 +629,10 @@ impl Master {
             panic!("Failed to load pushback() extension.");
         }
         // Load the ycsbt() extension.
-        let name = "../ext/ycsbt/target/release/libycsbt.so";
-        if self.extensions.load(name, tenant, "ycsbt") == false {
-            panic!("Failed to load ycsbt() extension.");
-        }
+        // let name = "../ext/ycsbt/target/release/libycsbt.so";
+        // if self.extensions.load(name, tenant, "ycsbt") == false {
+        //     panic!("Failed to load ycsbt() extension.");
+        // }
         /*
         // Load the get() extension.
         let name = "../ext/get/target/release/libget.so";
