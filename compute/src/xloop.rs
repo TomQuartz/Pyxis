@@ -1,4 +1,4 @@
-use db::config::LBConfig;
+use db::config::*;
 use db::cycles::rdtsc;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -628,21 +628,23 @@ pub struct TputGrad {
 
 impl TputGrad {
     pub fn new(
-        config: &LBConfig,
+        config: &XloopConfig,
+        initial_partition: f64,
         // storage_load: Arc<ServerLoad>,
         // compute_load: Arc<ServerLoad>,
     ) -> TputGrad {
         TputGrad {
             // storage_load: storage_load,
             // compute_load: compute_load,
-            interval: CPU_FREQUENCY / config.xloop_factor,
+            interval: CPU_FREQUENCY / config.factor,
             last_rdtsc: 0,
             last_recvd: 0,
             // last_tput: 0.0,
             last_inv_tput: 0.0,
             // last_ql_storage: 0.0,
             // last_ql_compute: 0.0,
-            last_x: config.partition * 100.0,
+            // last_x: config.partition * 100.0,
+            last_x: initial_partition * 100.0,
             // last_x: 0.0,
             // max_ql_diff:config.max_ql_diff,
             // min_ql_diff:config.min_ql_diff,
@@ -894,14 +896,20 @@ pub struct ElasticScaling {
     pub compute_cores: Arc<AtomicI32>,
     pub storage_cores: u32,
     max_quota: i32,
-    max_load_abs: f64,
-    max_load_rel: f64,
-    min_load_abs: f64,
-    min_load_rel: f64,
+    // max_load_abs: f64,
+    // max_load_rel: f64,
+    // min_load_abs: f64,
+    // min_load_rel: f64,
+    max_load: f64,
+    min_load: f64,
     max_step: i32,
+    // confidence: u32,
+    // convergence: u32,
     // history
     // last_inv_tput: f64,
-    last_provision: i32,
+    // last_provision: i32,
+    upperbound: i32,
+    lowerbound: i32,
     pub msg: String,
     elastic: bool,
 }
@@ -922,6 +930,7 @@ impl ElasticScaling {
         let storage_load = ServerLoad::new("storage", storage_servers);
         // TODO: if elastic then set initial provision to 32 cores
         let initial_provision = config.provisions[0].compute as i32;
+        let max_quota = config.compute.iter().map(|cfg| cfg.rx_queues).sum::<i32>();
         ElasticScaling {
             compute_load: Arc::new(compute_load),
             compute_outs: Avg::new(),
@@ -929,15 +938,21 @@ impl ElasticScaling {
             storage_outs: Avg::new(),
             compute_cores: Arc::new(AtomicI32::new(initial_provision)),
             storage_cores: config.provisions[0].storage,
-            last_provision: initial_provision,
-            max_quota: config.compute.iter().map(|cfg| cfg.rx_queues).sum::<i32>(), // 8 cores each
-            max_load_abs: config.max_load_abs,
-            max_load_rel: config.max_load_rel,
-            min_load_abs: config.min_load_abs,
-            min_load_rel: config.min_load_rel,
-            max_step: config.max_step,
+            // last_provision: initial_provision,
+            upperbound: max_quota,
+            lowerbound: 0,
+            max_quota: max_quota,
+            // max_load_abs: config.max_load_abs,
+            // max_load_rel: config.max_load_rel,
+            // min_load_abs: config.min_load_abs,
+            // min_load_rel: config.min_load_rel,
+            max_load: config.elastic.max_load,
+            min_load: config.elastic.min_load,
+            max_step: config.elastic.max_step,
+            // confidence: 0,
+            // convergence: config.elastic.convergence,
             msg: String::new(),
-            elastic: config.elastic,
+            elastic: config.elastic.elastic,
         }
     }
     pub fn reset(&mut self) {
@@ -995,28 +1010,74 @@ impl ElasticScaling {
         let cv_storage = cv_storage / (ncores_storage + 1e-9);
         let load_compute = Self::ql2load(ql_compute, cv_compute);
         let load_storage = Self::ql2load(ql_storage, cv_storage);
+        debug!(
+            "outs {:.2} waiting {:.2} ql {:.2} cv {:.2}",
+            out_compute / (ncores_compute + 1e-9),
+            w_compute / (ncores_compute + 1e-9),
+            ql_compute,
+            cv_compute
+        );
         (load_compute, load_storage)
     }
+    fn bounded_step(&self) -> i32 {
+        self.max_step.min((self.upperbound - self.lowerbound) / 2)
+    }
+    pub fn scaling(&mut self) -> bool {
+        let (load_compute, load_storage) = self.calc_load();
+        // provision
+        let provision = self.compute_cores.load(Ordering::Relaxed);
+        // let delta_provision = provision - self.last_provision;
+        // // sync
+        // self.last_provision = provision;
+        // update
+        let mut step = 0i32;
+        if self.elastic {
+            if load_compute < self.min_load {
+                // self.confidence = 0;
+                self.upperbound = provision;
+                step = -self.bounded_step();
+            } else if load_compute > self.max_load {
+                // self.confidence = 0;
+                self.lowerbound = provision;
+                step = self.bounded_step();
+            }
+            /* else we have a resonable load on compute */
+            // convergence: step=0, either because max_quota is reached or load is in accepted range
+            if step != 0 {
+                self.compute_cores
+                    .store(provision + step, Ordering::Relaxed);
+            } else {
+                // converged, reset
+                self.lowerbound = 0;
+                self.upperbound = self.max_quota;
+            }
+        }
+        // NOTE: stats is reset by lb
+        // NOTE: self.msg is cleared after printing
+        write!(
+            self.msg,
+            "cores {}({}) range ({},{}) load {:.3},{:.3}",
+            provision,
+            // delta_provision,
+            step,
+            // self.confidence,
+            // self.convergence,
+            self.lowerbound,
+            self.upperbound,
+            load_compute,
+            load_storage,
+            // min_load,
+            // min_load_rel,
+            // max_load,
+            // max_load_rel,
+        );
+        step != 0
+    }
+    /*
     pub fn scaling(&mut self) -> bool {
         if !self.elastic {
             return false;
         }
-        // // load
-        // let (outstanding, waiting, cv, ncores) = self.compute_load.aggr_all();
-        // let ql = (outstanding - waiting).max(0f64) / (ncores + 1e-9);
-        // let cv = cv / (ncores + 1e-9);
-        // let load = 2.0 * ql / (1.0 + cv);
-        // let load = ((load * load + 4.0 * load).sqrt() - load) / 2.0;
-        // assert!(
-        //     load < 1.0,
-        //     "load {:.2}x{:.2} ql {:.2}({:.2}-{:.2}) cv {:.2}",
-        //     load,
-        //     ncores,
-        //     ql,
-        //     outstanding / (ncores + 1e-9),
-        //     waiting / (ncores + 1e-9),
-        //     cv,
-        // );
         let (load_compute, load_storage) = self.calc_load();
         let min_load_rel = self.min_load_rel * load_storage;
         let max_load_rel = self.max_load_rel * load_storage;
@@ -1081,6 +1142,7 @@ impl ElasticScaling {
         );
         step != 0
     }
+    */
 }
 impl fmt::Display for ElasticScaling {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

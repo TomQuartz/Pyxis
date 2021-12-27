@@ -580,7 +580,10 @@ impl LoadBalancer {
                 lowerbound: 0.0,
             },
             learnable: config.learnable,
-            xloop: TputGrad::new(config /*, storage_load, compute_load*/),
+            xloop: TputGrad::new(
+                &config.xloop,
+                config.partition, /*, storage_load, compute_load*/
+            ),
             // not used
             // bimodal: config.bimodal,
             // bimodal_interval: config.bimodal_interval,
@@ -808,6 +811,9 @@ impl LoadBalancer {
                                 // self.elastic.storage_outs.reset();
                                 self.dispatcher.sender2storage.send_reset();
                             }
+                            // self.elastic.reset();
+                            // self.dispatcher.sender2compute.send_reset();
+                            // self.dispatcher.sender2storage.send_reset();
                             // skip reset if anomalies==0(implies convergence) and scaling has no update
                         } else {
                             self.xloop.sync(curr_rdtsc, global_recvd);
@@ -826,10 +832,11 @@ impl LoadBalancer {
                         self.output_last_recvd = global_recvd;
                         self.output_last_rdtsc = curr_rdtsc;
                         println!(
-                            "rdtsc {} tput {:.2} x {:.2} cores {} ratio {}",
+                            "rdtsc {} tput {:.2} x {:.2} cores {},{} ratio {}",
                             curr_rdtsc,
                             output_tput,
                             self.partition.get(),
+                            self.storage_provision.current,
                             self.elastic.compute_cores.load(Ordering::Relaxed),
                             self.sampler,
                         )
