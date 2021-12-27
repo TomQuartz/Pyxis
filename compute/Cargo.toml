@@ -16,13 +16,13 @@ path = "src/bin/client/compute.rs"
 name = "lb-elastic"
 path = "src/bin/client/lb-elastic.rs"
 
-[[bin]]
-name = "lb-dyn"
-path = "src/bin/client/lb-dyn.rs"
+#[[bin]]
+#name = "lb-dyn"
+#path = "src/bin/client/lb-dyn.rs"
 
-[[bin]]
-name = "lb-static"
-path = "src/bin/client/lb-static.rs"
+#[[bin]]
+#name = "lb-static"
+#path = "src/bin/client/lb-static.rs"
 
 [[bin]]
 name = "kayak"

@@ -463,34 +463,8 @@ pub struct KayakConfig {
     pub phases: Vec<PhaseConfig>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
-#[serde(default)]
-pub struct LBConfig {
-    pub num_tenants: usize,
-    // pub key_len: usize,
-    // pub value_len: usize,
-    // pub n_keys: usize,
-    // pub put_pct: usize,
-    // pub skew: f64,
-    pub tenant_skew: f64,
-    // stop after duration
-    pub duration: u64,
-    // pub num_reqs: usize,
-    // pub multi_kv: Vec<u32>,
-    // pub multi_ord: Vec<u32>,
-    // pub multi_ratio: Vec<f32>,
-    // pub multi_rpc: bool,
-    // pub type2core: Vec<Vec<u16>>,
-    pub learnable: bool,
-    pub partition: f64,
-    pub max_out: u32,
-    pub xloop_factor: u64,
-    pub output_factor: u64,
-    // profile ratio, cost, and sort
-    pub sample_factor: u64,
-    // not used
-    // pub moving_exp: f64,
-    // tput
+pub struct XloopConfig {
+    pub factor: u64,
     pub lr: f64,
     pub max_step_rel: f64,
     pub max_step_abs: f64,
@@ -505,13 +479,39 @@ pub struct LBConfig {
     pub tolerance: u32,
     // not useful
     pub min_err: f64,
-    // elastic
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(default)]
+pub struct ElasticConfig {
     pub elastic: bool,
-    pub max_load_abs: f64,
-    pub max_load_rel: f64,
-    pub min_load_abs: f64,
-    pub min_load_rel: f64,
+    pub max_load: f64,
+    pub min_load: f64,
+    // pub max_load_abs: f64,
+    // pub max_load_rel: f64,
+    // pub min_load_abs: f64,
+    // pub min_load_rel: f64,
     pub max_step: i32,
+    // pub convergence: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(default)]
+pub struct LBConfig {
+    pub num_tenants: usize,
+    pub tenant_skew: f64,
+    // stop after duration
+    pub duration: u64,
+    pub learnable: bool,
+    pub partition: f64,
+    pub max_out: u32,
+    pub output_factor: u64,
+    // profile ratio, cost, and sort
+    pub sample_factor: u64,
+    // xloop with tput
+    pub xloop: XloopConfig,
+    // elastic
+    pub elastic: ElasticConfig,
     // network configuration
     pub lb: ServerConfig,
     // TODO: add utilization config
