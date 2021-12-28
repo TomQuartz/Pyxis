@@ -463,6 +463,8 @@ pub struct KayakConfig {
     pub phases: Vec<PhaseConfig>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(default)]
 pub struct XloopConfig {
     pub factor: u64,
     pub lr: f64,
