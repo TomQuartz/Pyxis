@@ -43,7 +43,7 @@ use util::model::{get_raw_data, insert_global_model, run_ml_application, GLOBAL_
 
 use e2d2::common::EmptyMetadata;
 use e2d2::headers::UdpHeader;
-use e2d2::interface::Packet;
+use e2d2::interface::{Packet, MAX_PAYLOAD};
 use spin::RwLock;
 
 use super::config::*;
@@ -785,7 +785,7 @@ impl Master {
         &self,
         // req: Packet<UdpHeader, EmptyMetadata>,
         req: Packet<GetRequest, EmptyMetadata>,
-        mut resps: Vec<Packet<UdpHeader, EmptyMetadata>>,
+        resps: Vec<Packet<UdpHeader, EmptyMetadata>>,
     ) -> Result<
         Box<Task>,
         (
@@ -809,10 +809,11 @@ impl Master {
             key_length = hdr.key_length;
             rpc_stamp = hdr.common_header.stamp;
         }
-
-        // Next, add a header to the response packet.
+        let value_len = self.table_cfg[table_id as usize - 1].value_len;
+        // let record_len = self.table_cfg[table_id as usize - 1].record_len;
         let num_segments = resps.len() as u32;
-        let mut segment_id: u32 = 0;
+        // Next, add a header to the response packet.
+        let mut segment_id: u32 = 1;
         let mut get_resps: Vec<Packet<GetResponse, EmptyMetadata>> = resps
             .into_iter()
             .map(|p| {
@@ -823,6 +824,7 @@ impl Master {
                         tenant_id,
                         num_segments,
                         segment_id,
+                        value_len as u32,
                     ))
                     .expect("Failed to setup GetResponse");
                 segment_id += 1;
@@ -847,9 +849,6 @@ impl Master {
         // reference to Master in the generator below.
         let tenant = self.get_tenant(tenant_id);
         let alloc: *const Allocator = &self.heap;
-
-        // let record_len = self.record_len;
-        let record_len = self.table_cfg[table_id as usize - 1].record_len;
 
         // Create a generator for this request.
         let gen = Box::pin(move || {
@@ -883,11 +882,22 @@ impl Master {
                     if let Some(opt) = opt {
                                 let (k, value) = &opt;
                                 status = RpcStatus::StatusInternalError;
+                                let mut offset = 0usize;
+                                let mut payload_len = MAX_PAYLOAD;
                                 for (segment,resp) in get_resps.iter_mut().enumerate() {
-                                    resp.add_to_payload_tail(1, pack(&optype)).expect("failed to add optype");
-                                    resp.add_to_payload_tail(size_of::<Version>(), &unsafe { transmute::<Version, [u8; 8]>(version) }).expect("failed to add version number");
-                                    resp.add_to_payload_tail(k.len(), &k[..]).expect("failed to add key");
-                                    resp.add_to_payload_tail(record_len, &value[segment*record_len..(segment+1)*record_len]).expect("failed to add payload");
+                                    // resp.add_to_payload_tail(1, pack(&optype)).expect("failed to add optype");
+                                    // resp.add_to_payload_tail(size_of::<Version>(), &unsafe { transmute::<Version, [u8; 8]>(version) }).expect("failed to add version number");
+                                    // resp.add_to_payload_tail(k.len(), &k[..]).expect("failed to add key");
+                                    // if segment == 0 {
+                                    //     resp.add_to_payload_tail(size_of::<Version>(), &unsafe { transmute::<Version, [u8; 8]>(version) }).expect("failed to add version number");
+                                    //     // resp.add_to_payload_tail(size_of::<u32>(), &unsafe { transmute::<u32, [u8; 4]>(value.len() as u32) }).expect("failed to add value len");
+                                    //     // resp.add_to_payload_tail(size_of::<u32>(), &unsafe { transmute::<u32, [u8; 4]>(num_segments) }).expect("failed to add number of segments");
+                                    // }
+                                    if segment == num_segments as usize-1{
+                                        payload_len = value.len()-offset;
+                                    }
+                                    resp.add_to_payload_tail(payload_len, &value[offset..payload_len]).expect("failed to add payload");
+                                    offset += payload_len;
                                 }
                                 Some(())
                                 // let _result = res.add_to_payload_tail(1, pack(&optype));

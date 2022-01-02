@@ -171,10 +171,11 @@ impl TaskManager {
         &mut self,
         id: u64,
         // table_id: usize,
-        records: &[u8],
-        recordlen: usize,
+        record: &[u8],
+        // recordlen: usize,
         segment_id: usize,
         num_segments: usize,
+        value_len: usize,
         // ) -> Option<Box<Task>> {
     ) {
         if let Some(mut task) = self.waiting.remove(&id) {
@@ -186,13 +187,14 @@ impl TaskManager {
                 // }
                 // self.ready.push_back(task);
             } else {
-                let mut ready = false;
-                for record in records.chunks(recordlen) {
-                    // task.update_cache(record, table_id);
-                    if task.update_cache(record, segment_id, num_segments) {
-                        ready = true;
-                    }
-                }
+                // let mut ready = false;
+                // for record in records.chunks(recordlen) {
+                //     // task.update_cache(record, table_id);
+                //     if task.update_cache(record, segment_id, num_segments, value_len) {
+                //         ready = true;
+                //     }
+                // }
+                let ready = task.update_cache(record, segment_id, num_segments, value_len);
                 if ready {
                     trace!("ext id {} all segments recvd", id);
                     self.ready.push_back(task);
@@ -784,14 +786,21 @@ impl ComputeNodeWorker {
         let timestamp = hdr.common_header.stamp; // this is the timestamp when this ext is inserted in taskmanager
         let num_segments = hdr.num_segments as usize;
         let segment_id = hdr.segment_id as usize;
+        let value_len = hdr.value_len as usize;
         // let table_id = hdr.table_id as usize;
-        let records = p.get_payload();
-        let recordlen = records.len();
+        let record = p.get_payload();
+        // let recordlen = records.len();
         let task = if p.get_header().common_header.status == RpcStatus::StatusOk {
             // self.manager
             //     .update_rwset(timestamp, table_id, records, recordlen);
-            self.manager
-                .update_rwset(timestamp, records, recordlen, segment_id, num_segments)
+            self.manager.update_rwset(
+                timestamp,
+                record,
+                // recordlen,
+                segment_id,
+                num_segments,
+                value_len,
+            )
             // self.sender.return_credit();
         } else {
             warn!(

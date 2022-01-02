@@ -66,7 +66,13 @@ impl DB for MockDB {
         unsafe { Some(ReadBuf::new(Bytes::with_capacity(0))) }
     }
 
-    fn multiget(&self, table: u64, key_len: u16, keys: &[u8]) -> Option<MultiReadBuf> {
+    fn multiget(
+        &self,
+        table: u64,
+        key_len: u16,
+        keys: &[u8],
+        _value_len: usize,
+    ) -> Option<MultiReadBuf> {
         self.debug_log(&format!(
             "Invoked multiget() on table {} for keys {:?} with key length {}",
             table, keys, key_len
@@ -130,6 +136,7 @@ impl DB for MockDB {
         table: u64,
         key_len: u16,
         keys: &[u8],
+        _value_len: usize,
     ) -> (bool, bool, Option<MultiReadBuf>) {
         self.debug_log(&format!(
             "Invoked multiget() on table {} for keys {:?} with key length {}",

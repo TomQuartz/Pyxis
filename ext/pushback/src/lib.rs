@@ -34,6 +34,7 @@ use db::cycles;
 
 use sandstorm::db::DB;
 use sandstorm::pack::pack;
+use std::convert::TryInto;
 
 /// This function implements the get() extension using the sandstorm interface.
 ///
@@ -50,6 +51,7 @@ use sandstorm::pack::pack;
 #[allow(unused_assignments)]
 pub fn init(db: Rc<DB>) -> Pin<Box<Generator<Yield = u64, Return = u64>>> {
     Box::pin(move || {
+        /*
         let mut obj = None;
         let mut t_table: u64 = 0;
         let mut num: u32 = 0;
@@ -90,7 +92,7 @@ pub fn init(db: Rc<DB>) -> Pin<Box<Generator<Yield = u64, Return = u64>>> {
             }
         }
 
-        let mut mul: u64 = 0;
+        let mut res: u64 = 0;
 
         for i in 0..num {
             // println!("round {} key {:?}", i, keys);
@@ -100,7 +102,7 @@ pub fn init(db: Rc<DB>) -> Pin<Box<Generator<Yield = u64, Return = u64>>> {
                 match obj {
                     // If the object was found, use the response.
                     Some(val) => {
-                        mul = val.read()[0] as u64;
+                        res = val.read()[0] as u64;
                     }
 
                     // If the object was not found, write an error message to the
@@ -117,6 +119,53 @@ pub fn init(db: Rc<DB>) -> Pin<Box<Generator<Yield = u64, Return = u64>>> {
                     // If the object was found, find the key from the response.
                     Some(val) => {
                         keys[0..4].copy_from_slice(&val.read()[0..4]);
+                    }
+
+                    // If the object was not found, write an error message to the
+                    // response.
+                    None => {
+                        let error = "Object does not exist";
+                        db.resp(error.as_bytes());
+                        return 1;
+                    }
+                }
+            }
+        }
+        */
+        let args = db.args();
+        let (table, args) = args.split_at(8);
+        let (kv, args) = args.split_at(4);
+        let (ord, key) = args.split_at(4);
+        let table = u64::from_le_bytes(table.try_into().unwrap());
+        let kv = u32::from_le_bytes(kv.try_into().unwrap());
+        let ord = u32::from_le_bytes(ord.try_into().unwrap());
+        let mut key = key.to_vec();
+
+        let mut res = 0u64;
+        let mut obj = None;
+        for i in 0..kv {
+            GET!(db, table, key, obj);
+            if i == kv - 1 {
+                match obj {
+                    // If the object was found, use the response.
+                    Some(val) => {
+                        res = val.read()[0] as u64;
+                    }
+
+                    // If the object was not found, write an error message to the
+                    // response.
+                    None => {
+                        let error = "Object does not exist";
+                        db.resp(error.as_bytes());
+                        return 1;
+                    }
+                }
+            } else {
+                // find the key for the second request.
+                match obj {
+                    // If the object was found, find the key from the response.
+                    Some(val) => {
+                        key[0..4].copy_from_slice(&val.read()[0..4]);
                     }
 
                     // If the object was not found, write an error message to the
@@ -158,7 +207,7 @@ pub fn init(db: Rc<DB>) -> Pin<Box<Generator<Yield = u64, Return = u64>>> {
             }
         }
 
-        db.resp(pack(&mul));
+        db.resp(pack(&res));
         return 0;
 
         yield 0;

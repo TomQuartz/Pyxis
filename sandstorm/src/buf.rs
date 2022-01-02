@@ -253,7 +253,7 @@ impl WriteBuf {
 /// the database. This type is primarily used to read objects from the database
 /// in response to a multiget() operation.
 pub struct MultiReadBuf {
-    inner: Vec<Bytes>,
+    pub inner: Vec<Bytes>,
 
     index: Cell<usize>,
 
@@ -345,7 +345,10 @@ impl MultiReadBuf {
             }
         }
     }
-
+    pub fn read(&self) -> Vec<&[u8]> {
+        self.inner.iter().map(|obj| obj.as_ref()).collect()
+    }
+    /*
     /// This method returns the reference to an element which is present on the current index in
     /// `MultiReadBuf`.
     ///
@@ -358,6 +361,7 @@ impl MultiReadBuf {
 
         self.inner[self.index.get()].as_ref()
     }
+    */
 }
 
 // This module implements simple unit tests for MultiReadBuf, ReadBuf, ReadWriteSetBuf and WriteBuf.

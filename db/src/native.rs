@@ -186,7 +186,13 @@ impl Task for Native {
     }
 
     /// Refer to the `Task` trait for Documentation.
-    fn update_cache(&mut self, _record: &[u8], _seg_id: usize, _num_segs: usize) -> bool {
+    fn update_cache(
+        &mut self,
+        _record: &[u8],
+        _seg_id: usize,
+        _num_segs: usize,
+        _val_len: usize,
+    ) -> bool {
         true
     }
 

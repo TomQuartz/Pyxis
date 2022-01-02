@@ -45,7 +45,13 @@ impl DB for NullDB {
         return None;
     }
 
-    fn multiget(&self, _table: u64, _key_len: u16, _keys: &[u8]) -> Option<MultiReadBuf> {
+    fn multiget(
+        &self,
+        _table: u64,
+        _key_len: u16,
+        _keys: &[u8],
+        _value_len: usize,
+    ) -> Option<MultiReadBuf> {
         return None;
     }
 
@@ -76,6 +82,7 @@ impl DB for NullDB {
         _table: u64,
         _key_len: u16,
         _keys: &[u8],
+        _value_len: usize,
     ) -> (bool, bool, Option<MultiReadBuf>) {
         return (false, false, None);
     }

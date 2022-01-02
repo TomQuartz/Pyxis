@@ -293,12 +293,12 @@ impl<'a> DB for Context<'a> {
             .and_then(|(opt, version)| {
                 if let Some(opt) = opt {
                     let (k, v) = opt;
-                    self.tx.borrow_mut().record_get(Record::new(
-                        OpType::SandstormRead,
-                        version,
-                        k,
-                        v.clone(),
-                    ));
+                    // self.tx.borrow_mut().record_get(Record::new(
+                    //     OpType::SandstormRead,
+                    //     version,
+                    //     k,
+                    //     v.clone(),
+                    // ));
                     *self.db_credit.borrow_mut() += rdtsc() - start + GET_CREDIT;
                     unsafe { Some(ReadBuf::new(v)) }
                 } else {
@@ -309,7 +309,13 @@ impl<'a> DB for Context<'a> {
     }
 
     /// Lookup the `DB` trait for documentation on this method.
-    fn multiget(&self, table_id: u64, key_len: u16, keys: &[u8]) -> Option<MultiReadBuf> {
+    fn multiget(
+        &self,
+        table_id: u64,
+        key_len: u16,
+        keys: &[u8],
+        value_len: usize,
+    ) -> Option<MultiReadBuf> {
         // Lookup the database for each key in the supplied list of keys. If all exist,
         // return a MultiReadBuf to the extension.
         let start = rdtsc();
@@ -328,13 +334,13 @@ impl<'a> DB for Context<'a> {
                     .and_then(|(opt, version)| {
                         if let Some(opt) = opt {
                             let (k, v) = opt;
-                            self.tx.borrow_mut().record_get(Record::new(
-                                OpType::SandstormRead,
-                                version,
-                                k,
-                                v.clone(),
-                            ));
-                            objs.push(v);
+                            // self.tx.borrow_mut().record_get(Record::new(
+                            //     OpType::SandstormRead,
+                            //     version,
+                            //     k,
+                            //     v.clone(),
+                            // ));
+                            objs.push(v.slice(0, value_len));
                             Some(())
                         } else {
                             None
@@ -457,6 +463,7 @@ impl<'a> DB for Context<'a> {
         _table: u64,
         _key_len: u16,
         _keys: &[u8],
+        _value_len: usize,
     ) -> (bool, bool, Option<MultiReadBuf>) {
         return (true, false, None);
     }

@@ -32,6 +32,7 @@ use db::e2d2::interface::*;
 extern crate bytes;
 use self::bytes::{Bytes, BytesMut};
 use db::dispatch::Sender;
+use std::collections::HashMap;
 use util::model::Model;
 
 /// This struct represents a record for a read/write set. Each record in the read/write set will
@@ -68,6 +69,49 @@ impl KV {
     }
 }
 
+// TODO:
+// 1. set key_len in search_get/multiget_in_cache
+//    the number of keys is inferred by len(key)/key_len
+//    then values buffer is equally devided into num_keys chunks
+// 2. pass in expected size to get/multiget macro; modify get/multiget trait of DB
+// 3. impl send multiget from ext in dispatch.Sender
+// 4. impl multiget macro
+#[derive(Default)]
+struct KVBuffer {
+    table: u64,
+    key_len: usize,
+    keys: Vec<u8>,
+    // buffer_size: usize,
+    values: Vec<u8>,
+    // 0 for full-size, otherwise the first $value_len bytes are cached
+    value_len: usize, // pending_resps: usize,
+}
+impl KVBuffer {
+    fn reset(&mut self, table: u64, key_len: usize, keys: &[u8], value_len: usize) {
+        self.table = table;
+        self.key_len = key_len;
+        self.keys.clear();
+        self.keys.extend_from_slice(keys);
+        self.value_len = value_len;
+    }
+    fn prepare(&mut self, buffer_size: usize /*, num_segments: usize*/) {
+        // self.buffer_size = buffer_size;
+        // self.pending_resps = num_segments;
+        if self.values.len() < buffer_size {
+            self.values.resize(buffer_size, 0);
+        }
+    }
+    fn update(&mut self, offset: usize, value: &[u8]) {
+        self.values[offset..offset + value.len()].copy_from_slice(value);
+    }
+}
+
+struct CacheEntry {
+    // 0 for full-size, otherwise the first $length bytes are cached
+    length: usize,
+    entry: Bytes,
+}
+
 /// A proxy to the database on the client side; which searches the
 /// local cache before issuing the operations to the server.
 pub struct ProxyDB {
@@ -98,7 +142,8 @@ pub struct ProxyDB {
     sender: Rc<Sender>,
 
     // A list of the records in Read-set for the extension.
-    readset: RefCell<Vec<KV>>,
+    // readset: RefCell<Vec<KV>>,
+    cache: RefCell<HashMap<(u64, Bytes), CacheEntry>>,
 
     // A list of records in the write-set for the extension.
     writeset: RefCell<Vec<KV>>,
@@ -107,21 +152,24 @@ pub struct ProxyDB {
     db_credit: RefCell<u64>,
     // The model for a given extension which is stored based on the name of the extension.
     model: Option<Arc<Model>>,
-    // // This maintains the read-write records accessed by the extension.
-    kv_buffer: RefCell<Vec<u8>>,
+    // This maintains the read-write records accessed by the extension.
+    // kv_buffer: RefCell<Vec<u8>>,
     /// number of responses to wait for
-    pub pending_resps: Cell<usize>,
-
-    // the key_len for each table
-    // TODO: make this a hashmap indexed by table_id
-    // NOTE: for proxyDB, the key_len is set by the ext code, via the GET macro, in search_get_in_cache method
-    key_len: Cell<usize>,
+    pending_resps: Cell<usize>,
+    buffer: RefCell<KVBuffer>,
+    // // the key_len for each table
+    // // TODO: make this a hashmap indexed by table_id
+    // // NOTE: for proxyDB, the key_len is set by the ext code, via the GET macro, in search_get_in_cache method
+    // key_len: Cell<usize>,
+    // current_key: RefCell<Vec<u8>>,
+    // // version: RefCell<Vec<u8>>,
+    // current_table: RefCell<u32>,
 }
 
 impl ProxyDB {
-    pub fn get_keylen(&self) -> usize {
-        self.key_len.get()
-    }
+    // pub fn get_keylen(&self) -> usize {
+    //     self.key_len.get()
+    // }
     /// This method creates and returns the `ProxyDB` object. This DB issues the remote RPC calls
     /// instead of local table lookups.
     ///
@@ -155,13 +203,18 @@ impl ProxyDB {
             args_offset: name_length,
             waiting: RefCell::new(false),
             sender: sender_service,
-            readset: RefCell::new(Vec::with_capacity(4)),
+            // readset: RefCell::new(Vec::with_capacity(4)),
+            cache: RefCell::new(HashMap::new()),
             writeset: RefCell::new(Vec::with_capacity(4)),
             db_credit: RefCell::new(0),
             model: model,
             // commit_payload: RefCell::new(Vec::new()),
-            key_len: Cell::new(0),
-            kv_buffer: RefCell::new(Vec::with_capacity(1024)),
+            buffer: RefCell::new(KVBuffer::default()),
+            // // key_len: Cell::new(0),
+            // current_key:RefCell::new(vec![]);
+            // // version:RefCell::new(vec![]);
+            // current_table: RefCell::new(0);
+            // kv_buffer: RefCell::new(Vec::with_capacity(32768)),
             pending_resps: Cell::new(0),
         }
     }
@@ -202,34 +255,72 @@ impl ProxyDB {
         ));
     }
     */
-
+    fn cache_buffer(&self) {
+        let buffer = self.buffer.borrow();
+        let cache = self.cache.borrow_mut();
+        if buffer.keys.len() == buffer.key_len {
+            let key = Bytes::from(&buffer.keys[..]);
+            let entry = CacheEntry {
+                length: 0, // full entry
+                entry: Bytes::from(&buffer.values[..]),
+            };
+            cache.insert((buffer.table, key), entry);
+        } else {
+            for (k, v) in buffer
+                .keys
+                .chunks(buffer.key_len)
+                .zip(buffer.values.chunks(buffer.value_len))
+            {
+                let key = Bytes::from(k);
+                let entry = CacheEntry {
+                    length: buffer.value_len, // full entry
+                    entry: Bytes::from(v),
+                };
+                cache.insert((buffer.table, key), entry);
+            }
+        }
+    }
     /// the get resp is scattered in multiple packets
     pub fn collect_resp(
         &self,
         record: &[u8],
-        key_len: usize,
+        // key_len: usize,
         segment_id: usize,
         num_segments: usize,
+        total_len: usize,
     ) -> bool {
-        let (version, entry) = record.split_at(8);
-        let (key, value) = entry.split_at(key_len);
-        let value_len = value.len();
+        // let (version, entry) = record.split_at(8);
+        // let (key, value) = entry.split_at(key_len);
+        let value = record;
+        // let value_len = value.len();
+        // if self.pending_resps.get() == 0 {
+        //     let capacity = value_len * num_segments;
+        //     self.kv_buffer.borrow_mut().resize(capacity, 0);
+        //     self.pending_resps.set(num_segments);
+        // }
         if self.pending_resps.get() == 0 {
-            let capacity = value_len * num_segments;
-            self.kv_buffer.borrow_mut().resize(capacity, 0);
             self.pending_resps.set(num_segments);
+            self.buffer.borrow_mut().prepare(total_len);
         }
-        let mut kv_buffer = self.kv_buffer.borrow_mut();
-        kv_buffer[segment_id * value_len..(segment_id + 1) * value_len].copy_from_slice(value);
+        // segment id starting from 1
+        // all segments except the last one is fully packed
+        let offset = if segment_id < num_segments {
+            (segment_id - 1) * value.len()
+        } else {
+            total_len - value.len()
+        };
+        self.buffer.borrow_mut().update(offset, value);
         let mut pending_resps = self.pending_resps.get();
         pending_resps -= 1;
         self.pending_resps.set(pending_resps);
         if pending_resps == 0 {
-            self.readset.borrow_mut().push(KV::new(
-                Bytes::from(version),
-                Bytes::from(key),
-                Bytes::from(&kv_buffer[..]),
-            ));
+            // self.readset.borrow_mut().push(KV::new(
+            //     // Bytes::from(version),
+            //     Bytes::from(&version[..]),
+            //     Bytes::from(&key[..]),
+            //     Bytes::from(&kv_buffer[..total_len]),
+            // ));
+            self.cache_buffer();
             true
         } else {
             false
@@ -248,11 +339,11 @@ impl ProxyDB {
         // self.commit_payload.borrow_mut().extend_from_slice(record);
         let (version, entry) = record.split_at(8);
         let (key, value) = entry.split_at(keylen);
-        self.writeset.borrow_mut().push(KV::new(
-            Bytes::from(version),
-            Bytes::from(key),
-            Bytes::from(value),
-        ));
+        // self.writeset.borrow_mut().push(KV::new(
+        //     Bytes::from(version),
+        //     Bytes::from(key),
+        //     Bytes::from(value),
+        // ));
     }
 
     /// This method search the a list of records to find if a record with the given key
@@ -266,15 +357,28 @@ impl ProxyDB {
     /// # Return
     ///
     /// The index of the element, if present. 1024 otherwise.
-    pub fn search_cache(&self, list: Vec<KV>, key: &[u8]) -> usize {
-        let length = list.len();
-        for i in 0..length {
-            if list[i].key == key {
-                return i;
+    // pub fn search_cache(&self, list: Vec<KV>, key: &[u8]) -> usize {
+    //     let length = list.len();
+    //     for i in 0..length {
+    //         if list[i].key == key {
+    //             return i;
+    //         }
+    //     }
+    //     //Return some number way bigger than the cache size.
+    //     return 1024;
+    // }
+    pub fn search_cache(&self, table: u64, key: &[u8], size: usize) -> Option<Bytes> {
+        if let Some(entry) = self.cache.borrow().get(&(table, Bytes::from(key))) {
+            if size > 0 {
+                if entry.length == 0 || entry.length > size {
+                    return Some(entry.entry.slice(0, size));
+                }
+            } else if entry.length == 0 {
+                // request full size and the cache is also full-sized
+                return Some(entry.entry.clone());
             }
         }
-        //Return some number way bigger than the cache size.
-        return 1024;
+        None
     }
 
     /// This method returns the value of the credit which an extension has accumulated over time.
@@ -349,36 +453,31 @@ impl ProxyDB {
     // }
 }
 
-// TODO:
-// 1. reimpl search_cache, using table_id and key as index
-// 2. reimpl readset as hashmap instead of vec
-// 3. add mapping from table to key_len
-// 3. set key_len for table in search_get_in_cache
 impl DB for ProxyDB {
     /// Lookup the `DB` trait for documentation on this method.
-    fn get(&self, _table: u64, key: &[u8]) -> Option<ReadBuf> {
-        let start = rdtsc();
+    fn get(&self, table: u64, key: &[u8]) -> Option<ReadBuf> {
+        // let start = rdtsc();
         self.set_waiting(false);
-        let index = self.search_cache(self.readset.borrow().to_vec(), key);
-        let value = self.readset.borrow()[index].value.clone();
-        *self.db_credit.borrow_mut() += rdtsc() - start;
+        // let index = self.search_cache(self.readset.borrow().to_vec(), key);
+        // let value = self.readset.borrow()[index].value.clone();
+        let value = self.search_cache(table, key, 0).unwrap();
+        // *self.db_credit.borrow_mut() += rdtsc() - start;
         unsafe { Some(ReadBuf::new(value)) }
     }
 
     /// Lookup the `DB` trait for documentation on this method.
-    fn multiget(&self, _table: u64, key_len: u16, keys: &[u8]) -> Option<MultiReadBuf> {
-        let mut objs = Vec::new();
+    fn multiget(
+        &self,
+        table: u64,
+        key_len: u16,
+        keys: &[u8],
+        value_len: usize,
+    ) -> Option<MultiReadBuf> {
+        self.set_waiting(false);
+        let mut objs = vec![];
         for key in keys.chunks(key_len as usize) {
-            if key.len() != key_len as usize {
-                break;
-            }
-            let index = self.search_cache(self.readset.borrow().to_vec(), key);
-            if index != 1024 {
-                let value = self.readset.borrow()[index].value.clone();
-                objs.push(value);
-            } else {
-                info!("Multiget Failed");
-            }
+            let obj = self.search_cache(table, key, value_len).unwrap();
+            objs.push(obj);
         }
         unsafe { Some(MultiReadBuf::new(objs)) }
     }
@@ -428,22 +527,62 @@ impl DB for ProxyDB {
 
     /// Lookup the `DB` trait for documentation on this method.
     fn search_get_in_cache(&self, table: u64, key: &[u8]) -> (bool, bool, Option<ReadBuf>) {
-        self.key_len.set(key.len());
-        let start = rdtsc();
-        let index = self.search_cache(self.readset.borrow().to_vec(), key);
-        if index != 1024 {
-            let value = self.readset.borrow()[index].value.clone();
-            *self.db_credit.borrow_mut() += rdtsc() - start;
+        // let start = rdtsc();
+        // let index = self.search_cache(self.readset.borrow().to_vec(), key);
+        // if index != 1024 {
+        //     let value = self.readset.borrow()[index].value.clone();
+        //     *self.db_credit.borrow_mut() += rdtsc() - start;
+        //     return (false, true, unsafe { Some(ReadBuf::new(value)) });
+        // }
+        if let Some(value) = self.search_cache(table, key, 0) {
             return (false, true, unsafe { Some(ReadBuf::new(value)) });
         }
+        self.buffer.borrow_mut().reset(table, key.len(), key, 0);
         trace!("ext id: {} yield due to missing key", self.parent_id);
         self.set_waiting(true);
+        // self.sender
+        //     .send_get_from_extension(self.tenant, table, key, self.parent_id);
         self.sender
-            .send_get_from_extension(self.tenant, table, key, self.parent_id);
-        *self.db_credit.borrow_mut() += rdtsc() - start;
+            .send_get(self.tenant, table, key, self.parent_id);
+        // *self.db_credit.borrow_mut() += rdtsc() - start;
         (false, false, None)
     }
 
+    fn search_multiget_in_cache(
+        &self,
+        table: u64,
+        key_len: u16,
+        keys: &[u8],
+        value_len: usize,
+    ) -> (bool, bool, Option<MultiReadBuf>) {
+        let mut objs = vec![];
+        let mut missing = vec![];
+        let mut num_missing = 0u32;
+        for key in keys.chunks(key_len as usize) {
+            if let Some(value) = self.search_cache(table, key, value_len) {
+                objs.push(value);
+            } else {
+                missing.extend_from_slice(key);
+                num_missing += 1;
+            }
+        }
+        if num_missing > 0 {
+            self.set_waiting(true);
+            self.sender.send_multiget(
+                self.tenant,
+                table,
+                key_len,
+                num_missing,
+                &missing,
+                self.parent_id,
+            );
+            (false, false, None)
+        } else {
+            (false, true, unsafe { Some(MultiReadBuf::new(objs)) })
+        }
+    }
+
+    /*
     /// Lookup the `DB` trait for documentation on this method.
     fn search_multiget_in_cache(
         &self,
@@ -473,6 +612,7 @@ impl DB for ProxyDB {
         *self.db_credit.borrow_mut() += rdtsc() - start;
         return (false, true, unsafe { Some(MultiReadBuf::new(objs)) });
     }
+    */
 
     /// Lookup the `DB` trait for documentation on this method.
     fn get_model(&self) -> Option<Arc<Model>> {

@@ -86,14 +86,31 @@ struct Workload {
 impl Workload {
     fn new(config: &WorkloadConfig, table: &TableConfig) -> Workload {
         let extension = config.extension.as_bytes();
-        let key_offset =
-            extension.len() + mem::size_of::<u64>() + mem::size_of::<u32>() + mem::size_of::<u32>();
-        let payload_len = key_offset + table.key_len;
-        let mut payload = Vec::with_capacity(payload_len);
+        // let key_offset =
+        //     extension.len() + mem::size_of::<u64>() + mem::size_of::<u32>() + mem::size_of::<u32>();
+        // let payload_len = key_offset + table.key_len;
+        // let mut payload = Vec::with_capacity(payload_len);
+        // payload.extend_from_slice(extension);
+        // // TODO: introduce variation in kv and order, these fields will not be static
+        // payload.extend_from_slice(&unsafe { transmute::<u64, [u8; 8]>(config.table_id.to_le()) });
+        // payload.extend_from_slice(&unsafe { transmute::<u32, [u8; 4]>(config.kv.to_le()) });
+        // payload.extend_from_slice(&unsafe { transmute::<u32, [u8; 4]>(config.order.to_le()) });
+        // payload.resize(payload_len, 0);
+        let mut payload = vec![];
         payload.extend_from_slice(extension);
-        payload.extend_from_slice(&unsafe { transmute::<u64, [u8; 8]>(config.table_id.to_le()) });
-        payload.extend_from_slice(&unsafe { transmute::<u32, [u8; 4]>(config.kv.to_le()) });
-        payload.extend_from_slice(&unsafe { transmute::<u32, [u8; 4]>(config.order.to_le()) });
+        // payload.extend_from_slice(&unsafe { transmute::<u64, [u8; 8]>(config.table_id.to_le()) });
+        payload.extend_from_slice(&config.table_id.to_le_bytes());
+        if config.opcode == 0 {
+            // TODO: introduce variation in kv and order, these fields will not be static
+            payload.extend_from_slice(&config.kv.to_le_bytes());
+            payload.extend_from_slice(&config.order.to_le_bytes());
+        } else {
+            // for real workload
+            payload.extend_from_slice(&table.record_len.to_le_bytes());
+            payload.extend_from_slice(&config.opcode.to_le_bytes());
+        }
+        let key_offset = payload.len();
+        let payload_len = key_offset + table.key_len;
         payload.resize(payload_len, 0);
         Workload {
             // rng: {

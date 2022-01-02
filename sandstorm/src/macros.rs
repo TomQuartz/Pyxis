@@ -33,6 +33,46 @@ macro_rules! GET {
     };
 }
 
+#[macro_export]
+macro_rules! ASSOC_GET {
+    ($db:ident, $table:ident, $key:ident) => {
+        let (server, found, assoc) = $db.search_get_in_cache($table, &$key);
+        if server == false {
+            if found == false {
+                yield 0;
+                // $obj = $db.get($table, &$key);
+                let assoc = $db.get($table, &$key).unwrap().read();
+                key.extend_from_slice(assoc);
+            } else {
+                // $obj = val;
+                key.extend_from_slice(assoc);
+            }
+        } else {
+            // $obj = $db.get($table, &$key);
+            let assoc = $db.get($table, &$key).unwrap().read();
+            key.extend_from_slice(assoc);
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! MULTIGET {
+    ($db:ident, $table:ident, $key_len:ident, $keys:ident, $size:ident, $objs:ident) => {
+        let (server, found, val) = $db.search_multiget_in_cache($table, $key_len, &$keys, $size);
+        if server == false {
+            if found == false {
+                yield 0;
+                $obj = $db.multiget($table, $key_len, &$keys, $size);
+            } else {
+                $obj = val;
+            }
+        } else {
+            $obj = $db.multiget($table, $key_len, &$keys, $size);
+        }
+    };
+}
+
+/*
 /// TODO: Change it later, not implemented fully.
 #[macro_export]
 macro_rules! MULTIGET {
@@ -59,3 +99,4 @@ macro_rules! MULTIGET {
         }
     };
 }
+*/

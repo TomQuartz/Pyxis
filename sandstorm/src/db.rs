@@ -50,7 +50,13 @@ pub trait DB {
     ///
     /// A handle that can be used to read the value for each key in the list, if the key-value
     /// pair exists inside the database.
-    fn multiget(&self, table: u64, key_len: u16, keys: &[u8]) -> Option<MultiReadBuf>;
+    fn multiget(
+        &self,
+        table: u64,
+        key_len: u16,
+        keys: &[u8],
+        value_len: usize,
+    ) -> Option<MultiReadBuf>;
 
     /// This method will allocate space for a key-value pair inside the
     /// database, and if the allocation was successfull, return a handle that
@@ -156,6 +162,7 @@ pub trait DB {
         table: u64,
         key_len: u16,
         keys: &[u8],
+        value_len: usize,
     ) -> (bool, bool, Option<MultiReadBuf>);
 
     /// This method will return the ML model for the given extension. If the model does't exist
