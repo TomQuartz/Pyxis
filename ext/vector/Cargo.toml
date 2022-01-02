@@ -1,0 +1,16 @@
+[package]
+name = "vector"
+version = "0.1.0"
+authors = ["tomquartz"]
+
+[lib]
+crate-type = ["dylib"]
+
+[dependencies]
+db        = { path = "../../db" }
+sandstorm = { path = "../../sandstorm" }
+cfg-if = "1.0.0"
+
+[features]
+default = []
+yield = []
