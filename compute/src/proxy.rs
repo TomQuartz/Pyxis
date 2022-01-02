@@ -366,13 +366,15 @@ impl ProxyDB {
     // }
     pub fn search_cache(&self, table: u64, key: &[u8], size: usize) -> Option<Bytes> {
         for entry in self.cache.borrow().iter() {
-            if size > 0 {
-                if entry.length == 0 || entry.length > size {
-                    return Some(entry.entry.slice(0, size));
+            if entry.table == table && entry.key == key {
+                if size > 0 {
+                    if entry.length == 0 || entry.length > size {
+                        return Some(entry.entry.slice(0, size));
+                    }
+                } else if entry.length == 0 {
+                    // request full size and the cache is also full-sized
+                    return Some(entry.entry.clone());
                 }
-            } else if entry.length == 0 {
-                // request full size and the cache is also full-sized
-                return Some(entry.entry.clone());
             }
         }
         None
