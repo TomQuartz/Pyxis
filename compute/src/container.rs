@@ -246,12 +246,12 @@ impl Task for Container {
     fn update_cache(
         &mut self,
         record: &[u8],
-        segment_id: usize,
-        num_segments: usize,
-        value_len: usize,
+        // segment_id: usize,
+        // num_segments: usize,
+        // value_len: usize,
     ) -> bool {
         if let Some(proxydb) = self.db.get_mut() {
-            proxydb.collect_resp(record, segment_id, num_segments, value_len);
+            proxydb.collect_resp(record/*, segment_id, num_segments, value_len*/);
             // let keylen = proxydb.get_keylen();
             // match parse_record_optype(record) {
             //     OpType::SandstormRead => {

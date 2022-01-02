@@ -33,6 +33,7 @@ extern crate bytes;
 use self::bytes::{Bytes, BytesMut};
 use db::dispatch::Sender;
 use std::collections::HashMap;
+use std::convert::TryInto;
 use util::model::Model;
 
 /// This struct represents a record for a read/write set. Each record in the read/write set will
@@ -82,9 +83,12 @@ struct KVBuffer {
     key_len: usize,
     keys: Vec<u8>,
     // buffer_size: usize,
+    recvd: usize,
+    num_segments: usize,
     values: Vec<u8>,
     // 0 for full-size, otherwise the first $value_len bytes are cached
     value_len: usize, // pending_resps: usize,
+    total_len: usize,
 }
 impl KVBuffer {
     fn reset(&mut self, table: u64, key_len: usize, keys: &[u8], value_len: usize) {
@@ -93,20 +97,30 @@ impl KVBuffer {
         self.keys.clear();
         self.keys.extend_from_slice(keys);
         self.value_len = value_len;
+        self.recvd = 0;
+        self.num_segments = 0;
+        self.value_len = 0;
     }
-    fn prepare(&mut self, buffer_size: usize /*, num_segments: usize*/) {
+    fn resize(&mut self, size: usize /*, num_segments: usize*/) {
         // self.buffer_size = buffer_size;
         // self.pending_resps = num_segments;
-        if self.values.len() < buffer_size {
-            self.values.resize(buffer_size, 0);
+        if self.values.len() < size {
+            self.values.resize(size, 0);
         }
     }
     fn update(&mut self, offset: usize, value: &[u8]) {
+        self.recvd += 1;
         self.values[offset..offset + value.len()].copy_from_slice(value);
+        self.total_len = self.total_len.max(offset + value.len());
+    }
+    fn all_recvd(&self) -> bool {
+        self.recvd == self.num_segments
     }
 }
 
 struct CacheEntry {
+    table: u64,
+    key: Bytes,
     // 0 for full-size, otherwise the first $length bytes are cached
     length: usize,
     entry: Bytes,
@@ -143,7 +157,8 @@ pub struct ProxyDB {
 
     // A list of the records in Read-set for the extension.
     // readset: RefCell<Vec<KV>>,
-    cache: RefCell<HashMap<(u64, Bytes), CacheEntry>>,
+    // cache: RefCell<HashMap<(u64, Bytes), CacheEntry>>,
+    cache: RefCell<Vec<CacheEntry>>,
 
     // A list of records in the write-set for the extension.
     writeset: RefCell<Vec<KV>>,
@@ -155,7 +170,7 @@ pub struct ProxyDB {
     // This maintains the read-write records accessed by the extension.
     // kv_buffer: RefCell<Vec<u8>>,
     /// number of responses to wait for
-    pending_resps: Cell<usize>,
+    // pending_resps: Cell<usize>,
     buffer: RefCell<KVBuffer>,
     // // the key_len for each table
     // // TODO: make this a hashmap indexed by table_id
@@ -204,7 +219,8 @@ impl ProxyDB {
             waiting: RefCell::new(false),
             sender: sender_service,
             // readset: RefCell::new(Vec::with_capacity(4)),
-            cache: RefCell::new(HashMap::new()),
+            // cache: RefCell::new(HashMap::new()),
+            cache: RefCell::new(Vec::with_capacity(4)),
             writeset: RefCell::new(Vec::with_capacity(4)),
             db_credit: RefCell::new(0),
             model: model,
@@ -215,7 +231,7 @@ impl ProxyDB {
             // // version:RefCell::new(vec![]);
             // current_table: RefCell::new(0);
             // kv_buffer: RefCell::new(Vec::with_capacity(32768)),
-            pending_resps: Cell::new(0),
+            // pending_resps: Cell::new(0),
         }
     }
 
@@ -258,26 +274,25 @@ impl ProxyDB {
     fn cache_buffer(&self) {
         let buffer = self.buffer.borrow();
         let cache = self.cache.borrow_mut();
-        if buffer.keys.len() == buffer.key_len {
-            let key = Bytes::from(&buffer.keys[..]);
-            let entry = CacheEntry {
-                length: 0, // full entry
-                entry: Bytes::from(&buffer.values[..]),
-            };
-            cache.insert((buffer.table, key), entry);
+        let chunk_size = if buffer.value_len == 0 {
+            buffer.total_len
         } else {
-            for (k, v) in buffer
-                .keys
-                .chunks(buffer.key_len)
-                .zip(buffer.values.chunks(buffer.value_len))
-            {
-                let key = Bytes::from(k);
-                let entry = CacheEntry {
-                    length: buffer.value_len, // full entry
-                    entry: Bytes::from(v),
-                };
-                cache.insert((buffer.table, key), entry);
-            }
+            buffer.value_len
+        };
+        for (k, v) in buffer
+            .keys
+            .chunks(buffer.key_len)
+            .zip(buffer.values.chunks(chunk_size))
+        {
+            let key = Bytes::from(k);
+            let entry = CacheEntry {
+                table: buffer.table,
+                key: key,
+                length: buffer.value_len, // 0 for full entry
+                entry: Bytes::from(v),
+            };
+            // cache.insert((buffer.table, key), entry);
+            cache.push(entry);
         }
     }
     /// the get resp is scattered in multiple packets
@@ -285,46 +300,28 @@ impl ProxyDB {
         &self,
         record: &[u8],
         // key_len: usize,
-        segment_id: usize,
-        num_segments: usize,
-        total_len: usize,
+        // segment_id: usize,
+        // num_segments: usize,
+        // total_len: usize,
     ) -> bool {
         // let (version, entry) = record.split_at(8);
         // let (key, value) = entry.split_at(key_len);
-        let value = record;
-        // let value_len = value.len();
-        // if self.pending_resps.get() == 0 {
-        //     let capacity = value_len * num_segments;
-        //     self.kv_buffer.borrow_mut().resize(capacity, 0);
-        //     self.pending_resps.set(num_segments);
-        // }
-        if self.pending_resps.get() == 0 {
-            self.pending_resps.set(num_segments);
-            self.buffer.borrow_mut().prepare(total_len);
-        }
-        // segment id starting from 1
-        // all segments except the last one is fully packed
-        let offset = if segment_id < num_segments {
-            (segment_id - 1) * value.len()
+        let (offset, record) = record.split_at(4);
+        let offset = u32::from_le_bytes(offset.try_into().unwrap());
+        let value = if offset == 0 {
+            let (num_segments, record) = record.split_at(4);
+            let num_segments = u32::from_le_bytes(num_segments.try_into().unwrap());
+            *self.buffer.borrow_mut().num_segments = num_segments as usize;
+            record
         } else {
-            total_len - value.len()
+            record
         };
-        self.buffer.borrow_mut().update(offset, value);
-        let mut pending_resps = self.pending_resps.get();
-        pending_resps -= 1;
-        self.pending_resps.set(pending_resps);
-        if pending_resps == 0 {
-            // self.readset.borrow_mut().push(KV::new(
-            //     // Bytes::from(version),
-            //     Bytes::from(&version[..]),
-            //     Bytes::from(&key[..]),
-            //     Bytes::from(&kv_buffer[..total_len]),
-            // ));
+        self.buffer.borrow_mut().update(offset as usize, value);
+        if self.buffer.borrow().all_recvd() {
             self.cache_buffer();
-            true
-        } else {
-            false
+            return true;
         }
+        false
     }
 
     /// This method is used to add a record to the write set. The return value of put()
@@ -368,7 +365,7 @@ impl ProxyDB {
     //     return 1024;
     // }
     pub fn search_cache(&self, table: u64, key: &[u8], size: usize) -> Option<Bytes> {
-        if let Some(entry) = self.cache.borrow().get(&(table, Bytes::from(key))) {
+        for entry in self.cache.borrow().iter() {
             if size > 0 {
                 if entry.length == 0 || entry.length > size {
                     return Some(entry.entry.slice(0, size));
@@ -380,6 +377,19 @@ impl ProxyDB {
         }
         None
     }
+    // pub fn search_cache(&self, table: u64, key: &[u8], size: usize) -> Option<Bytes> {
+    //     if let Some(entry) = self.cache.borrow().get(&(table, Bytes::from(key))) {
+    //         if size > 0 {
+    //             if entry.length == 0 || entry.length > size {
+    //                 return Some(entry.entry.slice(0, size));
+    //             }
+    //         } else if entry.length == 0 {
+    //             // request full size and the cache is also full-sized
+    //             return Some(entry.entry.clone());
+    //         }
+    //     }
+    //     None
+    // }
 
     /// This method returns the value of the credit which an extension has accumulated over time.
     /// The extension credit is increased whenever it makes a DB function call; like get(),
@@ -537,9 +547,9 @@ impl DB for ProxyDB {
         if let Some(value) = self.search_cache(table, key, 0) {
             return (false, true, unsafe { Some(ReadBuf::new(value)) });
         }
-        self.buffer.borrow_mut().reset(table, key.len(), key, 0);
-        trace!("ext id: {} yield due to missing key", self.parent_id);
+        trace!("ext id: {} yield due to missing key in GET", self.parent_id);
         self.set_waiting(true);
+        self.buffer.borrow_mut().reset(table, key.len(), key, 0);
         // self.sender
         //     .send_get_from_extension(self.tenant, table, key, self.parent_id);
         self.sender
@@ -567,7 +577,15 @@ impl DB for ProxyDB {
             }
         }
         if num_missing > 0 {
+            trace!(
+                "ext id: {} yield due to missing key in MULTIGET",
+                self.parent_id
+            );
             self.set_waiting(true);
+            self.buffer
+                .borrow_mut()
+                .reset(table, key_len, keys, value_len);
+            // TODO: pass in value_len
             self.sender.send_multiget(
                 self.tenant,
                 table,

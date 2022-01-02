@@ -374,9 +374,9 @@ pub struct GetResponse {
     /// successfully.
     // pub value_length: u32,
     // pub table_id: u32,
-    pub num_segments: u32,
-    pub segment_id: u32,
-    pub value_len: u32,
+    // pub num_segments: u32,
+    // pub segment_id: u32,
+    // pub value_len: u32,
 }
 
 impl GetResponse {
@@ -393,15 +393,15 @@ impl GetResponse {
         req_stamp: u64,
         opcode: OpCode,
         tenant: u32,
-        num_segments: u32,
-        segment_id: u32,
-        value_len: u32,
+        // num_segments: u32,
+        // segment_id: u32,
+        // value_len: u32,
     ) -> GetResponse {
         GetResponse {
             common_header: RpcResponseHeader::new(req_stamp, opcode, tenant),
-            num_segments: num_segments,
-            segment_id: segment_id,
-            value_len: value_len,
+            // num_segments: num_segments,
+            // segment_id: segment_id,
+            // value_len: value_len,
         }
     }
 }

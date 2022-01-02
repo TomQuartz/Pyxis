@@ -809,11 +809,11 @@ impl Master {
             key_length = hdr.key_length;
             rpc_stamp = hdr.common_header.stamp;
         }
-        let value_len = self.table_cfg[table_id as usize - 1].value_len;
+        // let value_len = self.table_cfg[table_id as usize - 1].value_len;
         // let record_len = self.table_cfg[table_id as usize - 1].record_len;
         let num_segments = resps.len() as u32;
         // Next, add a header to the response packet.
-        let mut segment_id: u32 = 1;
+        // let mut segment_id: u32 = 1;
         let mut get_resps: Vec<Packet<GetResponse, EmptyMetadata>> = resps
             .into_iter()
             .map(|p| {
@@ -822,12 +822,12 @@ impl Master {
                         rpc_stamp,
                         OpCode::SandstormGetRpc,
                         tenant_id,
-                        num_segments,
-                        segment_id,
-                        value_len as u32,
+                        // num_segments,
+                        // segment_id,
+                        // value_len as u32,
                     ))
                     .expect("Failed to setup GetResponse");
-                segment_id += 1;
+                // segment_id += 1;
                 get_resp
             })
             .collect();
@@ -888,11 +888,12 @@ impl Master {
                                     // resp.add_to_payload_tail(1, pack(&optype)).expect("failed to add optype");
                                     // resp.add_to_payload_tail(size_of::<Version>(), &unsafe { transmute::<Version, [u8; 8]>(version) }).expect("failed to add version number");
                                     // resp.add_to_payload_tail(k.len(), &k[..]).expect("failed to add key");
-                                    // if segment == 0 {
-                                    //     resp.add_to_payload_tail(size_of::<Version>(), &unsafe { transmute::<Version, [u8; 8]>(version) }).expect("failed to add version number");
-                                    //     // resp.add_to_payload_tail(size_of::<u32>(), &unsafe { transmute::<u32, [u8; 4]>(value.len() as u32) }).expect("failed to add value len");
-                                    //     // resp.add_to_payload_tail(size_of::<u32>(), &unsafe { transmute::<u32, [u8; 4]>(num_segments) }).expect("failed to add number of segments");
-                                    // }
+                                    resp.add_to_payload_tail(size_of::<u32>(), &unsafe { transmute::<u32, [u8; 4]>(offset as u32) }).expect("failed to add offset");
+                                    if segment == 0 {
+                                        // resp.add_to_payload_tail(size_of::<Version>(), &unsafe { transmute::<Version, [u8; 8]>(version) }).expect("failed to add version number");
+                                        // resp.add_to_payload_tail(size_of::<u32>(), &unsafe { transmute::<u32, [u8; 4]>(value.len() as u32) }).expect("failed to add value len");
+                                        resp.add_to_payload_tail(size_of::<u32>(), &unsafe { transmute::<u32, [u8; 4]>(num_segments) }).expect("failed to add number of segments");
+                                    }
                                     if segment == num_segments as usize-1{
                                         payload_len = value.len()-offset;
                                     }

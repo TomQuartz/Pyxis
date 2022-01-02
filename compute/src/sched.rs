@@ -173,9 +173,9 @@ impl TaskManager {
         // table_id: usize,
         record: &[u8],
         // recordlen: usize,
-        segment_id: usize,
-        num_segments: usize,
-        value_len: usize,
+        // segment_id: usize,
+        // num_segments: usize,
+        // value_len: usize,
         // ) -> Option<Box<Task>> {
     ) {
         if let Some(mut task) = self.waiting.remove(&id) {
@@ -194,7 +194,7 @@ impl TaskManager {
                 //         ready = true;
                 //     }
                 // }
-                let ready = task.update_cache(record, segment_id, num_segments, value_len);
+                let ready = task.update_cache(record/*, segment_id, num_segments, value_len*/);
                 if ready {
                     trace!("ext id {} all segments recvd", id);
                     self.ready.push_back(task);
@@ -784,9 +784,9 @@ impl ComputeNodeWorker {
         let p = response.parse_header::<GetResponse>();
         let hdr = p.get_header();
         let timestamp = hdr.common_header.stamp; // this is the timestamp when this ext is inserted in taskmanager
-        let num_segments = hdr.num_segments as usize;
-        let segment_id = hdr.segment_id as usize;
-        let value_len = hdr.value_len as usize;
+        // let num_segments = hdr.num_segments as usize;
+        // let segment_id = hdr.segment_id as usize;
+        // let value_len = hdr.value_len as usize;
         // let table_id = hdr.table_id as usize;
         let record = p.get_payload();
         // let recordlen = records.len();
@@ -797,9 +797,9 @@ impl ComputeNodeWorker {
                 timestamp,
                 record,
                 // recordlen,
-                segment_id,
-                num_segments,
-                value_len,
+                // segment_id,
+                // num_segments,
+                // value_len,
             )
             // self.sender.return_credit();
         } else {
