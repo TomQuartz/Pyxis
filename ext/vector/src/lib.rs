@@ -59,6 +59,7 @@ impl From<u8> for QueryOp {
 fn dispatch(db: Rc<DB>) -> u64 {
     let args = db.args();
     let (table, args) = args.split_at(8);
+    let (value_len, args) = args.split_at(8);
     // let (value_len, args) = args.split_at(8);
     let (record_len, args) = args.split_at(4);
     let (opcode, key) = args.split_at(1);
@@ -69,9 +70,16 @@ fn dispatch(db: Rc<DB>) -> u64 {
     return 0;
 }
 
-fn vector_query_handler(db: Rc<DB>, table: u64, record_len: usize, key: Vec<u8>) -> u64 {
+// TODO: transmute this into vec of f32
+fn vector_query_handler(
+    db: Rc<DB>,
+    table: u64,
+    value_len: usize,
+    record_len: usize,
+    key: Vec<u8>,
+) -> u64 {
     let mut obj = None;
-    GET!(db, table, key, obj);
+    GET!(db, table, key, value_len, obj);
     if let Some(val) = obj {
         let mut res = vec![0usize; record_len];
         let mut num_records = 0usize;
@@ -89,7 +97,7 @@ fn vector_query_handler(db: Rc<DB>, table: u64, record_len: usize, key: Vec<u8>)
     db.resp(error.as_bytes());
     return 1;
 }
-
+// TODO: transmute this into vec of f32
 fn topk(src_vec: &[u8], assoc_vecs: Vec<&[u8]>) -> [usize; K] {
     let mut order: Vec<usize> = (0..assoc_vecs.len()).collect();
     order.sort_by_key(|&idx| {
@@ -127,8 +135,6 @@ fn topk_query_handler(db: Rc<DB>, table: u64, record_len: usize, mut key: Vec<u8
     db.resp(error.as_bytes());
     return 1;
 }
-
-fn 
 
 #[no_mangle]
 #[allow(unreachable_code)]

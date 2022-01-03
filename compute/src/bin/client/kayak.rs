@@ -84,6 +84,17 @@ struct Workload {
 }
 
 impl Workload {
+    fn set_query_payload(config: &WorkloadConfig, table: &TableConfig, payload: &mut Vec<u8>) {
+        let mut value_len = if config.opcode == 2 {
+            // for multiget
+            table.record_len as usize
+        } else {
+            table.value_len
+        };
+        payload.extend_from_slice(value_len.to_le_bytes());
+        payload.extend_from_slice(&table.record_len.to_le_bytes());
+        payload.extend_from_slice(&config.opcode.to_le_bytes());
+    }
     fn new(config: &WorkloadConfig, table: &TableConfig) -> Workload {
         let extension = config.extension.as_bytes();
         // let key_offset =
@@ -102,12 +113,12 @@ impl Workload {
         payload.extend_from_slice(&config.table_id.to_le_bytes());
         if config.opcode == 0 {
             // TODO: introduce variation in kv and order, these fields will not be static
+            payload.extend_from_slice(&table.value_len.to_le_bytes());
             payload.extend_from_slice(&config.kv.to_le_bytes());
             payload.extend_from_slice(&config.order.to_le_bytes());
         } else {
             // for real workload
-            payload.extend_from_slice(&table.record_len.to_le_bytes());
-            payload.extend_from_slice(&config.opcode.to_le_bytes());
+            Self::set_query_payload(config, table, payload);
         }
         let key_offset = payload.len();
         let payload_len = key_offset + table.key_len;

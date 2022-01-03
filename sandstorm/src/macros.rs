@@ -18,17 +18,17 @@
 /// then it requests the data using the RPC call.
 #[macro_export]
 macro_rules! GET {
-    ($db:ident, $table:ident, $key:ident, $obj:ident) => {
-        let (server, found, val) = $db.search_get_in_cache($table, &$key);
+    ($db:ident, $table:ident, $key:ident, $size:ident, $obj:ident) => {
+        let (server, found, val) = $db.search_get_in_cache($table, &$key, $size);
         if server == false {
             if found == false {
                 yield 0;
-                $obj = $db.get($table, &$key);
+                $obj = $db.get($table, &$key, $size);
             } else {
                 $obj = val;
             }
         } else {
-            $obj = $db.get($table, &$key);
+            $obj = $db.get($table, &$key, $size);
         }
     };
 }

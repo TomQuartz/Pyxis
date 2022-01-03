@@ -801,6 +801,7 @@ impl Master {
         let mut table_id: TableId = 0;
         let mut key_length = 0;
         let mut rpc_stamp = 0;
+        let mut value_length = 0;
 
         {
             let hdr = req.get_header();
@@ -808,32 +809,36 @@ impl Master {
             table_id = hdr.table_id as TableId;
             key_length = hdr.key_length;
             rpc_stamp = hdr.common_header.stamp;
+            value_length = hdr.val_length as usize;
         }
         // let value_len = self.table_cfg[table_id as usize - 1].value_len;
         // let record_len = self.table_cfg[table_id as usize - 1].record_len;
         let num_segments = resps.len() as u32;
         // Next, add a header to the response packet.
         // let mut segment_id: u32 = 1;
-        let mut get_resps: Vec<Packet<GetResponse, EmptyMetadata>> = resps
+        let mut get_resps: Vec<_> = resps
             .into_iter()
             .map(|p| {
-                let get_resp = p
-                    .push_header(&GetResponse::new(
-                        rpc_stamp,
-                        OpCode::SandstormGetRpc,
-                        tenant_id,
-                        // num_segments,
-                        // segment_id,
-                        // value_len as u32,
-                    ))
-                    .expect("Failed to setup GetResponse");
+                // let get_resp = p
+                p.push_header(&GetResponse::new(
+                    rpc_stamp,
+                    OpCode::SandstormGetRpc,
+                    tenant_id,
+                    num_segments,
+                    // segment_id,
+                    // value_len as u32,
+                ))
+                .expect("Failed to setup GetResponse")
                 // segment_id += 1;
-                get_resp
+                // get_resp
             })
             .collect();
 
         // If the payload size is less than the key length, return an error.
         if req.get_payload().len() < key_length as usize {
+            for resp in get_resps.drain(1..) {
+                resp.free_packet();
+            }
             let get_resps = get_resps
                 .into_iter()
                 .map(|mut p| {
@@ -853,7 +858,7 @@ impl Master {
         // Create a generator for this request.
         let gen = Box::pin(move || {
             let mut status: RpcStatus = RpcStatus::StatusTenantDoesNotExist;
-            let optype: u8 = 0x1; // OpType::SandstormRead
+            // let optype: u8 = 0x1; // OpType::SandstormRead
 
             let outcome =
                 // Check if the tenant exists. If it does, then check if the
@@ -881,6 +886,8 @@ impl Master {
                 .and_then(| (opt, version) | {
                     if let Some(opt) = opt {
                                 let (k, value) = &opt;
+                                assert!(value_length<=value.len());
+                                let value = value.slice(0,value_length);
                                 status = RpcStatus::StatusInternalError;
                                 let mut offset = 0usize;
                                 let mut payload_len = MAX_PAYLOAD;
@@ -888,15 +895,14 @@ impl Master {
                                     // resp.add_to_payload_tail(1, pack(&optype)).expect("failed to add optype");
                                     // resp.add_to_payload_tail(size_of::<Version>(), &unsafe { transmute::<Version, [u8; 8]>(version) }).expect("failed to add version number");
                                     // resp.add_to_payload_tail(k.len(), &k[..]).expect("failed to add key");
-                                    resp.add_to_payload_tail(size_of::<u32>(), &unsafe { transmute::<u32, [u8; 4]>(offset as u32) }).expect("failed to add offset");
-                                    if segment == 0 {
-                                        // resp.add_to_payload_tail(size_of::<Version>(), &unsafe { transmute::<Version, [u8; 8]>(version) }).expect("failed to add version number");
-                                        // resp.add_to_payload_tail(size_of::<u32>(), &unsafe { transmute::<u32, [u8; 4]>(value.len() as u32) }).expect("failed to add value len");
-                                        resp.add_to_payload_tail(size_of::<u32>(), &unsafe { transmute::<u32, [u8; 4]>(num_segments) }).expect("failed to add number of segments");
-                                    }
-                                    if segment == num_segments as usize-1{
-                                        payload_len = value.len()-offset;
-                                    }
+                                    resp.get_mut_header().offset = offset as u32;
+                                    // resp.add_to_payload_tail(size_of::<u32>(), &unsafe { transmute::<u32, [u8; 4]>(offset as u32) }).expect("failed to add offset");
+                                    // if segment == 0 {
+                                    //     // resp.add_to_payload_tail(size_of::<Version>(), &unsafe { transmute::<Version, [u8; 8]>(version) }).expect("failed to add version number");
+                                    //     // resp.add_to_payload_tail(size_of::<u32>(), &unsafe { transmute::<u32, [u8; 4]>(value.len() as u32) }).expect("failed to add value len");
+                                    //     resp.add_to_payload_tail(size_of::<u32>(), &unsafe { transmute::<u32, [u8; 4]>(num_segments) }).expect("failed to add number of segments");
+                                    // }
+                                    let payload_len = MAX_PAYLOAD.min(value.len() - offset);
                                     resp.add_to_payload_tail(payload_len, &value[offset..payload_len]).expect("failed to add payload");
                                     offset += payload_len;
                                 }
@@ -923,17 +929,20 @@ impl Master {
                                 status = RpcStatus::StatusOk;
                                 Some(())
                             });
-            for resp in get_resps.iter_mut() {
-                resp.get_mut_header().common_header.status = status.clone();
-            }
+            // for resp in get_resps.iter_mut() {
+            //     resp.get_mut_header().common_header.status = status.clone();
+            // }
             if outcome == None {
                 warn!(
-                    "kv req with id {} key {:?} table {} failed with status {:?}",
+                    "GET with id {} key {:?} table {} failed with status {:?}",
                     rpc_stamp,
                     req.get_payload().split_at(key_length as usize).0,
                     table_id,
                     status
                 );
+                for resp in get_resps.drain(1..) {
+                    resp.free_packet();
+                }
             }
             // match outcome {
             //     // The RPC completed successfully. Update the response header with
@@ -1479,6 +1488,229 @@ impl Master {
             res.deparse_header(PACKET_UDP_LEN as usize),
         ));
     }
+
+    /// multiget
+    #[allow(unreachable_code)]
+    #[allow(unused_assignments)]
+    pub fn multiget(
+        &self,
+        req: Packet<MultiGetRequest, EmptyMetadata>,
+        resps: Vec<Packet<UdpHeader, EmptyMetadata>>,
+    ) -> Result<
+        Box<Task>,
+        (
+            Packet<UdpHeader, EmptyMetadata>,
+            Vec<Packet<UdpHeader, EmptyMetadata>>,
+        ),
+    > {
+        // First, parse the request packet.
+        // let req = req.parse_header::<MultiGetRequest>();
+
+        // Read fields off the request header.
+        let mut tenant_id: TenantId = 0;
+        let mut table_id: TableId = 0;
+        let mut key_length = 0;
+        let mut num_keys = 0;
+        let mut value_length = 0;
+        let mut rpc_stamp = 0;
+        {
+            let hdr = req.get_header();
+            tenant_id = hdr.common_header.tenant as TenantId;
+            table_id = hdr.table_id as TableId;
+            key_length = hdr.key_len;
+            num_keys = hdr.num_keys;
+            value_length = hdr.value_len as usize;
+            rpc_stamp = hdr.common_header.stamp;
+        }
+        let num_segments = resps.len() as u32;
+        // Next, add a header to the response packet.
+        let mut multiget_resps: Vec<_> = resps
+            .into_iter()
+            .map(|p| {
+                // let multiget_resp = p
+                p.push_header(&MultiGetResponse::new(
+                    rpc_stamp,
+                    OpCode::SandstormMultiGetRpc,
+                    tenant_id,
+                    num_segments,
+                    // segment_id,
+                    // value_len as u32,
+                ))
+                .expect("Failed to setup GetResponse")
+                // segment_id += 1;
+                // multiget_resp
+            })
+            .collect();
+
+        // If the payload size is less than the key length, return an error.
+        if req.get_payload().len() < ((key_length as u32) * num_keys) as usize {
+            for resp in multiget_resps.drain(1..) {
+                resp.free_packet();
+            }
+            let multiget_resps = multiget_resps
+                .into_iter()
+                .map(|mut p| {
+                    p.get_mut_header().common_header.status = RpcStatus::StatusMalformedRequest;
+                    p.deparse_header(PACKET_UDP_LEN as usize)
+                })
+                .collect();
+            // res.get_mut_header().common_header.status = RpcStatus::StatusMalformedRequest;
+            return Err((req.deparse_header(PACKET_UDP_LEN as usize), multiget_resps));
+        }
+
+        // Lookup the tenant, and get a handle to the allocator. Required to avoid capturing a
+        // reference to Master in the generator below.
+        let tenant = self.get_tenant(tenant_id);
+        let alloc: *const Allocator = &self.heap;
+
+        // Create a generator for this request.
+        let gen = Box::pin(move || {
+            let mut n_recs: u32 = 0;
+            let mut status: RpcStatus = RpcStatus::StatusTenantDoesNotExist;
+            // let optype: u8 = 0x1;
+
+            let outcome =
+                // Check if the tenant exists. If it does, then check if the
+                // table exists, and update the status of the rpc.
+                tenant.and_then(| tenant | {
+                                status = RpcStatus::StatusTableDoesNotExist;
+                                tenant.get_table(table_id)
+                            });
+            // If the table exists, then lookup the keys in the database.
+            let mut current_packet = 0usize;
+            if let Some(table) = outcome {
+                status = RpcStatus::StatusObjectDoesNotExist;
+
+                // Iterate across keys in the request payload. There are `num_keys` keys, each
+                // of length `key_length`.
+                // let mut n = 0;
+                let mut packet_offset = 0usize;
+                let mut global_offset = 0usize;
+                for key in req.get_payload().chunks(key_length as usize) {
+                    // n += 1;
+                    // // Corner case: We've either already seen `num_keys` keys or the current key
+                    // is not `key_length` bytes long.
+                    // if n > num_keys || key.len() != key_length as usize {
+                    //     break;
+                    // }
+                    // Lookup the key, and add it to the response payload.
+                    let alloc: &Allocator = accessor(alloc);
+                    let res = table
+                        .get(key)
+                        .and_then(|entry| Some((alloc.resolve(entry.value), entry.version)))
+                        .and_then(|(opt, version)| {
+                            if let Some(opt) = opt {
+                                let (k, value) = &opt;
+                                // let mut remaining = value.len();
+                                assert!(value_length <= value.len());
+                                let mut value_offset = 0usize;
+                                while value_offset < value_length {
+                                    if packet_offset == MAX_PAYLOAD {
+                                        packet_offset = 0;
+                                        current_packet += 1;
+                                        multiget_resps[current_packet].get_mut_header().offset =
+                                            global_offset as u32;
+                                    }
+                                    // if packet_offset == 0 {
+                                    //     multiget_resps[current_packet]
+                                    //         .add_to_payload_tail(size_of::<u32>(), &unsafe {
+                                    //             transmute::<u32, [u8; 4]>(global_offset as u32)
+                                    //         })
+                                    //         .expect("failed to add offset");
+                                    //     if current_packet == 0 {
+                                    //         // placeholder
+                                    //         multiget_resps[current_packet]
+                                    //             .add_to_payload_tail(size_of::<u32>(), &unsafe {
+                                    //                 transmute::<u32, [u8; 4]>(num_segments)
+                                    //             })
+                                    //             .expect("failed to add number of segments");
+                                    //     }
+                                    // }
+                                    let remaining = value_length - value_offset;
+                                    let add = remaining.min(MAX_PAYLOAD - packet_offset);
+                                    multiget_resps[current_packet]
+                                        .add_to_payload_tail(
+                                            add,
+                                            &value[value_offset..value_offset + add],
+                                        )
+                                        .expect("failed to add payload");
+                                    value_offset += add;
+                                    global_offset += add;
+                                    packet_offset += add;
+                                }
+                                Some(())
+                            } else {
+                                None
+                            }
+                        });
+
+                    // If the current lookup failed, then stop all lookups.
+                    match res {
+                        Some(_) => n_recs += 1,
+
+                        None => break,
+                    }
+                }
+                // // Success if all keys could be looked up at the database.
+                // if n_recs == num_keys {
+                //     status = RpcStatus::StatusOk;
+                // }
+            }
+            // Success if all keys could be looked up at the database.
+            if n_recs == num_keys {
+                status = RpcStatus::StatusOk;
+                // for resp in multiget_resps.iter_mut() {
+                //     resp.get_mut_header().common_header.status = status.clone();
+                // }
+                // // set valid segments
+                // multiget_resps[0].get_mut_payload()[4..8].copy_from_slice(&unsafe {
+                //     transmute::<u32, [u8; 4]>(current_packet as u32 + 1)
+                // });
+            } else {
+                warn!(
+                    "MULTIGET with id {} table {} failed with status {:?}",
+                    rpc_stamp,
+                    // req.get_payload().split_at(key_length as usize).0,
+                    table_id,
+                    status
+                );
+                for resp in multiget_resps.drain(1..) {
+                    resp.free_packet();
+                }
+                // multiget_resps[0].get_mut_header().common_header.status = status.clone();
+            }
+
+            // // Write the status into the RPC response header.
+            // res.get_mut_header().common_header.status = status.clone();
+
+            // // If the RPC was handled successfully, then update the response header with the number
+            // // of records that were read from the database.
+            // if status == RpcStatus::StatusOk {
+            //     res.get_mut_header().num_records = n_recs;
+            // }
+
+            // Deparse request and response packets to UDP, and return from the generator.
+            let multiget_resps = multiget_resps
+                .into_iter()
+                .map(|mut p| {
+                    p.get_mut_header().common_header.status = status.clone();
+                    p.deparse_header(PACKET_UDP_LEN as usize)
+                })
+                .collect();
+            return Some((req.deparse_header(PACKET_UDP_LEN as usize), multiget_resps));
+            // return Some((
+            //     req.deparse_header(PACKET_UDP_LEN as usize),
+            //     res.deparse_header(PACKET_UDP_LEN as usize),
+            // ));
+
+            // XXX: This yield is required to get the compiler to compile this closure into a
+            // generator. It is unreachable and benign.
+            yield 0;
+        });
+
+        // Create and return a native task.
+        return Ok(Box::new(Native::new(TaskPriority::REQUEST, gen)));
+    }
     /*
     /// Handles the multiget() RPC request.
     ///
@@ -1636,7 +1868,7 @@ impl Master {
         // Create and return a native task.
         return Ok(Box::new(Native::new(TaskPriority::REQUEST, gen)));
     }
-    */
+
 
     // This functions processes native multiget requests without creating a generator.
     #[allow(unreachable_code)]
@@ -1757,6 +1989,7 @@ impl Master {
             res.deparse_header(PACKET_UDP_LEN as usize),
         ));
     }
+    */
 
     /// Handles the invoke RPC request.
     ///
@@ -2146,7 +2379,6 @@ impl Service for Master {
     > {
         return self.invoke(req, res);
     }
-
     #[inline]
     fn service_native(
         &self,
@@ -2168,14 +2400,13 @@ impl Service for Master {
             // OpCode::SandstormGetRpc => {
             //     return self.get_native(req, res);
             // }
-            OpCode::SandstormPutRpc => {
-                return self.put_native(req, res);
-            }
+            // OpCode::SandstormPutRpc => {
+            //     return self.put_native(req, res);
+            // }
 
-            OpCode::SandstormMultiGetRpc => {
-                return self.multiget_native(req, res);
-            }
-
+            // OpCode::SandstormMultiGetRpc => {
+            //     return self.multiget_native(req, res);
+            // }
             _ => {
                 return Err((req, res));
             }

@@ -34,7 +34,7 @@ pub trait DB {
     ///
     /// A handle that can be used to read the value if the key-value pair
     /// exists inside the database.
-    fn get(&self, table: u64, key: &[u8]) -> Option<ReadBuf>;
+    fn get(&self, table: u64, key: &[u8], size: usize) -> Option<ReadBuf>;
 
     /// This method performs a lookup for a set of keys stored inside the database as
     /// key-value pairs, and returns a hanle that can be used to read the value for each key
@@ -50,13 +50,7 @@ pub trait DB {
     ///
     /// A handle that can be used to read the value for each key in the list, if the key-value
     /// pair exists inside the database.
-    fn multiget(
-        &self,
-        table: u64,
-        key_len: u16,
-        keys: &[u8],
-        value_len: usize,
-    ) -> Option<MultiReadBuf>;
+    fn multiget(&self, table: u64, key_len: u16, keys: &[u8], size: usize) -> Option<MultiReadBuf>;
 
     /// This method will allocate space for a key-value pair inside the
     /// database, and if the allocation was successfull, return a handle that
@@ -141,7 +135,12 @@ pub trait DB {
     /// function is called inside server; False otherwise. The second member is True of the search
     /// is successful; False otherwise. And the third member represents a handle that can be used
     /// to read the value if the key-value pair exists inside the local cache.
-    fn search_get_in_cache(&self, table: u64, key: &[u8]) -> (bool, bool, Option<ReadBuf>);
+    fn search_get_in_cache(
+        &self,
+        table: u64,
+        key: &[u8],
+        size: usize,
+    ) -> (bool, bool, Option<ReadBuf>);
 
     /// This method performs a lookup for a set of keys stored inside the local cache as
     /// key-value pairs, and returns a hanle that can be used to read the value for each key
@@ -162,7 +161,7 @@ pub trait DB {
         table: u64,
         key_len: u16,
         keys: &[u8],
-        value_len: usize,
+        size: usize,
     ) -> (bool, bool, Option<MultiReadBuf>);
 
     /// This method will return the ML model for the given extension. If the model does't exist

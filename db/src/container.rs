@@ -237,9 +237,10 @@ impl<'a> Task for Container<'a> {
     fn update_cache(
         &mut self,
         _record: &[u8],
-        _seg_id: usize,
-        _num_segs: usize,
-        _val_len: usize,
+        // _seg_id: usize,
+        _num_segs: u32,
+        // _val_len: usize,
+        _offset: usize,
     ) -> bool {
         true
     }

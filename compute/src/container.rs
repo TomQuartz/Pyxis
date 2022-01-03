@@ -247,11 +247,12 @@ impl Task for Container {
         &mut self,
         record: &[u8],
         // segment_id: usize,
-        // num_segments: usize,
+        num_segments: u32,
         // value_len: usize,
+        offset: usize,
     ) -> bool {
         if let Some(proxydb) = self.db.get_mut() {
-            proxydb.collect_resp(record/*, segment_id, num_segments, value_len*/);
+            proxydb.collect_resp(record, num_segments, offset);
             // let keylen = proxydb.get_keylen();
             // match parse_record_optype(record) {
             //     OpType::SandstormRead => {

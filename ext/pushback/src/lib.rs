@@ -134,9 +134,11 @@ pub fn init(db: Rc<DB>) -> Pin<Box<Generator<Yield = u64, Return = u64>>> {
         */
         let args = db.args();
         let (table, args) = args.split_at(8);
+        let (size, args) = args.split_at(8);
         let (kv, args) = args.split_at(4);
         let (ord, key) = args.split_at(4);
         let table = u64::from_le_bytes(table.try_into().unwrap());
+        let size = usize::from_le_bytes(size.try_into().unwrap());
         let kv = u32::from_le_bytes(kv.try_into().unwrap());
         let ord = u32::from_le_bytes(ord.try_into().unwrap());
         let mut key = key.to_vec();
@@ -144,7 +146,7 @@ pub fn init(db: Rc<DB>) -> Pin<Box<Generator<Yield = u64, Return = u64>>> {
         let mut res = 0u64;
         let mut obj = None;
         for i in 0..kv {
-            GET!(db, table, key, obj);
+            GET!(db, table, key, size, obj);
             if i == kv - 1 {
                 match obj {
                     // If the object was found, use the response.

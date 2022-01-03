@@ -83,38 +83,41 @@ struct KVBuffer {
     key_len: usize,
     keys: Vec<u8>,
     // buffer_size: usize,
-    recvd: usize,
-    num_segments: usize,
+    recvd: u32,
+    // num_segments: u32,
     values: Vec<u8>,
     // 0 for full-size, otherwise the first $value_len bytes are cached
-    value_len: usize, // pending_resps: usize,
-    total_len: usize,
+    // value_len: usize, // pending_resps: usize,
+    length: usize,
 }
 impl KVBuffer {
-    fn reset(&mut self, table: u64, key_len: usize, keys: &[u8], value_len: usize) {
+    fn reset(&mut self, table: u64, key_len: usize, keys: &[u8] /*, value_len: usize*/) {
         self.table = table;
         self.key_len = key_len;
         self.keys.clear();
         self.keys.extend_from_slice(keys);
-        self.value_len = value_len;
+        // self.value_len = value_len;
         self.recvd = 0;
-        self.num_segments = 0;
-        self.value_len = 0;
+        // self.num_segments = 0;
+        self.length = 0;
     }
-    fn resize(&mut self, size: usize /*, num_segments: usize*/) {
-        // self.buffer_size = buffer_size;
-        // self.pending_resps = num_segments;
+    // fn resize(&mut self, size: usize /*, num_segments: usize*/) {
+    //     // self.buffer_size = buffer_size;
+    //     // self.pending_resps = num_segments;
+    //     if self.values.len() < size {
+    //         self.values.resize(size, 0);
+    //     }
+    // }
+    fn update(&mut self, offset: usize, value: &[u8]) {
+        self.recvd += 1;
         if self.values.len() < size {
             self.values.resize(size, 0);
         }
-    }
-    fn update(&mut self, offset: usize, value: &[u8]) {
-        self.recvd += 1;
         self.values[offset..offset + value.len()].copy_from_slice(value);
-        self.total_len = self.total_len.max(offset + value.len());
+        self.length = self.length.max(offset + value.len());
     }
-    fn all_recvd(&self) -> bool {
-        self.recvd == self.num_segments
+    fn all_recvd(&self, num_segments: u32) -> bool {
+        self.recvd == num_segments
     }
 }
 
@@ -122,7 +125,7 @@ struct CacheEntry {
     table: u64,
     key: Bytes,
     // 0 for full-size, otherwise the first $length bytes are cached
-    length: usize,
+    // length: usize,
     entry: Bytes,
 }
 
@@ -274,11 +277,13 @@ impl ProxyDB {
     fn cache_buffer(&self) {
         let buffer = self.buffer.borrow();
         let cache = self.cache.borrow_mut();
-        let chunk_size = if buffer.value_len == 0 {
-            buffer.total_len
-        } else {
-            buffer.value_len
-        };
+        // let chunk_size = if buffer.value_len == 0 {
+        //     buffer.total_len
+        // } else {
+        //     buffer.value_len
+        // };
+        let num_keys = buffer.keys.len() / buffer.key_len;
+        let chunk_size = buffer.length / num_keys;
         for (k, v) in buffer
             .keys
             .chunks(buffer.key_len)
@@ -288,7 +293,7 @@ impl ProxyDB {
             let entry = CacheEntry {
                 table: buffer.table,
                 key: key,
-                length: buffer.value_len, // 0 for full entry
+                // length: buffer.value_len, // 0 for full entry
                 entry: Bytes::from(v),
             };
             // cache.insert((buffer.table, key), entry);
@@ -301,23 +306,24 @@ impl ProxyDB {
         record: &[u8],
         // key_len: usize,
         // segment_id: usize,
-        // num_segments: usize,
+        num_segments: u32,
         // total_len: usize,
+        offset: usize,
     ) -> bool {
         // let (version, entry) = record.split_at(8);
         // let (key, value) = entry.split_at(key_len);
-        let (offset, record) = record.split_at(4);
-        let offset = u32::from_le_bytes(offset.try_into().unwrap());
-        let value = if offset == 0 {
-            let (num_segments, record) = record.split_at(4);
-            let num_segments = u32::from_le_bytes(num_segments.try_into().unwrap());
-            *self.buffer.borrow_mut().num_segments = num_segments as usize;
-            record
-        } else {
-            record
-        };
-        self.buffer.borrow_mut().update(offset as usize, value);
-        if self.buffer.borrow().all_recvd() {
+        // let (offset, record) = record.split_at(4);
+        // let offset = u32::from_le_bytes(offset.try_into().unwrap());
+        // let value = if offset == 0 {
+        //     let (num_segments, record) = record.split_at(4);
+        //     let num_segments = u32::from_le_bytes(num_segments.try_into().unwrap());
+        //     *self.buffer.borrow_mut().num_segments = num_segments as usize;
+        //     record
+        // } else {
+        //     record
+        // };
+        self.buffer.borrow_mut().update(offset, value);
+        if self.buffer.borrow().all_recvd(num_segments) {
             self.cache_buffer();
             return true;
         }
@@ -366,15 +372,16 @@ impl ProxyDB {
     // }
     pub fn search_cache(&self, table: u64, key: &[u8], size: usize) -> Option<Bytes> {
         for entry in self.cache.borrow().iter() {
-            if entry.table == table && entry.key == key {
-                if size > 0 {
-                    if entry.length == 0 || entry.length > size {
-                        return Some(entry.entry.slice(0, size));
-                    }
-                } else if entry.length == 0 {
-                    // request full size and the cache is also full-sized
-                    return Some(entry.entry.clone());
-                }
+            if entry.table == table && entry.key == key && entry.entry.len() >= size {
+                // if size > 0 {
+                //     if entry.length == 0 || entry.length > size {
+                //         return Some(entry.entry.slice(0, size));
+                //     }
+                // } else if entry.length == 0 {
+                //     // request full size and the cache is also full-sized
+                //     return Some(entry.entry.clone());
+                // }
+                return Some(entry.entry.slice(0, size));
             }
         }
         None
@@ -467,28 +474,22 @@ impl ProxyDB {
 
 impl DB for ProxyDB {
     /// Lookup the `DB` trait for documentation on this method.
-    fn get(&self, table: u64, key: &[u8]) -> Option<ReadBuf> {
+    fn get(&self, table: u64, key: &[u8], size: usize) -> Option<ReadBuf> {
         // let start = rdtsc();
         self.set_waiting(false);
         // let index = self.search_cache(self.readset.borrow().to_vec(), key);
         // let value = self.readset.borrow()[index].value.clone();
-        let value = self.search_cache(table, key, 0).unwrap();
+        let value = self.search_cache(table, key, size).unwrap();
         // *self.db_credit.borrow_mut() += rdtsc() - start;
         unsafe { Some(ReadBuf::new(value)) }
     }
 
     /// Lookup the `DB` trait for documentation on this method.
-    fn multiget(
-        &self,
-        table: u64,
-        key_len: u16,
-        keys: &[u8],
-        value_len: usize,
-    ) -> Option<MultiReadBuf> {
+    fn multiget(&self, table: u64, key_len: u16, keys: &[u8], size: usize) -> Option<MultiReadBuf> {
         self.set_waiting(false);
         let mut objs = vec![];
         for key in keys.chunks(key_len as usize) {
-            let obj = self.search_cache(table, key, value_len).unwrap();
+            let obj = self.search_cache(table, key, size).unwrap();
             objs.push(obj);
         }
         unsafe { Some(MultiReadBuf::new(objs)) }
@@ -538,7 +539,12 @@ impl DB for ProxyDB {
     fn debug_log(&self, _message: &str) {}
 
     /// Lookup the `DB` trait for documentation on this method.
-    fn search_get_in_cache(&self, table: u64, key: &[u8]) -> (bool, bool, Option<ReadBuf>) {
+    fn search_get_in_cache(
+        &self,
+        table: u64,
+        key: &[u8],
+        size: usize,
+    ) -> (bool, bool, Option<ReadBuf>) {
         // let start = rdtsc();
         // let index = self.search_cache(self.readset.borrow().to_vec(), key);
         // if index != 1024 {
@@ -546,16 +552,17 @@ impl DB for ProxyDB {
         //     *self.db_credit.borrow_mut() += rdtsc() - start;
         //     return (false, true, unsafe { Some(ReadBuf::new(value)) });
         // }
-        if let Some(value) = self.search_cache(table, key, 0) {
+        if let Some(value) = self.search_cache(table, key, size) {
             return (false, true, unsafe { Some(ReadBuf::new(value)) });
         }
         trace!("ext id: {} yield due to missing key in GET", self.parent_id);
+        self.sender
+            .send_get_from_extension(self.tenant, table, key, size as u32, self.parent_id);
         self.set_waiting(true);
-        self.buffer.borrow_mut().reset(table, key.len(), key, 0);
+        // NOTE: we could have set buffer.length here
+        self.buffer.borrow_mut().reset(table, key.len(), key);
         // self.sender
         //     .send_get_from_extension(self.tenant, table, key, self.parent_id);
-        self.sender
-            .send_get(self.tenant, table, key, self.parent_id);
         // *self.db_credit.borrow_mut() += rdtsc() - start;
         (false, false, None)
     }
@@ -565,13 +572,13 @@ impl DB for ProxyDB {
         table: u64,
         key_len: u16,
         keys: &[u8],
-        value_len: usize,
+        size: usize,
     ) -> (bool, bool, Option<MultiReadBuf>) {
         let mut objs = vec![];
         let mut missing = vec![];
         let mut num_missing = 0u32;
         for key in keys.chunks(key_len as usize) {
-            if let Some(value) = self.search_cache(table, key, value_len) {
+            if let Some(value) = self.search_cache(table, key, size) {
                 objs.push(value);
             } else {
                 missing.extend_from_slice(key);
@@ -583,20 +590,17 @@ impl DB for ProxyDB {
                 "ext id: {} yield due to missing key in MULTIGET",
                 self.parent_id
             );
-            self.set_waiting(true);
-            self.buffer
-                .borrow_mut()
-                .reset(table, key_len, keys, value_len);
-            // TODO: pass in value_len
             self.sender.send_multiget(
                 self.tenant,
                 table,
                 key_len,
                 num_missing,
                 &missing,
-                value_len as u32,
+                size as u32,
                 self.parent_id,
             );
+            self.set_waiting(true);
+            self.buffer.borrow_mut().reset(table, key_len, missing);
             (false, false, None)
         } else {
             (false, true, unsafe { Some(MultiReadBuf::new(objs)) })

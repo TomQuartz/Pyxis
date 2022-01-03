@@ -174,8 +174,9 @@ impl TaskManager {
         record: &[u8],
         // recordlen: usize,
         // segment_id: usize,
-        // num_segments: usize,
+        num_segments: u32,
         // value_len: usize,
+        offset: usize,
         // ) -> Option<Box<Task>> {
     ) {
         if let Some(mut task) = self.waiting.remove(&id) {
@@ -194,7 +195,7 @@ impl TaskManager {
                 //         ready = true;
                 //     }
                 // }
-                let ready = task.update_cache(record/*, segment_id, num_segments, value_len*/);
+                let ready = task.update_cache(record, num_segments, offset);
                 if ready {
                     trace!("ext id {} all segments recvd", id);
                     self.ready.push_back(task);
@@ -753,6 +754,7 @@ impl ComputeNodeWorker {
                 }
             }
             op @ OpCode::SandstormGetRpc => self.process_get_resp(packet), //(self.process_get_resp(packet), op),
+            op @ OpCode::SandstormMultiGetRpc => self.process_multiget_resp(packet),
             // #[cfg(feature = "queue_len")]
             // OpCode::TerminateRpc => {
             //     self.terminate.store(true, Ordering::Relaxed);
@@ -784,13 +786,14 @@ impl ComputeNodeWorker {
         let p = response.parse_header::<GetResponse>();
         let hdr = p.get_header();
         let timestamp = hdr.common_header.stamp; // this is the timestamp when this ext is inserted in taskmanager
-        // let num_segments = hdr.num_segments as usize;
+        let num_segments = hdr.num_segments;
+        let offset = hdr.offset as usize;
         // let segment_id = hdr.segment_id as usize;
         // let value_len = hdr.value_len as usize;
         // let table_id = hdr.table_id as usize;
         let record = p.get_payload();
         // let recordlen = records.len();
-        let task = if p.get_header().common_header.status == RpcStatus::StatusOk {
+        let task = if hdr.common_header.status == RpcStatus::StatusOk {
             // self.manager
             //     .update_rwset(timestamp, table_id, records, recordlen);
             self.manager.update_rwset(
@@ -798,15 +801,54 @@ impl ComputeNodeWorker {
                 record,
                 // recordlen,
                 // segment_id,
-                // num_segments,
+                num_segments,
                 // value_len,
+                offset,
             )
             // self.sender.return_credit();
         } else {
             warn!(
-                "kv req of ext id: {} failed with status {:?}",
+                "GET req of ext id: {} failed with status {:?}",
+                timestamp, hdr.common_header.status
+            );
+            // None
+        };
+        p.free_packet();
+        // task
+    }
+
+    fn process_multiget_resp(
+        &mut self,
+        response: Packet<UdpHeader, EmptyMetadata>,
+        // ) -> Option<Box<Task>> {
+    ) {
+        let p = response.parse_header::<MultiGetResponse>();
+        let hdr = p.get_header();
+        let timestamp = hdr.common_header.stamp; // this is the timestamp when this ext is inserted in taskmanager
+        let num_segments = hdr.num_segments;
+        let offset = hdr.offset as usize;
+        // let segment_id = hdr.segment_id as usize;
+        // let value_len = hdr.value_len as usize;
+        // let table_id = hdr.table_id as usize;
+        let record = p.get_payload();
+        // let recordlen = records.len();
+        let task = if hdr.common_header.status == RpcStatus::StatusOk {
+            // self.manager
+            //     .update_rwset(timestamp, table_id, records, recordlen);
+            self.manager.update_rwset(
                 timestamp,
-                p.get_header().common_header.status
+                record,
+                // recordlen,
+                // segment_id,
+                num_segments,
+                // value_len,
+                offset,
+            )
+            // self.sender.return_credit();
+        } else {
+            warn!(
+                "MULTIGET req of ext id: {} failed with status {:?}",
+                timestamp, hdr.common_header.status
             );
             // None
         };
