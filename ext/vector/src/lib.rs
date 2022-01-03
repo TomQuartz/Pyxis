@@ -70,6 +70,28 @@ fn dispatch(db: Rc<DB>) -> u64 {
     return 0;
 }
 
+fn reinterpret<T>(src: &[u8]) -> &[T] {
+    // let (_, v, _) = unsafe { src.align_to::<T>() };
+    // v
+    unsafe { src.align_to::<T>().1 }
+}
+
+fn vectorize<T>(val: &[u8], record_len: usize) -> Vec<&[T]> {
+    val.chunks(record_len)
+        .map(|record| reinterpret(record))
+        .collect::<Vec<_>>()
+}
+
+fn add(to: &mut [f32], from: &[f32]) {
+    for (x, &y) in to.iter_mut().zip(from.iter()) {
+        *x += y;
+    }
+}
+
+fn dot(x: &[f32], y: &[f32]) -> f32 {
+    x.iter().zip(y.iter()).map(|(&a, &b)| a * b).sum::<f32>()
+}
+
 // TODO: transmute this into vec of f32
 fn vector_query_handler(
     db: Rc<DB>,
@@ -81,16 +103,30 @@ fn vector_query_handler(
     let mut obj = None;
     GET!(db, table, key, value_len, obj);
     if let Some(val) = obj {
-        let mut res = vec![0usize; record_len];
-        let mut num_records = 0usize;
+        // let mut res = vec![0usize; record_len];
+        // let mut num_records = 0usize;
+        // for v in val.read().chunks(record_len) {
+        //     num_records += 1;
+        //     for (x, &y) in res.iter_mut().zip(v.iter()) {
+        //         *x += y as usize;
+        //     }
+        // }
+        // let res = res.iter().map(|&x| (x / num_records) as u8).collect();
+        // db.resp(&res[..]);
+        let mut mean = vec![0f32; record_len / 4];
+        let mut records = 0f32;
         for v in val.read().chunks(record_len) {
-            num_records += 1;
-            for (x, &y) in res.iter_mut().zip(v.iter()) {
-                *x += y as usize;
-            }
+            num_records += 1.0;
+            let v = reinterpret(v);
+            add(mean, v);
         }
-        let res = res.iter().map(|&x| (x / num_records) as u8).collect();
-        db.resp(&res[..]);
+        for x in mean.iter_mut() {
+            *x /= num_records;
+        }
+        db.resp(std::slice::from_raw_parts(
+            mean.as_ptr() as *const u8,
+            mean.len() * 4,
+        ));
         return 0;
     }
     let error = "Object does not exist";
@@ -98,19 +134,25 @@ fn vector_query_handler(
     return 1;
 }
 // TODO: transmute this into vec of f32
-fn topk(src_vec: &[u8], assoc_vecs: Vec<&[u8]>) -> [usize; K] {
+fn topk(src_vec: Vec<&[f32]>, assoc_vecs: Vec<Vec<&[f32]>>) -> [usize; K] {
+    // TODO: sort
     let mut order: Vec<usize> = (0..assoc_vecs.len()).collect();
-    order.sort_by_key(|&idx| {
-        -assoc_vecs[idx]
-            .iter()
-            .zip(src_vec.iter())
-            .map(|(&a, &b)| (a as i32) * (b as i32))
-            .sum::<i32>()
+    order.sort_by_cached_key(|&idx| {
+        let vecs: Vec<_> = ass
+            .chunks(record_len)
+            .map(|record| u8_to_f32(record))
+            .collect();
     });
     order[..K].try_into().unwrap()
 }
 
-fn topk_query_handler(db: Rc<DB>, table: u64, record_len: usize, mut key: Vec<u8>) -> u64 {
+fn topk_query_handler(
+    db: Rc<DB>,
+    table: u64,
+    value_len: usize,
+    record_len: usize,
+    mut key: Vec<u8>,
+) -> u64 {
     let key_len = key.len() as u16;
     // expected table order: id_assoc = id_vector + 1
     let assoc_table = table + 1;
@@ -120,10 +162,16 @@ fn topk_query_handler(db: Rc<DB>, table: u64, record_len: usize, mut key: Vec<u8
     // NOTE: for now, assume record_len < full table entry size
     // i.e., topk is computed over the first vector record
     // for full size, pass size = 0 to multiget; see proxy.rs for explanation
-    MULTIGET!(db, table, key_len, key, record_len, objs);
+    MULTIGET!(db, table, key_len, key, value_len, objs);
     if let Some(vals) = objs {
         let (src_key, assoc_keys) = key.split_at(key_len as usize);
-        let (src_vec, assoc_vecs) = vals.split_at(record_len);
+        let assoc_keys = vectorize::<u8>(assoc_keys, key_len as usize);
+        let (src_val, assoc_vals) = vals.split_at(value_len);
+        let src_vec = vectorize::<f32>(src_val, record_len);
+        let assoc_vecs = assoc_vals
+            .chunks(value_len)
+            .map(|val| vectorize::<f32>(val, record_len))
+            .collect::<Vec<_>>();
         let topk = topk(src_vec, assoc_vecs);
         for &idx in &topk {
             let offset = idx * key_len as usize;
