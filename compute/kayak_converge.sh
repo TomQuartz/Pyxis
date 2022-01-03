@@ -3,7 +3,7 @@ set -exu
 
 KAYAK_PATH="kayak.toml"
 
-LOG_PATH="../logs/kayak_converge/"
+LOG_PATH="../logs/kayak_sweep/"
 
 date=`date +%Y-%m-%d`
 
@@ -23,6 +23,7 @@ OUTPUT=${LOG_PATH}${OUTPUT_FILE}
 line_learnable_kayak=6
 line_partition_kayak=7
 line_max_out_kayak=8
+line_num_cores_kayak=19
 
 # sed -i -e "${line_learnable_kayak}c learnable = true" ${KAYAK_PATH}
 # sed -i -e "${line_partition_kayak}c partition = 50" ${KAYAK_PATH}
@@ -31,7 +32,9 @@ line_max_out_kayak=8
 # echo "" >> ${OUTPUT}
 
 sed -i -e "${line_learnable_kayak}c learnable = false" ${KAYAK_PATH}
-partition=(80 85 90 95 100)
+sed -i -e "${line_max_out_kayak}c max_out = 16" ${KAYAK_PATH}
+sed -i -e "${line_num_cores_kayak}c num_cores = 8" ${KAYAK_PATH}
+partition=(0 10 20 30 40 50 60 70 80)
 echo "sweep" >> ${OUTPUT}
 for p in ${partition[@]}
 do

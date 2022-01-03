@@ -3,7 +3,7 @@ set -exu
 
 LB_PATH="lb.toml"
 
-LOG_PATH="../logs/lb_converge/"
+LOG_PATH="../logs/lb_optimal/"
 
 date=`date +%Y-%m-%d`
 
@@ -31,14 +31,14 @@ line_max_out_lb=8
 # echo "" >> ${OUTPUT}
 
 sed -i -e "${line_learnable_lb}c learnable = false" ${LB_PATH}
-partition=(0 10 20 30 40 50 60 70 80 90 100)
+partition=(78 79 80 81 82)
 # partition=()
 echo "sweep" >> ${OUTPUT}
 for p in ${partition[@]}
 do
     sed -i -e "${line_partition_lb}c partition = ${p}" ${LB_PATH}
     echo "partition = ${p}" >> ${OUTPUT}
-    sudo ../scripts/run-dyn >> ${OUTPUT}
+    sudo ../scripts/run-elastic >> ${OUTPUT}
     echo "" >> ${OUTPUT}
 done
 

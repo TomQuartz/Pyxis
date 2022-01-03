@@ -4,7 +4,7 @@ set -exu
 KAYAK_PATH="./kayak.toml"
 LB_PATH="lb.toml"
 
-LOG_PATH="../logs/test_single-type-32C1S/"
+LOG_PATH="../logs/test_single-type-128C1S/"
 
 date=`date +%Y-%m-%d`
 
@@ -28,7 +28,7 @@ line_max_out_kayak=8
 line_xloop_factor=10
 line_learn_rate=12
 
-maxout=(32)
+maxout=(128)
 partition=(100 0)
 
 sed -i -e "${line_learnable_kayak}c learnable = false" ${KAYAK_PATH}

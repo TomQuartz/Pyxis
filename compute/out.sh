@@ -4,7 +4,7 @@ set -exu
 KAYAK_PATH="./kayak.toml"
 LB_PATH="lb.toml"
 
-LOG_PATH="../logs/nCmS_ultimate/"
+LOG_PATH="../logs/nCmS_optimal/"
 
 date=`date +%Y-%m-%d`
 
@@ -27,8 +27,8 @@ line_partition_lb=7
 line_max_out_lb=8
 line_num_cores_lb=38
 
-maxout=(1 2 4 8 12 16 24 32 48 64 96 128 192 224 256)
-cores=(2 4 6)
+maxout=()
+cores=()
 echo "lb:" >> ${OUTPUT}
 
 sed -i -e "${line_learnable_lb}c learnable = true" ${LB_PATH}
@@ -60,8 +60,8 @@ line_xloop_factor=10
 line_learn_rate=12
 line_num_cores_kayak=19
 
-maxout=(1 2 4 6 8 12 16 24)
-cores=(2 4 6 7)
+maxout=()
+cores=()
 echo "kayak:" >> ${OUTPUT}
 
 sed -i -e "${line_learnable}c learnable = true" ${KAYAK_PATH}
@@ -86,8 +86,8 @@ done
 
 
 # only C
-maxout=(1 2 4 6 8 12 16)
-cores=(2 4 6 7)
+maxout=()
+cores=()
 echo "only C:" >> ${OUTPUT}
 
 sed -i -e "${line_learnable}c learnable = false" ${KAYAK_PATH}
@@ -112,8 +112,8 @@ done
 
 
 # only S
-maxout=(1 2 4 6 8 12 16)
-cores=(2 4 6 7)
+maxout=()
+cores=()
 echo "only S:" >> ${OUTPUT}
 
 sed -i -e "${line_learnable}c learnable = false" ${KAYAK_PATH}
@@ -133,6 +133,34 @@ do
     sed -i -e "${line_max_out_kayak}c max_out = ${t}" ${KAYAK_PATH}
     echo "max_out = ${t}" >> ${OUTPUT}
     sudo ../scripts/run-kayak >> ${OUTPUT}
+    echo "" >> ${OUTPUT}
+done
+
+
+# optimal
+
+maxout=(1 2 4 8 12 16 24 32 48 64 96 128 192 256)
+maxout=()
+cores=(2 4 6)
+echo "lb optimal:" >> ${OUTPUT}
+
+sed -i -e "${line_learnable_lb}c learnable = false" ${LB_PATH}
+sed -i -e "${line_partition_lb}c partition = 21" ${LB_PATH}
+sed -i -e "${line_max_out_lb}c max_out = 1" ${LB_PATH}
+for c in ${cores[@]}
+do
+    sed -i -e "${line_num_cores_lb}c num_cores = ${c}" ${LB_PATH}
+    echo "num_cores = ${c}" >> ${OUTPUT}
+    sudo ../scripts/run-elastic >> ${OUTPUT}
+    echo "" >> ${OUTPUT}
+done
+
+sed -i -e "${line_num_cores_lb}c num_cores = 8" ${LB_PATH}
+for t in ${maxout[@]}
+do
+    sed -i -e "${line_max_out_lb}c max_out = ${t}" ${LB_PATH}
+    echo "max_out = ${t}" >> ${OUTPUT}
+    sudo ../scripts/run-elastic >> ${OUTPUT}
     echo "" >> ${OUTPUT}
 done
 
