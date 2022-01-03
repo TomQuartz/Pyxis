@@ -396,6 +396,7 @@ impl Sender {
         k_len: u16,
         n_keys: u32,
         keys: &[u8],
+        value_len: u32,
         id: u64,
     ) {
         let (server_idx, port_idx) = self.get_endpoint();
@@ -408,6 +409,7 @@ impl Sender {
             k_len,
             n_keys,
             keys,
+            value_len,
             id,
             port_idx,
         );

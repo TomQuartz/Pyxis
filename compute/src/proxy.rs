@@ -594,6 +594,7 @@ impl DB for ProxyDB {
                 key_len,
                 num_missing,
                 &missing,
+                value_len as u32,
                 self.parent_id,
             );
             (false, false, None)

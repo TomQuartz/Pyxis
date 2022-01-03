@@ -309,6 +309,7 @@ pub fn create_multiget_rpc(
     key_len: u16,
     num_keys: u32,
     keys: &[u8],
+    value_len: u32,
     id: u64,
     dst: u16,
 ) -> Packet<IpHeader, EmptyMetadata> {
@@ -316,7 +317,7 @@ pub fn create_multiget_rpc(
     // header.
     let mut request = create_request(mac, ip, udp, dst)
         .push_header(&MultiGetRequest::new(
-            tenant, table_id, key_len, num_keys, id,
+            tenant, table_id, key_len, num_keys, value_len, id,
         ))
         .expect("Failed to push RPC header into request!");
 

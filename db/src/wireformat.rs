@@ -792,6 +792,8 @@ pub struct MultiGetRequest {
     /// The number of keys to be looked up at the database. Every key should be `key_len` bytes
     /// long.
     pub num_keys: u32,
+
+    pub value_len: u32,
 }
 
 // Implementation of methods on MultiGetRequest.
@@ -807,7 +809,7 @@ impl MultiGetRequest {
     ///             length.
     /// * `n_keys`: The number of keys to be looked up (each of length `k_len`).
     /// * `stamp`:  Identifier of the RPC. Can be used as a timestamp.
-    pub fn new(tenant: u32, table: u64, k_len: u16, n_keys: u32, stamp: u64) -> MultiGetRequest {
+    pub fn new(tenant: u32, table: u64, k_len: u16, n_keys: u32, value_len: u32, stamp: u64) -> MultiGetRequest {
         MultiGetRequest {
             common_header: RpcRequestHeader::new(
                 Service::MasterService,
@@ -818,6 +820,7 @@ impl MultiGetRequest {
             table_id: table,
             key_len: k_len,
             num_keys: n_keys,
+            value_len: value_len,
         }
     }
 }
