@@ -238,10 +238,11 @@ fn auth_query_handler(
     db: Rc<DB>,
     table: u64,
     value_len: usize,
-    key_len: usize,
+    passwd_len: usize,
     args: &[u8],
 ) -> u64 {
     // decrypt aes-encrypted passwd
+    let key_len = args.len() - passwd_len;
     let (userid, passwd) = args.split_at(key_len);
     let userid = userid.to_vec();
     let mut passwd = passwd.to_vec();

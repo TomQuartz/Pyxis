@@ -64,6 +64,7 @@ use std::io::Write as writef;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::RwLock;
+use workload::*;
 use xloop::*;
 
 struct MovingAvg {
@@ -116,7 +117,7 @@ struct Slot {
     counter: usize,
     type_id: usize,
 }
-
+/*
 // this is a blackbox to lb, only used to generate requests
 struct Workload {
     // rng: Box<dyn Rng>,
@@ -131,7 +132,7 @@ struct Workload {
 
 impl Workload {
     fn set_query_payload(config: &WorkloadConfig, table: &TableConfig, payload: &mut Vec<u8>) {
-        let mut value_len = if config.opcode == 2 {
+        let value_len = if config.opcode == 2 {
             // for multiget
             table.record_len as usize
         } else {
@@ -186,17 +187,20 @@ impl Workload {
     }
     fn sample_key(&mut self, rng: &mut impl Rng) -> &[u8] {
         let key = self.key_rng.sample(rng) as u32;
-        let key: [u8; 4] = unsafe { transmute(key.to_le()) };
+        // let key: [u8; 4] = unsafe { transmute(key.to_le()) };
+        let key = key.to_le_bytes();
         self.payload[self.key_offset..self.key_offset + key.len()].copy_from_slice(&key);
         &self.payload
     }
 }
+*/
 
 // this is a blackbox to lb, only used to generate requests
 struct LoadGenerator {
     rng: Box<dyn Rng>,
     tenant_rng: Box<ZipfDistribution>,
-    workloads: Vec<Workload>,
+    // workloads: Vec<Workload>,
+    workloads: Vec<Box<dyn Workload>>,
     loop_interval: u64,
     junctures: Vec<u64>,
     cum_ratios: Vec<Vec<f32>>, // 0-10000
@@ -209,7 +213,8 @@ impl LoadGenerator {
         for workload in &config.workloads {
             let table_id = workload.table_id as usize;
             let table = &config.tables[table_id - 1];
-            workloads.push(Workload::new(workload, table));
+            // workloads.push(Workload::new(workload, table));
+            workloads.push(create_workload(workload, table));
         }
         // phases
         let mut sum_time = 0u64;
@@ -262,8 +267,10 @@ impl LoadGenerator {
         (
             // partition > rand_ratio as f64,
             self.tenant_rng.sample(&mut self.rng) as u32,
-            self.workloads[type_id].name_len,
-            self.workloads[type_id].sample_key(&mut self.rng),
+            // self.workloads[type_id].name_len,
+            // self.workloads[type_id].sample_key(&mut self.rng),
+            self.workloads[type_id].name_len(),
+            self.workloads[type_id].gen(&mut self.rng),
         )
     }
 }
