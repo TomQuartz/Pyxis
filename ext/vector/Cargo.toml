@@ -7,10 +7,10 @@ authors = ["tomquartz"]
 crate-type = ["dylib"]
 
 [dependencies]
-db        = { path = "../../db" }
-sandstorm = { path = "../../sandstorm" }
+db          = { path = "../../db" }
+sandstorm   = { path = "../../sandstorm" }
 rust-crypto = "0.2.36"
-openssl = "0.10.24"
+openssl     = "0.10.24"
 
 [features]
 default = []

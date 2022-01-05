@@ -23,15 +23,11 @@ extern crate db;
 #[macro_use]
 extern crate sandstorm;
 
-// #[macro_use]
-// extern crate cfg_if;
-
 use std::ops::Generator;
 use std::pin::Pin;
 use std::rc::Rc;
 
 use sandstorm::db::DB;
-use sandstorm::pack::pack;
 use std::convert::TryInto;
 
 extern crate openssl;
@@ -43,7 +39,7 @@ use crypto::scrypt::{scrypt, ScryptParams};
 // for topk
 const K: usize = 5;
 // for auth
-const SCRYPT_PARAMS: (u8, u32, u32) = (3, 2, 2);
+const SCRYPT_PARAMS: (u8, u32, u32) = (4, 1, 2);
 const AES_KEY: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F";
 static mut AES_IV: [u8; 32] = *b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F\
         \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F";
@@ -246,8 +242,8 @@ fn auth_query_handler(
     args: &[u8],
 ) -> u64 {
     // decrypt aes-encrypted passwd
-    let (key, passwd) = args.split_at(key_len);
-    let key = key.to_vec();
+    let (userid, passwd) = args.split_at(key_len);
+    let userid = userid.to_vec();
     let mut passwd = passwd.to_vec();
     let mut decrpyted = [0u8; 16];
     let ekey = AesKey::new_decrypt(AES_KEY).unwrap();
@@ -261,7 +257,7 @@ fn auth_query_handler(
     passwd[0..16].copy_from_slice(&decrpyted[0..16]);
     // hash passwd and compare
     let mut obj = None;
-    GET!(db, table, key, value_len, obj);
+    GET!(db, table, userid, value_len, obj);
     if let Some(val) = obj {
         let (hash, salt) = val.read().split_at(24);
         let mut scrypt_hash = [0u8; 24];

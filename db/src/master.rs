@@ -14,7 +14,8 @@
  */
 
 use bincode::serialize;
-use crypto::bcrypt::bcrypt;
+// use crypto::bcrypt::bcrypt;
+use crypto::scrypt::{scrypt, ScryptParams};
 use hashbrown::HashMap;
 
 use std::fs::File;
@@ -58,6 +59,8 @@ use sandstorm::{LittleEndian, ReadBytesExt};
 pub fn accessor<'a>(alloc: *const Allocator) -> &'a Allocator {
     unsafe { &*alloc }
 }
+
+const SCRYPT_PARAMS: (u8, u32, u32) = (4, 1, 2);
 
 // The number of buckets in the `tenants` hashtable inside of Master.
 const TENANT_BUCKETS: usize = 1;
@@ -146,7 +149,36 @@ impl Master {
             // ext_cfg: ext_cfg.clone(),
         }
     }
-
+    /// Loads the get(), put(), tao(), and bad() extensions.
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant`: Identifier of the tenant to load the extension for.
+    pub fn load_extensions(&mut self, tenant: TenantId) {
+        // Load the pushback() extension.
+        let name = "../ext/pushback/target/release/libpushback.so";
+        if self.extensions.load(name, tenant, "pushback") == false {
+            panic!("Failed to load pushback() extension.");
+        }
+        let name = "../ext/vector/target/release/libvector.so";
+        if self.extensions.load(name, tenant, "vector") == false {
+            panic!("Failed to load vector() extension.");
+        }
+    }
+    pub fn fill_tables(&mut self, tenant_id: TenantId, table_configs: &Vec<TableConfig>) {
+        let mut tenant = Tenant::new(tenant_id);
+        for (i, table_config) in table_configs.iter().enumerate() {
+            let table_id = (i + 1) as u64;
+            match table_config.description.as_str() {
+                "synthetic" => self.fill_synthetic(&mut tenant, table_id, table_config),
+                "vector" | "scalar" => self.fill_float(&mut tenant, table_id, table_config),
+                "assoc" => self.fill_assoc(&mut tenant, table_id, table_config),
+                "auth" => self.fill_auth(&mut tenant, table_id, table_config),
+                _ => panic!("TABLE {}: invalid table description", table_id),
+            }
+        }
+        self.insert_tenant(tenant);
+    }
     /// Adds a tenant and a table full of objects.
     ///
     /// # Arguments
@@ -156,47 +188,179 @@ impl Master {
     /// * `table_id`:  Identifier of the table to be added to the tenant. This table will contain
     ///                all the objects.
     /// * `num`:       The number of objects to be added to the data table.
-    pub fn fill_test(
+    pub fn fill_synthetic(
         &mut self,
-        tenant_id: TenantId,
-        table_configs: &Vec<TableConfig>, /*table_id: TableId, num: u32*/
+        tenant: &mut Tenant,
+        table_id: u64,
+        table_config: &TableConfig,
     ) {
-        // Create a tenant containing the table.
-        let mut tenant = Tenant::new(tenant_id);
-        for (idx, table_config) in table_configs.iter().enumerate() {
-            let table_id = idx as u64 + 1;
-            tenant.create_table(table_id);
+        tenant.create_table(table_id);
+        let table = tenant
+            .get_table(table_id)
+            .expect("Failed to init test table.");
 
-            let table = tenant
-                .get_table(table_id)
-                .expect("Failed to init test table.");
+        let mut key = vec![0; table_config.key_len];
+        let mut val = vec![0; table_config.value_len];
+        let num_records = table_config.num_records;
+        for i in 1..=num_records {
+            key[0..4].copy_from_slice(&i.to_le_bytes());
+            val[0..4].copy_from_slice(&(i % num_records + 1).to_le_bytes());
+            // let value: [u8; 4] = unsafe { transmute((i % num_records + 1).to_le()) };
+            // let temp: [u8; 4] = unsafe { transmute(i.to_le()) };
+            // &key[0..4].copy_from_slice(&temp);
+            // &val[0..4].copy_from_slice(&value);
 
-            let mut key = vec![0; table_config.key_len];
-            let mut val = vec![0; table_config.value_len];
-            let num_records = table_config.num_records;
-
-            // let mut key = vec![0; self.key_len];
-            // let mut val = vec![0; self.value_len];
-
-            // Allocate objects, and fill up the above table. Each object consists of a 30 Byte key
-            // and a 100 Byte value.
-            for i in 1..(num_records + 1) {
-                let value: [u8; 4] = unsafe { transmute((i % num_records + 1).to_le()) };
-                let temp: [u8; 4] = unsafe { transmute(i.to_le()) };
-                &key[0..4].copy_from_slice(&temp);
-                &val[0..4].copy_from_slice(&value);
-
-                let obj = self
-                    .heap
-                    .object(tenant_id, table_id, &key, &val)
-                    .expect("Failed to create test object.");
-                table.put(obj.0, obj.1);
-            }
-
-            // Add the tenant.
+            let obj = self
+                .heap
+                .object(tenant.id, table_id, &key, &val)
+                .expect("Failed to create test object.");
+            table.put(obj.0, obj.1);
         }
-        self.insert_tenant(tenant);
     }
+    pub fn fill_float(&mut self, tenant: &mut Tenant, table_id: u64, table_config: &TableConfig) {
+        assert_eq!(
+            table_config.record_len % 4,
+            0,
+            "each record should be a list of f32(4 bytes) values"
+        );
+        assert_eq!(
+            table_config.value_len % table_config.record_len as usize,
+            0,
+            "each entry should be a list of records"
+        );
+        tenant.create_table(table_id);
+        let table = tenant
+            .get_table(table_id)
+            .expect("Failed to init test table.");
+
+        let mut key = vec![0; table_config.key_len];
+        let mut val = vec![0; table_config.value_len];
+        let num_records = table_config.num_records;
+        for i in 1..=num_records {
+            // toy data
+            key[0..4].copy_from_slice(&i.to_le_bytes());
+            val[0..4].copy_from_slice(&(i % num_records + 1).to_le_bytes());
+            let obj = self
+                .heap
+                .object(tenant.id, table_id, &key, &val)
+                .expect("Failed to create test object.");
+            table.put(obj.0, obj.1);
+        }
+    }
+    pub fn fill_assoc(&mut self, tenant: &mut Tenant, table_id: u64, table_config: &TableConfig) {
+        assert_eq!(
+            table_config.value_len % table_config.key_len as usize,
+            0,
+            "each assoc entry should be a list of keys"
+        );
+        tenant.create_table(table_id);
+        let table = tenant
+            .get_table(table_id)
+            .expect("Failed to init test table.");
+
+        let mut key = vec![0; table_config.key_len];
+        let mut val = vec![0; table_config.value_len];
+        let num_assocs = table_config.value_len / table_config.key_len;
+        let num_records = table_config.num_records;
+        for i in 1..=num_records {
+            // toy data
+            key[0..4].copy_from_slice(&i.to_le_bytes());
+            for j in 0..num_assocs as u32 {
+                let assoc_id = (i + j) % num_records + 1;
+                let offset = table_config.key_len * j as usize;
+                val[offset..offset + 4].copy_from_slice(&assoc_id.to_le_bytes());
+            }
+            let obj = self
+                .heap
+                .object(tenant.id, table_id, &key, &val)
+                .expect("Failed to create test object.");
+            table.put(obj.0, obj.1);
+        }
+    }
+    /// Populates the authentication dataset.
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_id`: Identifier of the tenant to be added. Any existing tenant with the same
+    ///                identifier will be overwritten.
+    /// * `table_id`:  Identifier of the table to be added to the tenant. This table will contain
+    ///                all the objects.
+    /// * `num`:       The number of objects to be added to the data table.
+    pub fn fill_auth(&mut self, tenant: &mut Tenant, table_id: u64, table_config: &TableConfig) {
+        tenant.create_table(table_id);
+
+        let table = tenant
+            .get_table(table_id)
+            .expect("Failed to init test table.");
+
+        let mut userid = vec![0; table_config.key_len];
+        let mut passwd = vec![0; 72];
+        let mut salt = vec![0; 16];
+        // 0-24: hash; 24-40: salt
+        let mut hash_salt = vec![0; 40];
+
+        let num_records = table_config.num_records;
+        for i in 1..=num_records {
+            let id: [u8; 4] = unsafe { transmute(i.to_le()) };
+            userid[0..4].copy_from_slice(&id);
+            passwd[0..4].copy_from_slice(&id);
+            salt[0..4].copy_from_slice(&id);
+            scrypt(
+                &passwd,
+                &salt,
+                &ScryptParams::new(SCRYPT_PARAMS.0, SCRYPT_PARAMS.1, SCRYPT_PARAMS.2),
+                &mut hash_salt[0..24],
+            );
+            // only set the first 4 bytes of salt(24-40)
+            hash_salt[24..28].copy_from_slice(&id);
+            let obj = self
+                .heap
+                .object(tenant.id, table_id, &userid, &hash_salt)
+                .expect("Failed to create test object.");
+            table.put(obj.0, obj.1);
+        }
+    }
+    // pub fn fill_test(
+    //     &mut self,
+    //     tenant_id: TenantId,
+    //     table_configs: &Vec<TableConfig>, /*table_id: TableId, num: u32*/
+    // ) {
+    //     // Create a tenant containing the table.
+    //     let mut tenant = Tenant::new(tenant_id);
+    //     for (idx, table_config) in table_configs.iter().enumerate() {
+    //         let table_id = idx as u64 + 1;
+    //         tenant.create_table(table_id);
+
+    //         let table = tenant
+    //             .get_table(table_id)
+    //             .expect("Failed to init test table.");
+
+    //         let mut key = vec![0; table_config.key_len];
+    //         let mut val = vec![0; table_config.value_len];
+    //         let num_records = table_config.num_records;
+
+    //         // let mut key = vec![0; self.key_len];
+    //         // let mut val = vec![0; self.value_len];
+
+    //         // Allocate objects, and fill up the above table. Each object consists of a 30 Byte key
+    //         // and a 100 Byte value.
+    //         for i in 1..(num_records + 1) {
+    //             let value: [u8; 4] = unsafe { transmute((i % num_records + 1).to_le()) };
+    //             let temp: [u8; 4] = unsafe { transmute(i.to_le()) };
+    //             &key[0..4].copy_from_slice(&temp);
+    //             &val[0..4].copy_from_slice(&value);
+
+    //             let obj = self
+    //                 .heap
+    //                 .object(tenant_id, table_id, &key, &val)
+    //                 .expect("Failed to create test object.");
+    //             table.put(obj.0, obj.1);
+    //         }
+
+    //         // Add the tenant.
+    //     }
+    //     self.insert_tenant(tenant);
+    // }
     /*
     /// Populates the TAO dataset.
     ///
@@ -403,54 +567,6 @@ impl Master {
         }
     }
 
-    /// Populates the authentication dataset.
-    ///
-    /// # Arguments
-    ///
-    /// * `tenant_id`: Identifier of the tenant to be added. Any existing tenant with the same
-    ///                identifier will be overwritten.
-    /// * `table_id`:  Identifier of the table to be added to the tenant. This table will contain
-    ///                all the objects.
-    /// * `num`:       The number of objects to be added to the data table.
-    pub fn fill_auth(&self, tenant_id: TenantId, table_id: TableId, num: u32) {
-        // Create a tenant containing the table.
-        let tenant = Tenant::new(tenant_id);
-        tenant.create_table(table_id);
-
-        let table = tenant
-            .get_table(table_id)
-            .expect("Failed to init test table.");
-
-        let mut username = vec![0; 30];
-        let mut password = vec![0; 72];
-        let mut hash_salt = vec![0; 40];
-        let mut salt = vec![0; 16];
-
-        // Allocate objects, and fill up the above table. Each object consists of a 30 Byte key
-        // and a 40 Byte value(24 byte HASH followed by 16 byte SALT).
-        for i in 1..(num + 1) {
-            let temp: [u8; 4] = unsafe { transmute(i.to_le()) };
-            &username[0..4].copy_from_slice(&temp);
-            &password[0..4].copy_from_slice(&temp);
-            &hash_salt[24..28].copy_from_slice(&temp);
-            &salt[0..4].copy_from_slice(&temp);
-
-            let output: &mut [u8] = &mut [0; 24];
-            bcrypt(1, &salt, &password, output);
-            &hash_salt[0..24].copy_from_slice(&output);
-
-            // Add a mapping of the username and (HASH+SALT) in the table.
-            let obj = self
-                .heap
-                .object(tenant_id, table_id, &username, &hash_salt)
-                .expect("Failed to create test object.");
-            table.put(obj.0, obj.1);
-        }
-
-        // Add the tenant.
-        self.insert_tenant(tenant);
-    }
-
     /// Populates the ANALYSIS, AUTH, and PUSHBACK OR YCSB dataset.
     ///
     /// # Arguments
@@ -617,84 +733,6 @@ impl Master {
         self.insert_tenant(tenant);
     }
     */
-    /// Loads the get(), put(), tao(), and bad() extensions.
-    ///
-    /// # Arguments
-    ///
-    /// * `tenant`: Identifier of the tenant to load the extension for.
-    pub fn load_test(&mut self, tenant: TenantId) {
-        // Load the pushback() extension.
-        let name = "../ext/pushback/target/release/libpushback.so";
-        if self.extensions.load(name, tenant, "pushback") == false {
-            panic!("Failed to load pushback() extension.");
-        }
-        // Load the ycsbt() extension.
-        // let name = "../ext/ycsbt/target/release/libycsbt.so";
-        // if self.extensions.load(name, tenant, "ycsbt") == false {
-        //     panic!("Failed to load ycsbt() extension.");
-        // }
-        /*
-        // Load the get() extension.
-        let name = "../ext/get/target/release/libget.so";
-        if self.extensions.load(name, tenant, "get") == false {
-            panic!("Failed to load get() extension.");
-        }
-
-        // Load the put() extension.
-        let name = "../ext/put/target/release/libput.so";
-        if self.extensions.load(name, tenant, "put") == false {
-            panic!("Failed to load put() extension.");
-        }
-
-        // Load the tao() extension.
-        let name = "../ext/tao/target/release/libtao.so";
-        if self.extensions.load(name, tenant, "tao") == false {
-            panic!("Failed to load tao() extension.");
-        }
-
-        // Load the bad() extension.
-        let name = "../ext/bad/target/release/libbad.so";
-        if self.extensions.load(name, tenant, "bad") == false {
-            panic!("Failed to load bad() extension.");
-        }
-
-        // Load the long() extension.
-        let name = "../ext/long/target/release/liblong.so";
-        if self.extensions.load(name, tenant, "long") == false {
-            panic!("Failed to load long() extension.");
-        }
-
-        // Load the aggregate() extension.
-        let name = "../ext/aggregate/target/release/libaggregate.so";
-        if self.extensions.load(name, tenant, "aggregate") == false {
-            panic!("Failed to load aggregate() extension.");
-        }
-
-        // Load the scan() extension.
-        let name = "../ext/scan/target/release/libscan.so";
-        if self.extensions.load(name, tenant, "scan") == false {
-            panic!("Failed to load scan() extension.");
-        }
-
-        // Load the analysis() extension.
-        let name = "../ext/analysis/target/release/libanalysis.so";
-        if self.extensions.load(name, tenant, "analysis") == false {
-            panic!("Failed to load analysis() extension.");
-        }
-
-        // Load the auth() extension.
-        let name = "../ext/auth/target/release/libauth.so";
-        if self.extensions.load(name, tenant, "auth") == false {
-            panic!("Failed to load auth() extension.");
-        }
-
-        // Load the checksum() extension.
-        let name = "../ext/checksum/target/release/libchecksum.so";
-        if self.extensions.load(name, tenant, "checksum") == false {
-            panic!("Failed to load checksum() extension.");
-        }
-        */
-    }
 
     /// Loads the get(), put(), and tao() extensions once, and shares them across multiple tenants.
     ///

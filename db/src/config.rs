@@ -544,6 +544,8 @@ pub struct ComputeConfig {
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
 pub struct TableConfig {
+    pub description: String,
+    // pub table_id: u64,
     pub key_len: usize,
     // length of all entries corresponding to the key
     pub value_len: usize,
