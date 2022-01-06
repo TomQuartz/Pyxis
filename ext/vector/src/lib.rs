@@ -151,7 +151,7 @@ fn topk(src_vec: Vec<&[f32]>, assoc_vecs: Vec<Vec<&[f32]>>) -> [usize; K] {
     let mut scores = vec![];
     for assoc_vec in &assoc_vecs {
         let mut score = 1f32;
-        for (x, y) in assoc_vec.iter().zip(src_vec.iter()) {
+        for (&x, &y) in assoc_vec.iter().zip(src_vec.iter()) {
             score *= dot(x, y);
         }
         scores.push(score);
@@ -169,24 +169,26 @@ fn topk_query_handler(
     record_len: usize,
     args: &[u8],
 ) -> u64 {
-    let mut key = args.to_vec();
-    let key_len = key.len() as u16;
+    let mut keys = args.to_vec();
+    let key_len = keys.len() as u16;
     // expected table order: id_assoc = id_vector + 1
     let assoc_table = table + 1;
     // key is extended by assoc
-    ASSOC_GET!(db, assoc_table, key);
+    ASSOC_GET!(db, assoc_table, keys);
     let mut objs = None;
     // NOTE: for now, assume record_len < full table entry size
     // i.e., topk is computed over the first vector record
     // for full size, pass size = 0 to multiget; see proxy.rs for explanation
-    MULTIGET!(db, table, key_len, key, value_len, objs);
+    MULTIGET!(db, table, key_len, keys, value_len, objs);
     if let Some(vals) = objs {
-        let (src_key, assoc_keys) = key.split_at(key_len as usize);
+        // extract keys
+        let (src_key, assoc_keys) = keys.split_at(key_len as usize);
         let assoc_keys = vectorize::<u8>(assoc_keys, key_len as usize);
-        let (src_val, assoc_vals) = vals.split_at(value_len);
-        let src_vec = vectorize::<f32>(src_val, record_len);
-        let assoc_vecs = assoc_vals
-            .chunks(value_len)
+        // extract vals
+        let mut vals = vals.read();
+        let src_vec = vectorize::<f32>(vals[0], record_len);
+        let assoc_vecs = vals
+            .drain(1..)
             .map(|val| vectorize::<f32>(val, record_len))
             .collect::<Vec<_>>();
         let topk = topk(src_vec, assoc_vecs);
