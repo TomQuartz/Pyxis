@@ -923,9 +923,13 @@ impl Master {
                 // and update the status of the rpc.
                 .and_then(| (opt, version) | {
                     if let Some(opt) = opt {
-                                let (k, value) = &opt;
+                                let (k, value) = opt;
                                 assert!(value_length<=value.len());
-                                let value = value.slice(0,value_length);
+                                let slice = if value_length > 0 {
+                                    value.slice(0,value_length)
+                                }else{
+                                    value
+                                };
                                 status = RpcStatus::StatusInternalError;
                                 let mut offset = 0usize;
                                 let mut payload_len = MAX_PAYLOAD;
@@ -940,8 +944,8 @@ impl Master {
                                     //     // resp.add_to_payload_tail(size_of::<u32>(), &unsafe { transmute::<u32, [u8; 4]>(value.len() as u32) }).expect("failed to add value len");
                                     //     resp.add_to_payload_tail(size_of::<u32>(), &unsafe { transmute::<u32, [u8; 4]>(num_segments) }).expect("failed to add number of segments");
                                     // }
-                                    let payload_len = MAX_PAYLOAD.min(value.len() - offset);
-                                    resp.add_to_payload_tail(payload_len, &value[offset..payload_len]).expect("failed to add payload");
+                                    let payload_len = MAX_PAYLOAD.min(slice.len() - offset);
+                                    resp.add_to_payload_tail(payload_len, &slice[offset..payload_len]).expect("failed to add payload");
                                     offset += payload_len;
                                 }
                                 Some(())
@@ -1638,11 +1642,15 @@ impl Master {
                         .and_then(|entry| Some((alloc.resolve(entry.value), entry.version)))
                         .and_then(|(opt, version)| {
                             if let Some(opt) = opt {
-                                let (k, value) = &opt;
-                                // let mut remaining = value.len();
+                                let (k, value) = opt;
                                 assert!(value_length <= value.len());
-                                let mut value_offset = 0usize;
-                                while value_offset < value_length {
+                                let slice = if value_length > 0 {
+                                    value.slice(0, value_length)
+                                } else {
+                                    value
+                                };
+                                let mut slice_offset = 0usize;
+                                while slice_offset < slice.len() {
                                     if packet_offset == MAX_PAYLOAD {
                                         packet_offset = 0;
                                         current_packet += 1;
@@ -1664,15 +1672,15 @@ impl Master {
                                     //             .expect("failed to add number of segments");
                                     //     }
                                     // }
-                                    let remaining = value_length - value_offset;
+                                    let remaining = slice.len() - slice_offset;
                                     let add = remaining.min(MAX_PAYLOAD - packet_offset);
                                     multiget_resps[current_packet]
                                         .add_to_payload_tail(
                                             add,
-                                            &value[value_offset..value_offset + add],
+                                            &slice[slice_offset..slice_offset + add],
                                         )
                                         .expect("failed to add payload");
-                                    value_offset += add;
+                                    slice_offset += add;
                                     global_offset += add;
                                     packet_offset += add;
                                 }

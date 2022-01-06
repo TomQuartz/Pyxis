@@ -89,9 +89,10 @@ struct KVBuffer {
     // 0 for full-size, otherwise the first $value_len bytes are cached
     // value_len: usize, // pending_resps: usize,
     length: usize,
+    full_record: bool,
 }
 impl KVBuffer {
-    fn reset(&mut self, table: u64, key_len: usize, keys: &[u8] /*, value_len: usize*/) {
+    fn reset(&mut self, table: u64, key_len: usize, keys: &[u8], size: usize) {
         self.table = table;
         self.key_len = key_len;
         self.keys.clear();
@@ -100,6 +101,7 @@ impl KVBuffer {
         self.recvd = 0;
         // self.num_segments = 0;
         self.length = 0;
+        self.full_record = size == 0;
     }
     // fn resize(&mut self, size: usize /*, num_segments: usize*/) {
     //     // self.buffer_size = buffer_size;
@@ -110,11 +112,12 @@ impl KVBuffer {
     // }
     fn update(&mut self, offset: usize, value: &[u8]) {
         self.recvd += 1;
+        let size = offset + value.len();
         if self.values.len() < size {
             self.values.resize(size, 0);
         }
-        self.values[offset..offset + value.len()].copy_from_slice(value);
-        self.length = self.length.max(offset + value.len());
+        self.values[offset..size].copy_from_slice(value);
+        self.length = self.length.max(size);
     }
     fn all_recvd(&self, num_segments: u32) -> bool {
         self.recvd == num_segments
@@ -127,6 +130,7 @@ struct CacheEntry {
     // 0 for full-size, otherwise the first $length bytes are cached
     // length: usize,
     entry: Bytes,
+    full_record: bool,
 }
 
 /// A proxy to the database on the client side; which searches the
@@ -295,6 +299,7 @@ impl ProxyDB {
                 key: key,
                 // length: buffer.value_len, // 0 for full entry
                 entry: Bytes::from(v),
+                full_record: buffer.full_record,
             };
             // cache.insert((buffer.table, key), entry);
             cache.push(entry);
@@ -322,7 +327,7 @@ impl ProxyDB {
         // } else {
         //     record
         // };
-        self.buffer.borrow_mut().update(offset, value);
+        self.buffer.borrow_mut().update(offset, record);
         if self.buffer.borrow().all_recvd(num_segments) {
             self.cache_buffer();
             return true;
@@ -372,16 +377,15 @@ impl ProxyDB {
     // }
     pub fn search_cache(&self, table: u64, key: &[u8], size: usize) -> Option<Bytes> {
         for entry in self.cache.borrow().iter() {
-            if entry.table == table && entry.key == key && entry.entry.len() >= size {
-                // if size > 0 {
-                //     if entry.length == 0 || entry.length > size {
-                //         return Some(entry.entry.slice(0, size));
-                //     }
-                // } else if entry.length == 0 {
-                //     // request full size and the cache is also full-sized
-                //     return Some(entry.entry.clone());
-                // }
-                return Some(entry.entry.slice(0, size));
+            if entry.table == table && entry.key == key {
+                if size > 0 {
+                    if entry.entry.len() > size {
+                        return Some(entry.entry.slice(0, size));
+                    }
+                } else if entry.full_record {
+                    // request full record and the cache is also full
+                    return Some(entry.entry.clone());
+                }
             }
         }
         None
@@ -559,8 +563,7 @@ impl DB for ProxyDB {
         self.sender
             .send_get_from_extension(self.tenant, table, key, size as u32, self.parent_id);
         self.set_waiting(true);
-        // NOTE: we could have set buffer.length here
-        self.buffer.borrow_mut().reset(table, key.len(), key);
+        self.buffer.borrow_mut().reset(table, key.len(), key, size);
         // self.sender
         //     .send_get_from_extension(self.tenant, table, key, self.parent_id);
         // *self.db_credit.borrow_mut() += rdtsc() - start;
@@ -600,7 +603,7 @@ impl DB for ProxyDB {
                 self.parent_id,
             );
             self.set_waiting(true);
-            self.buffer.borrow_mut().reset(table, key_len, missing);
+            self.buffer.borrow_mut().reset(table, key_len, missing, size);
             (false, false, None)
         } else {
             (false, true, unsafe { Some(MultiReadBuf::new(objs)) })

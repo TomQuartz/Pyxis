@@ -35,22 +35,22 @@ macro_rules! GET {
 
 #[macro_export]
 macro_rules! ASSOC_GET {
-    ($db:ident, $table:ident, $key:ident) => {
-        let (server, found, assoc) = $db.search_get_in_cache($table, &$key);
+    ($db:ident, $table:ident, $keys:ident) => {
+        let (server, found, assoc) = $db.search_get_in_cache($table, &$keys, 0);
         if server == false {
             if found == false {
                 yield 0;
                 // $obj = $db.get($table, &$key);
-                let assoc = $db.get($table, &$key).unwrap().read();
-                key.extend_from_slice(assoc);
+                let assoc = $db.get($table, &$keys, 0).unwrap().read();
+                keys.extend_from_slice(assoc);
             } else {
                 // $obj = val;
-                key.extend_from_slice(assoc);
+                keys.extend_from_slice(assoc);
             }
         } else {
             // $obj = $db.get($table, &$key);
-            let assoc = $db.get($table, &$key).unwrap().read();
-            key.extend_from_slice(assoc);
+            let assoc = $db.get($table, &$keys, 0).unwrap().read();
+            keys.extend_from_slice(assoc);
         }
     };
 }
