@@ -506,7 +506,7 @@ pub struct LBConfig {
     pub duration: u64,
     pub learnable: bool,
     pub partition: f64,
-    pub max_out: u32,
+    // pub max_out: u32,
     pub output_factor: u64,
     // profile ratio, cost, and sort
     pub sample_factor: u64,
@@ -568,6 +568,7 @@ pub struct PhaseConfig {
     // NOTE: this ratio is over all workloads and may include zero
     // this is ok since ratios are cumsumed
     pub ratios: Vec<f32>,
+    pub max_out: usize,
     pub duration: u64,
 }
 

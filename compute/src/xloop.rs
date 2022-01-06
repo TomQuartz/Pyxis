@@ -911,7 +911,7 @@ pub struct ElasticScaling {
     upperbound: i32,
     lowerbound: i32,
     pub msg: String,
-    elastic: bool,
+    pub elastic: bool,
 }
 
 impl ElasticScaling {
@@ -929,14 +929,14 @@ impl ElasticScaling {
             .collect();
         let storage_load = ServerLoad::new("storage", storage_servers);
         // TODO: if elastic then set initial provision to 32 cores
-        let initial_provision = config.provisions[0].compute as i32;
+        // let initial_provision = config.provisions[0].compute as i32;
         let max_quota = config.compute.iter().map(|cfg| cfg.rx_queues).sum::<i32>();
         ElasticScaling {
             compute_load: Arc::new(compute_load),
             compute_outs: Avg::new(),
             storage_load: Arc::new(storage_load),
             storage_outs: Avg::new(),
-            compute_cores: Arc::new(AtomicI32::new(initial_provision)),
+            compute_cores: Arc::new(AtomicI32::new(config.provisions[0].compute as i32)),
             storage_cores: config.provisions[0].storage,
             // last_provision: initial_provision,
             upperbound: max_quota,

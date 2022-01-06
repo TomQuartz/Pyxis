@@ -173,6 +173,7 @@ struct LoadGenerator {
     loop_interval: u64,
     junctures: Vec<u64>,
     cum_ratios: Vec<Vec<f32>>, // 0-10000
+    max_outs: Vec<usize>,
 }
 
 impl LoadGenerator {
@@ -188,6 +189,7 @@ impl LoadGenerator {
         let mut sum_time = 0u64;
         let mut junctures = vec![];
         let mut cum_ratios = vec![];
+        let mut max_outs = vec![];
         for phase in &config.phases {
             sum_time += phase.duration * CPU_FREQUENCY;
             junctures.push(sum_time);
@@ -201,6 +203,7 @@ impl LoadGenerator {
                 })
                 .collect();
             cum_ratios.push(cum_ratio);
+            max_outs.push(phase.max_out);
         }
         LoadGenerator {
             rng: {
@@ -215,6 +218,7 @@ impl LoadGenerator {
             loop_interval: sum_time,
             junctures: junctures,
             cum_ratios: cum_ratios,
+            max_outs: max_outs,
         }
     }
     fn gen_request(&mut self, mut curr_rdtsc: u64) -> usize {
@@ -238,6 +242,16 @@ impl LoadGenerator {
             self.workloads[type_id].name_len,
             self.workloads[type_id].sample_key(&mut self.rng),
         )
+    }
+    fn max_out(&self, mut curr_rdtsc: u64) -> usize {
+        let phase_id = if self.loop_interval > 0 {
+            curr_rdtsc %= self.loop_interval;
+            // self.junctures.iter().position(|&t| t > curr_rdtsc).unwrap()
+            self.junctures.partition_point(|&t| t <= curr_rdtsc)
+        } else {
+            0
+        };
+        self.max_outs[phase_id]
     }
 }
 
@@ -409,10 +423,10 @@ impl fmt::Display for Sampler {
 // storage provision
 struct Provision {
     // max_quota: u32,
-    provisions: Vec<u32>,
+    provisions: Vec<(u32, u32)>,
     loop_interval: u64,
     junctures: Vec<u64>,
-    current: u32,
+    current: (u32, u32),
 }
 impl Provision {
     fn new(config: &LBConfig) -> Provision {
@@ -423,17 +437,17 @@ impl Provision {
         for provision in &config.provisions {
             sum_time += provision.duration * CPU_FREQUENCY;
             junctures.push(sum_time);
-            provisions.push(provision.storage);
+            provisions.push((provision.storage, provision.compute));
         }
         Provision {
             // max_quota: config.storage.iter().map(|cfg| cfg.rx_queues).sum::<i32>() as u32,
             provisions: provisions,
             loop_interval: sum_time,
             junctures: junctures,
-            current: 0,
+            current: (0, 0),
         }
     }
-    fn adjust(&mut self, mut curr_rdtsc: u64) -> u32 {
+    fn adjust(&mut self, mut curr_rdtsc: u64) -> (u32, u32) {
         let phase_id = if self.loop_interval > 0 {
             curr_rdtsc %= self.loop_interval;
             self.junctures.partition_point(|&t| t <= curr_rdtsc)
@@ -455,7 +469,7 @@ struct LoadBalancer {
     // record_len: usize,
     // num_types: usize,
     // multi_types: Vec<MultiType>,
-    storage_provision: Provision,
+    provision: Provision,
     generator: LoadGenerator,
     sampler: Sampler,
     // worker stats
@@ -473,12 +487,12 @@ struct LoadBalancer {
     // avg_lat: Vec<usize>,
     // outstanding_reqs: HashSet<u64>,
     outstanding_reqs: HashMap<u64, usize>,
-    slots: Vec<Slot>,
+    // slots: Vec<Slot>,
     // load balancing
     // storage_load: Arc<ServerLoad>,
     // compute_load: Arc<ServerLoad>,
     // rpc control
-    max_out: u32,
+    // max_out: u32,
     partition: Partition,
     // xloop
     learnable: bool,
@@ -537,10 +551,10 @@ impl LoadBalancer {
         // for _ in 0..num_types {
         //     latencies.push(Vec::with_capacity(config.num_reqs));
         // }
-        let mut slots = vec![];
-        for _ in 0..config.max_out {
-            slots.push(Slot::default());
-        }
+        // let mut slots = vec![];
+        // for _ in 0..config.max_out {
+        //     slots.push(Slot::default());
+        // }
 
         LoadBalancer {
             cfg: config.clone(),
@@ -551,7 +565,7 @@ impl LoadBalancer {
             // storage_load: storage_load,
             // compute_load: compute_load,
             dispatcher: LBDispatcher::new(config, net_port),
-            storage_provision: Provision::new(config),
+            provision: Provision::new(config),
             generator: LoadGenerator::new(config),
             sampler: sampler,
             elastic: elastic,
@@ -572,8 +586,8 @@ impl LoadBalancer {
             // avg_lat: vec![0; num_types],
             // outstanding_reqs: HashSet::new(),
             outstanding_reqs: HashMap::new(),
-            slots: slots,
-            max_out: config.max_out,
+            // slots: slots,
+            // max_out: config.max_out,
             partition: Partition {
                 x: partition,
                 upperbound: 10000.0,
@@ -598,22 +612,31 @@ impl LoadBalancer {
         }
     }
     fn adjust_provision(&mut self, curr_rdtsc: u64) {
-        // storage
-        let prev_storage = self.storage_provision.current;
-        let current_storage = self.storage_provision.adjust(curr_rdtsc);
-        if self.id == 0 && prev_storage != current_storage {
-            // this message is sent to all compute nodes, regardless of compute provision
-            self.dispatcher.sender2compute.send_scaling(current_storage);
+        // get provision
+        let (prev_storage, prev_compute) = self.provision.current;
+        let (current_storage, mut current_compute) = self.provision.adjust(curr_rdtsc);
+        if self.elastic.elastic {
+            current_compute = self.elastic.compute_cores.load(Ordering::Relaxed) as u32;
+            self.provision.current.1 = current_compute;
         }
-        self.dispatcher
-            .sender2storage
-            .set_endpoints(current_storage as usize);
-        self.elastic.storage_cores = current_storage;
+        // storage
+        if prev_storage != current_storage {
+            if self.id == 0 {
+                // this message is sent to all compute nodes, regardless of compute provision
+                self.dispatcher.sender2compute.send_scaling(current_storage);
+            }
+            self.dispatcher
+                .sender2storage
+                .set_endpoints(current_storage as usize);
+            self.elastic.storage_cores = current_storage;
+        }
         // compute
-        let current_compute = self.elastic.compute_cores.load(Ordering::Relaxed);
-        self.dispatcher
-            .sender2compute
-            .set_endpoints(current_compute as usize);
+        // let current_compute = self.elastic.compute_cores.load(Ordering::Relaxed);
+        if prev_compute != current_compute {
+            self.dispatcher
+                .sender2compute
+                .set_endpoints(current_compute as usize);
+        }
     }
     fn storage_or_compute(&mut self, type_id: usize) -> bool {
         let partition = self.partition.get();
@@ -630,19 +653,32 @@ impl LoadBalancer {
             false
         }
     }
-    fn send_once(&mut self, slot_id: usize) {
+    // send in event loop
+    fn send(&mut self) {
         let curr = cycles::rdtsc();
         // change storage cores
         self.adjust_provision(curr);
-        // if self.storage_provision.current == 0 {
-        //     return;
-        // }
-        // sample ratio
-        // let recvd = self.global_recvd.load(Ordering::Relaxed);
         if self.id == 0 && self.sampler.ready(curr /*, recvd*/) {
             // self.sampler.sort_type();
             self.sampler.sample_ratio(curr);
         }
+        while self.outstanding_reqs.len() < self.generator.max_out(curr) {
+            self.send_once();
+        }
+    }
+    fn send_once(&mut self /*, slot_id: usize*/) {
+        let curr = cycles::rdtsc();
+        // // change storage cores
+        // self.adjust_provision(curr);
+        // // if self.provision.current == 0 {
+        // //     return;
+        // // }
+        // // sample ratio
+        // // let recvd = self.global_recvd.load(Ordering::Relaxed);
+        // if self.id == 0 && self.sampler.ready(curr /*, recvd*/) {
+        //     // self.sampler.sort_type();
+        //     self.sampler.sample_ratio(curr);
+        // }
         let type_id = self.generator.gen_request(curr);
         self.sampler.inc_counter(type_id);
         let to_storage = self.storage_or_compute(type_id);
@@ -666,18 +702,17 @@ impl LoadBalancer {
             );
             self.elastic.compute_load.inc_outstanding(/*ip, port*/);
         }
-        self.slots[slot_id].counter += 1;
-        self.slots[slot_id].type_id = type_id;
-        self.outstanding_reqs.insert(curr, slot_id);
-        // self.outstanding_reqs.insert(curr, type_id);
+        // self.slots[slot_id].counter += 1;
+        // self.slots[slot_id].type_id = type_id;
+        // self.outstanding_reqs.insert(curr, slot_id);
+        self.outstanding_reqs.insert(curr, type_id);
     }
-
-    fn send_all(&mut self) {
-        self.start = cycles::rdtsc();
-        for i in 0..self.max_out as usize {
-            self.send_once(i);
-        }
-    }
+    // fn send_all(&mut self) {
+    //     self.start = cycles::rdtsc();
+    //     for i in 0..self.max_out as usize {
+    //         self.send_once(i);
+    //     }
+    // }
     /*
     fn update_load(
         &self,
@@ -734,8 +769,8 @@ impl LoadBalancer {
                             // free the packet.
                             RpcStatus::StatusOk => {
                                 let timestamp = hdr.common_header.stamp;
-                                if let Some(&slot_id) = self.outstanding_reqs.get(&timestamp) {
-                                    let type_id = self.slots[slot_id].type_id;
+                                if let Some(&type_id) = self.outstanding_reqs.get(&timestamp) {
+                                    // let type_id = self.slots[slot_id].type_id;
                                     trace!("req type {} finished", type_id);
                                     packet_recvd_signal = true;
                                     self.recvd += 1;
@@ -764,7 +799,8 @@ impl LoadBalancer {
                                     } else {
                                         self.elastic.compute_load.dec_outstanding(/*src_ip, src_port*/);
                                     }
-                                    self.send_once(slot_id);
+                                    // self.send_once(slot_id);
+                                    self.send();
                                 } else {
                                     warn!("no outstanding request");
                                 }
@@ -836,8 +872,9 @@ impl LoadBalancer {
                             curr_rdtsc,
                             output_tput,
                             self.partition.get(),
-                            self.storage_provision.current,
-                            self.elastic.compute_cores.load(Ordering::Relaxed),
+                            self.provision.current.0,
+                            self.provision.current.1,
+                            // self.elastic.compute_cores.load(Ordering::Relaxed),
                             self.sampler,
                         )
                         // self.tput.update(output_tput);
@@ -867,7 +904,7 @@ impl LoadBalancer {
                 // // reset storage cores available to compute to max_quota
                 // self.dispatcher
                 //     .sender2compute
-                //     .send_scaling(self.storage_provision.max_quota);
+                //     .send_scaling(self.provision.max_quota);
             }
         }
         // // The moment all response packets have been received, set the value of the
@@ -899,18 +936,19 @@ impl Drop for LoadBalancer {
                 self.id, self.recvd
             );
         } else {
-            let slots = self.slots.iter().map(|x| x.counter).collect::<Vec<_>>();
-            let mean = slots.iter().sum::<usize>() as f32 / self.slots.len() as f32;
-            let std_dev = (slots
-                .iter()
-                .map(|&x| (x as f32 - mean) * (x as f32 - mean))
-                .sum::<f32>()
-                / self.slots.len() as f32)
-                .sqrt();
-            info!(
-                "client thread {} recvd {} slots {}x(mean:{:.2},std:{:.2})",
-                self.id, self.recvd, self.max_out, mean, std_dev,
-            );
+            // let slots = self.slots.iter().map(|x| x.counter).collect::<Vec<_>>();
+            // let mean = slots.iter().sum::<usize>() as f32 / self.slots.len() as f32;
+            // let std_dev = (slots
+            //     .iter()
+            //     .map(|&x| (x as f32 - mean) * (x as f32 - mean))
+            //     .sum::<f32>()
+            //     / self.slots.len() as f32)
+            //     .sqrt();
+            // info!(
+            //     "client thread {} recvd {} slots {}x(mean:{:.2},std:{:.2})",
+            //     self.id, self.recvd, self.max_out, mean, std_dev,
+            // );
+            info!("client thread {} recvd {}", self.id, self.recvd);
         }
         if self.tput > 0.0 {
             // for (type_id, lat) in self.latencies.iter_mut().enumerate() {
@@ -951,9 +989,10 @@ impl Executable for LoadBalancer {
         if self.stop > 0 {
             return;
         }
-        if self.start == 0 {
-            self.send_all();
-        }
+        // if self.start == 0 {
+        //     self.send_all();
+        // }
+        self.send();
         self.recv();
     }
 

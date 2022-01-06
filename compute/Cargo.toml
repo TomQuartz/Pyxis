@@ -28,6 +28,10 @@ path = "src/bin/client/lb-elastic.rs"
 name = "kayak"
 path = "src/bin/client/kayak.rs"
 
+[[bin]]
+name = "kayak-2"
+path = "src/bin/client/kayak-2.rs"
+
 #[[bin]]
 #name = "lb-qgrad"
 #path = "src/bin/client/lb-qgrad.rs"

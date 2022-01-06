@@ -208,7 +208,7 @@ struct LoadBalancer {
     recvd: usize,
     latencies: Vec<u64>,
     outstanding_reqs: HashMap<u64, usize>,
-    slots: Vec<Slot>,
+    // slots: Vec<Slot>,
     // rpc control
     max_out: u32,
     learnable: bool,
@@ -256,10 +256,10 @@ impl LoadBalancer {
         init_rdtsc: u64,
         finished: Arc<AtomicBool>,
     ) -> LoadBalancer {
-        let mut slots = vec![];
-        for _ in 0..config.max_out {
-            slots.push(Slot::default());
-        }
+        // let mut slots = vec![];
+        // for _ in 0..config.max_out {
+        //     slots.push(Slot::default());
+        // }
 
         LoadBalancer {
             duration: config.duration * CPU_FREQUENCY,
@@ -276,7 +276,7 @@ impl LoadBalancer {
             recvd: 0,
             latencies: Vec::with_capacity(64000000), // latencies: latencies,
             outstanding_reqs: HashMap::new(),
-            slots: slots,
+            // slots: slots,
             max_out: config.max_out,
             partition: partition,
             learnable: config.learnable,
@@ -296,10 +296,10 @@ impl LoadBalancer {
         }
     }
 
-    fn send_once(&mut self, slot_id: usize) {
+    fn send_once(&mut self /*, slot_id: usize*/) {
         let curr = cycles::rdtsc();
         let partition = self.partition.load(Ordering::Relaxed);
-        let (to_storage, workload_id, tenant, name_len, request_payload) =
+        let (to_storage, type_id, tenant, name_len, request_payload) =
             self.generator.gen_request(curr, partition);
         if to_storage {
             let (ip, port) = self.dispatcher.sender2storage.send_invoke(
@@ -318,15 +318,16 @@ impl LoadBalancer {
                 0, // not used
             );
         }
-        self.slots[slot_id].counter += 1;
-        self.slots[slot_id].type_id = workload_id;
-        self.outstanding_reqs.insert(curr, slot_id);
+        // self.slots[slot_id].counter += 1;
+        // self.slots[slot_id].type_id = workload_id;
+        // self.outstanding_reqs.insert(curr, slot_id);
+        self.outstanding_reqs.insert(curr, type_id);
     }
 
     fn send_all(&mut self) {
         self.start = cycles::rdtsc();
         for i in 0..self.max_out as usize {
-            self.send_once(i);
+            self.send_once();
         }
     }
 
@@ -348,15 +349,15 @@ impl LoadBalancer {
                             // free the packet.
                             RpcStatus::StatusOk => {
                                 let timestamp = hdr.common_header.stamp;
-                                if let Some(&slot_id) = self.outstanding_reqs.get(&timestamp) {
-                                    let type_id = self.slots[slot_id].type_id;
+                                if let Some(&type_id) = self.outstanding_reqs.get(&timestamp) {
+                                    // let type_id = self.slots[slot_id].type_id;
                                     trace!("req type {} finished", type_id);
                                     packet_recvd_signal = true;
                                     self.recvd += 1;
                                     self.global_recvd.fetch_add(1, Ordering::Relaxed);
                                     self.latencies.push(curr_rdtsc - timestamp);
                                     self.outstanding_reqs.remove(&timestamp);
-                                    self.send_once(slot_id);
+                                    self.send_once(/*slot_id*/);
                                 } else {
                                     warn!("no outstanding request");
                                 }
@@ -455,7 +456,7 @@ impl LoadBalancer {
                     * CPU_FREQUENCY as f64
                     / (self.stop - self.start) as f64;
                 // self.dispatcher.sender2storage.send_reset();
-                self.dispatcher.sender2compute.send_reset();
+                // self.dispatcher.sender2compute.send_reset();
             }
         }
     }
@@ -471,18 +472,19 @@ impl Drop for LoadBalancer {
                 self.id, self.recvd
             );
         } else {
-            let slots = self.slots.iter().map(|x| x.counter).collect::<Vec<_>>();
-            let mean = slots.iter().sum::<usize>() as f32 / self.slots.len() as f32;
-            let std_dev = (slots
-                .iter()
-                .map(|&x| (x as f32 - mean) * (x as f32 - mean))
-                .sum::<f32>()
-                / self.slots.len() as f32)
-                .sqrt();
-            info!(
-                "client thread {} recvd {} slots {}x(mean:{:.2},std:{:.2})",
-                self.id, self.recvd, self.max_out, mean, std_dev,
-            );
+            // let slots = self.slots.iter().map(|x| x.counter).collect::<Vec<_>>();
+            // let mean = slots.iter().sum::<usize>() as f32 / self.slots.len() as f32;
+            // let std_dev = (slots
+            //     .iter()
+            //     .map(|&x| (x as f32 - mean) * (x as f32 - mean))
+            //     .sum::<f32>()
+            //     / self.slots.len() as f32)
+            //     .sqrt();
+            // info!(
+            //     "client thread {} recvd {} slots {}x(mean:{:.2},std:{:.2})",
+            //     self.id, self.recvd, self.max_out, mean, std_dev,
+            // );
+            info!("client thread {} recvd {}", self.id, self.recvd);
         }
         if self.tput > 0.0 {
             // for (type_id, lat) in self.latencies.iter_mut().enumerate() {
