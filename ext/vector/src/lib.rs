@@ -79,7 +79,7 @@ pub fn init(db: Rc<DB>) -> Pin<Box<Generator<Yield = u64, Return = u64>>> {
     let (record_len, args) = args.split_at(4);
     let (opcode, args) = args.split_at(1);
     let table = u64::from_le_bytes(table.try_into().unwrap());
-    let value_len = usize::from_le_bytes(record_len.try_into().unwrap());
+    let value_len = usize::from_le_bytes(value_len.try_into().unwrap());
     let record_len = u32::from_le_bytes(record_len.try_into().unwrap()) as usize;
     let opcode: QueryOp = opcode[0].into();
     match opcode {
