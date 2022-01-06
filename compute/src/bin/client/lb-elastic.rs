@@ -868,13 +868,14 @@ impl LoadBalancer {
                         self.output_last_recvd = global_recvd;
                         self.output_last_rdtsc = curr_rdtsc;
                         println!(
-                            "rdtsc {} tput {:.2} x {:.2} cores {},{} ratio {}",
+                            "rdtsc {} tput {:.2} x {:.2} cores {},{} load {:.3},{:.3} ratio {}",
                             curr_rdtsc,
                             output_tput,
                             self.partition.get(),
                             self.provision.current.0,
                             self.provision.current.1,
-                            // self.elastic.compute_cores.load(Ordering::Relaxed),
+                            self.elastic.load_summary.0,
+                            self.elastic.load_summary.1,
                             self.sampler,
                         )
                         // self.tput.update(output_tput);

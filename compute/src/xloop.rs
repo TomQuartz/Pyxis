@@ -912,6 +912,7 @@ pub struct ElasticScaling {
     lowerbound: i32,
     pub msg: String,
     pub elastic: bool,
+    pub load_summary: (f64, f64),
 }
 
 impl ElasticScaling {
@@ -953,6 +954,7 @@ impl ElasticScaling {
             // convergence: config.elastic.convergence,
             msg: String::new(),
             elastic: config.elastic.elastic,
+            load_summary: (0.0, 0.0),
         }
     }
     pub fn reset(&mut self) {
@@ -1024,6 +1026,7 @@ impl ElasticScaling {
     }
     pub fn scaling(&mut self) -> bool {
         let (load_compute, load_storage) = self.calc_load();
+        self.load_summary = (load_compute, load_storage);
         // provision
         let provision = self.compute_cores.load(Ordering::Relaxed);
         // let delta_provision = provision - self.last_provision;
