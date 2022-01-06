@@ -197,7 +197,8 @@ impl Workload {
 
 // this is a blackbox to lb, only used to generate requests
 struct LoadGenerator {
-    rng: Box<dyn Rng>,
+    // rng: Box<dyn Rng>,
+    rng: Box<XorShiftRng>,
     tenant_rng: Box<ZipfDistribution>,
     // workloads: Vec<Workload>,
     workloads: Vec<Box<dyn Workload>>,

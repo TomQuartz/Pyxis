@@ -34,23 +34,18 @@ macro_rules! GET {
 }
 
 #[macro_export]
-macro_rules! ASSOC_GET {
-    ($db:ident, $table:ident, $keys:ident) => {
-        let (server, found, assoc) = $db.search_get_in_cache($table, &$keys, 0);
+macro_rules! ASSOCGET {
+    ($db:ident, $table:ident, $keys:ident, $assoc:ident) => {
+        let (server, found, val) = $db.search_get_in_cache($table, &$keys, 0);
         if server == false {
             if found == false {
                 yield 0;
-                // $obj = $db.get($table, &$key);
-                let assoc = $db.get($table, &$keys, 0).unwrap().read();
-                keys.extend_from_slice(assoc);
+                $assoc = $db.get($table, &$keys, 0);
             } else {
-                // $obj = val;
-                keys.extend_from_slice(assoc);
+                $assoc = val;
             }
         } else {
-            // $obj = $db.get($table, &$key);
-            let assoc = $db.get($table, &$keys, 0).unwrap().read();
-            keys.extend_from_slice(assoc);
+            $assoc = $db.get($table, &$keys, 0);
         }
     };
 }
@@ -62,12 +57,12 @@ macro_rules! MULTIGET {
         if server == false {
             if found == false {
                 yield 0;
-                $obj = $db.multiget($table, $key_len, &$keys, $size);
+                $objs = $db.multiget($table, $key_len, &$keys, $size);
             } else {
-                $obj = val;
+                $objs = val;
             }
         } else {
-            $obj = $db.multiget($table, $key_len, &$keys, $size);
+            $objs = $db.multiget($table, $key_len, &$keys, $size);
         }
     };
 }

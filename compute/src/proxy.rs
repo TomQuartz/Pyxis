@@ -280,7 +280,7 @@ impl ProxyDB {
     */
     fn cache_buffer(&self) {
         let buffer = self.buffer.borrow();
-        let cache = self.cache.borrow_mut();
+        let mut cache = self.cache.borrow_mut();
         // let chunk_size = if buffer.value_len == 0 {
         //     buffer.total_len
         // } else {
@@ -379,7 +379,7 @@ impl ProxyDB {
         for entry in self.cache.borrow().iter() {
             if entry.table == table && entry.key == key {
                 if size > 0 {
-                    if entry.entry.len() > size {
+                    if entry.entry.len() >= size {
                         return Some(entry.entry.slice(0, size));
                     }
                 } else if entry.full_record {
@@ -603,7 +603,9 @@ impl DB for ProxyDB {
                 self.parent_id,
             );
             self.set_waiting(true);
-            self.buffer.borrow_mut().reset(table, key_len, missing, size);
+            self.buffer
+                .borrow_mut()
+                .reset(table, key_len as usize, &missing, size);
             (false, false, None)
         } else {
             (false, true, unsafe { Some(MultiReadBuf::new(objs)) })

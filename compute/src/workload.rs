@@ -12,8 +12,16 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
+
+extern crate rand;
+extern crate zipf;
+use self::rand::distributions::Sample;
+use self::rand::{Rng, SeedableRng, XorShiftRng};
+use self::zipf::ZipfDistribution;
+use db::config::{TableConfig, WorkloadConfig};
+
 pub trait Workload {
-    fn gen(&mut self, rng: &mut impl Rng) -> &[u8];
+    fn gen(&mut self, rng: &mut XorShiftRng) -> &[u8];
     fn name_len(&self) -> u32;
 }
 
@@ -21,6 +29,7 @@ pub fn create_workload(config: &WorkloadConfig, table: &TableConfig) -> Box<dyn 
     match config.extension.as_str() {
         "pushback" => Box::new(Synthetic::new(config, table)),
         "vector" => Box::new(VectorQuery::new(config, table)),
+        ext => panic!("invalid extension {}", ext),
     }
 }
 
@@ -77,7 +86,7 @@ impl Workload for Synthetic {
     fn name_len(&self) -> u32 {
         self.name_len
     }
-    fn gen(&mut self, rng: &mut impl Rng) -> &[u8] {
+    fn gen(&mut self, rng: &mut XorShiftRng) -> &[u8] {
         let key = self.key_rng.sample(rng) as u32;
         // let key: [u8; 4] = unsafe { transmute(key.to_le()) };
         let key = key.to_le_bytes();
@@ -118,10 +127,10 @@ impl VectorQuery {
         let mut payload_len = key_offset + table.key_len;
         if config.opcode == 4 {
             // for auth, add passwd
-            payload_len += tabel.record_len as usize;
+            payload_len += table.record_len as usize;
         }
         payload.resize(payload_len, 0);
-        Synthetic {
+        VectorQuery {
             // rng: {
             //     let seed: [u32; 4] = rand::random::<[u32; 4]>();
             //     Box::new(XorShiftRng::from_seed(seed))
@@ -143,7 +152,7 @@ impl Workload for VectorQuery {
     fn name_len(&self) -> u32 {
         self.name_len
     }
-    fn gen(&mut self, rng: &mut impl Rng) -> &[u8] {
+    fn gen(&mut self, rng: &mut XorShiftRng) -> &[u8] {
         let key = self.key_rng.sample(rng) as u32;
         // let key: [u8; 4] = unsafe { transmute(key.to_le()) };
         let key = key.to_le_bytes();
