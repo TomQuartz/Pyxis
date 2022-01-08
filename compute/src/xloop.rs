@@ -753,7 +753,7 @@ impl TputGrad {
                 if self.start == 0 {
                     self.start = curr_rdtsc;
                 }
-                if self.anomalies == self.tolerance {
+                if self.anomalies == self.tolerance || last_inv_tput == 0f64 {
                     self.converged = false;
                     // anomalies still equals tolerance, will be reset to 0 after convergence
                     // compute gradient next time
