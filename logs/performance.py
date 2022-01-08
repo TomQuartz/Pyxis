@@ -27,20 +27,21 @@ def read(filename, split = " "):
 
 
 if __name__ == "__main__":
-    n = 32
-    m = 4
+    n = 64
+    m = 8
+    num_types = 4
     p = 20
     out1 = 1
-    log_tput = 1
+    log_tput = 0
     smooth = 0
-    optimal = 1
+    optimal = 0
     num_curves = 4
     if optimal:
         num_curves += 1
     colors = {1: 'black', 2: 'blue', 3: 'limegreen', 4: 'darkorange', 5: 'red'}
     labels = {1: 'disaggr', 2: 'kayak', 3: 'only C', 4: 'only S', 5: 'optimal'}
     line_styles = {1: 'solid', 2: 'dashed', 3: 'dashdot', 4: 'dotted', 5: (5, (10, 5))}
-    line_widths = {1: 1, 2: 1.8, 3: 1.8, 4: 1.8, 5: 1.5}
+    line_widths = {1: 1.2, 2: 1.6, 3: 1.6, 4: 1.6, 5: 1.5}
     lat = {i: [] for i in range(1, num_curves + 1)}
     tput = {i: [] for i in range(1, num_curves + 1)}
     lat_all = []
@@ -56,15 +57,15 @@ if __name__ == "__main__":
             pass
     
     lb_out = [1, 2, 4, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256]
-    kayak_out = [1, 2, 4, 6, 8, 12, 16]
-    only_c_out = [1, 2, 4, 8, 16]
-    only_s_out = [1, 2, 4, 6, 8, 12, 16]
+    kayak_out = [1, 2, 4, 6, 8, 12, 16, 24, 32, 48]
+    only_c_out = [1, 2, 4, 8, 16, 32]
+    only_s_out = [1, 2, 4, 6, 8, 12, 16, 24, 32]
     lb_optimal_out = [1, 2, 4, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256]
     if out1:
         lb_out += [2, 4, 6]
-        kayak_out += [2, 4, 6, 7]
-        only_c_out += [2, 4, 6, 7]
-        only_s_out += [2, 4, 6]
+        kayak_out += [2, 4, 6]
+        only_c_out += [4, 6]
+        only_s_out += [2, 4, 6, 7]
         lb_optimal_out += [2, 4, 6]
 
     split_pos = [0, len(lb_out), len(kayak_out), len(only_c_out), len(only_s_out)]
@@ -77,13 +78,13 @@ if __name__ == "__main__":
         tput[i] = tput_all[split_pos[i-1]: split_pos[i]]
 
     plt.cla()
-    plt.title('{}C{}S 2type {}:{}'.format(n, m, p, 100-p))
+    plt.title('{}C{}S {}type'.format(n, m, num_types))
     if log_tput:
         plt.xlabel('Log10 Throughput/KOps')
     else:
         plt.xlabel('Throughput/MOps')
     plt.ylabel('Latency/us')
-    plt.xlim(1.0, 3.5)
+    # plt.xlim(1.0, 3.5)
     plt.ylim(0, 1500)
     for j in range(1, num_curves + 1):
         if log_tput:

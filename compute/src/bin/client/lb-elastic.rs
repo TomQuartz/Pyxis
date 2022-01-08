@@ -909,7 +909,7 @@ impl LoadBalancer {
                 self.tput = (self.global_recvd.load(Ordering::Relaxed) as f64)
                     * CPU_FREQUENCY as f64
                     / self.stop as f64;
-                // // self.dispatcher.sender2storage.send_reset();
+                self.dispatcher.sender2storage.send_reset();
                 // self.dispatcher.sender2compute.send_reset();
                 // // reset storage cores available to compute to max_quota
                 // self.dispatcher

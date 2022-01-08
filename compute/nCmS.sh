@@ -24,8 +24,8 @@ OUTPUT=${LOG_PATH}${OUTPUT_FILE}
 # lb
 line_learnable_lb=6
 line_partition_lb=7
-line_max_out_lb=8
 line_num_cores_lb=38
+line_max_out_lb=85
 
 maxout=(1 2 4 8 12 16 24 32 48 64 96 128 192 224 256)
 cores=(2 4 6)

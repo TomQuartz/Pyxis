@@ -4,7 +4,7 @@ set -exu
 KAYAK_PATH="./kayak.toml"
 LB_PATH="lb.toml"
 
-LOG_PATH="../logs/nCmS_optimal/"
+LOG_PATH="../logs/test_multi-type-64C8S/"
 
 date=`date +%Y-%m-%d`
 
@@ -24,10 +24,10 @@ OUTPUT=${LOG_PATH}${OUTPUT_FILE}
 # lb
 line_learnable_lb=6
 line_partition_lb=7
-line_max_out_lb=8
-line_num_cores_lb=38
+line_num_cores_lb=37
+line_max_out_lb=85
 
-maxout=()
+maxout=(64)
 cores=()
 echo "lb:" >> ${OUTPUT}
 
@@ -60,7 +60,7 @@ line_xloop_factor=10
 line_learn_rate=12
 line_num_cores_kayak=19
 
-maxout=()
+maxout=(32)
 cores=()
 echo "kayak:" >> ${OUTPUT}
 
@@ -86,7 +86,7 @@ done
 
 
 # only C
-maxout=()
+maxout=(32)
 cores=()
 echo "only C:" >> ${OUTPUT}
 
@@ -112,7 +112,7 @@ done
 
 
 # only S
-maxout=()
+maxout=(32)
 cores=()
 echo "only S:" >> ${OUTPUT}
 
@@ -141,7 +141,7 @@ done
 
 maxout=(1 2 4 8 12 16 24 32 48 64 96 128 192 256)
 maxout=()
-cores=(2 4 6)
+cores=()
 echo "lb optimal:" >> ${OUTPUT}
 
 sed -i -e "${line_learnable_lb}c learnable = false" ${LB_PATH}

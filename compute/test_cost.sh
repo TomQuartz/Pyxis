@@ -25,14 +25,14 @@ OUTPUT=${LOG_PATH}${OUTPUT_FILE}
 line_learnable_kayak=6
 line_partition_kayak=7
 line_max_out_kayak=8
-line_kv_kayak=106
-line_order_kayak=107
-line_table_kayak=108
+line_kv_kayak=86
+line_order_kayak=87
+line_table_kayak=88
 sed -i -e "${line_learnable_kayak}c learnable = false" ${KAYAK_PATH}
 
-kv=1
-table=2
-order=105600
+kv=3
+table=6
+order=55200
 
 # S = 8 / tput
 echo "S" >> ${OUTPUT}

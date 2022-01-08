@@ -30,37 +30,26 @@ if __name__ == "__main__":
     output_factor = 10.
     r = {i:[] for i in range(num_tenant)}
     t = {i:[] for i in range(num_tenant)}
+    partition = []
     for i in res:
         try:
-            if i[0] == "rdtsc":
+            if i[0] == "PUSHBACK":
                 d = 0
-                r[d].append(float(i[5]))
-                t[d].append(float(i[3]))
+                t[d].append(float(i[-1]) / 1e6)
+            elif i[0] == 'partition':
+                partition.append(float(i[-1]))
         except:
             pass
-    time_slice = {i: [j / output_factor for j in range(0, len(r[i]))] for i in range(num_tenant)}
-    for i in range(len(t[0])):
-        t[0][i] /= 1000
-        r[0][i] /= 100
-
-    # if mov_avg:
-    #     for i in range(2, len(t[0]) - 2):
-    #         t[0][i] = (t[0][i-1] + t[0][i] + t[0][i+1]) / 5
-
-    end = len(time_slice[0])
-    end = int(output_factor) * 3 + 1
+    partition = partition[:-1]
 
     plt.cla()
     fig, ax1 = plt.subplots()
-    ax1.set_xlabel('Time (s)')
-    ax1.set_ylabel('Partition (%)')
-    ax1.set_ylim(0.0, 100.0)
-    ax1.plot(time_slice[0][:end], r[0][:end], label='partition', color='red', linestyle='--')
-    ax2 = ax1.twinx()
-    ax2.set_ylabel('Throughput (MOps)')
-    # ax2.set_ylim(0.0, 2.0)
-    ax2.plot(time_slice[0][:end], t[0][:end], label='tput', color='blue', linestyle='solid')
-    fig.legend(loc='upper right')
+    ax1.set_xlabel('Partition (%)')
+    # ax1.set_ylim(0.0, 100.0)
+    ax1.plot(partition, t[0], color='red', linestyle='solid')
+    ax1.set_ylabel('Throughput (MOps)')
+    ax1.set_xlim(0, 100)
+    # fig.legend()
     file_path = os.path.dirname(os.path.realpath(__file__))
     file_path = os.path.join(file_path, arg[1]+'.png')
     # print(file_path)
