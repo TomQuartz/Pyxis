@@ -4,7 +4,7 @@ num_tenants = 1
 moving_exp = 0
 
 [storage]
-max_rx_packets = 32
+max_rx_packets = 16
 nic_pci = "0000:03:00.1"
 num_cores = 8
 [storage.server]
