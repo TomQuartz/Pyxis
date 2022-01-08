@@ -655,7 +655,11 @@ impl LoadBalancer {
     }
     // send in event loop
     fn send(&mut self) {
-        let curr = cycles::rdtsc();
+        let mut curr = cycles::rdtsc();
+        if self.start == 0 {
+            self.start = curr;
+        }
+        curr -= self.start;
         // change storage cores
         self.adjust_provision(curr);
         if self.id == 0 && self.sampler.ready(curr /*, recvd*/) {
@@ -663,11 +667,16 @@ impl LoadBalancer {
             self.sampler.sample_ratio(curr);
         }
         while self.outstanding_reqs.len() < self.generator.max_out(curr) {
+            // println!(
+            //     "len {} outs {}",
+            //     self.outstanding_reqs.len(),
+            //     self.generator.max_out(curr)
+            // );
             self.send_once();
         }
     }
     fn send_once(&mut self /*, slot_id: usize*/) {
-        let curr = cycles::rdtsc();
+        let curr = cycles::rdtsc() - self.start;
         // // change storage cores
         // self.adjust_provision(curr);
         // // if self.provision.current == 0 {
@@ -757,7 +766,7 @@ impl LoadBalancer {
         // Try to receive packets from the network port.
         // If there are packets, sample the latency of the server.
         if let Some(mut packets) = self.dispatcher.receiver.recv(|pkt| Some(pkt)) {
-            let curr_rdtsc = cycles::rdtsc();
+            let curr_rdtsc = cycles::rdtsc() - self.start;
             while let Some((packet, (src_ip, src_port))) = packets.pop() {
                 match parse_rpc_opcode(&packet) {
                     // The response corresponds to an invoke() RPC.
@@ -826,13 +835,13 @@ impl LoadBalancer {
                 //     }
                 // }
                 if self.id == 0 {
-                    let curr_rdtsc = cycles::rdtsc();
+                    let curr_rdtsc = cycles::rdtsc() - self.start;
                     let global_recvd = self.global_recvd.load(Ordering::Relaxed);
                     if self.learnable
                         && self.xloop.ready(curr_rdtsc)
                         && packet_recvd_signal
                         && global_recvd - self.xloop.last_recvd > 4000
-                    // && global_recvd > 10000
+                    // && global_recvd > 1000
                     {
                         if self.sampler.undetermined_requests() == 0 {
                             self.xloop
@@ -893,13 +902,13 @@ impl LoadBalancer {
         if self.id == 0 {
             self.elastic.snapshot();
         }
-        let curr_rdtsc = cycles::rdtsc();
-        if curr_rdtsc - self.start > self.duration {
+        let curr_rdtsc = cycles::rdtsc() - self.start;
+        if curr_rdtsc > self.duration {
             self.stop = curr_rdtsc;
             if !self.finished.swap(true, Ordering::Relaxed) {
                 self.tput = (self.global_recvd.load(Ordering::Relaxed) as f64)
                     * CPU_FREQUENCY as f64
-                    / (self.stop - self.start) as f64;
+                    / self.stop as f64;
                 // // self.dispatcher.sender2storage.send_reset();
                 // self.dispatcher.sender2compute.send_reset();
                 // // reset storage cores available to compute to max_quota
@@ -1067,11 +1076,12 @@ fn main() {
     let mut net_context = config_and_init_netbricks(&config.lb);
     net_context.start_schedulers();
     // setup shared data
-    let partition = if config.learnable {
-        5000.0
-    } else {
-        config.partition * 100.0
-    };
+    // let partition = if config.learnable {
+    //     5000.0
+    // } else {
+    //     config.partition * 100.0
+    // };
+    let partition = config.partition * 100.0;
     let partition = Arc::new(AtomicF64::new(partition));
     let sampler = Sampler::new(config.workloads.len(), config.sample_factor);
     /*

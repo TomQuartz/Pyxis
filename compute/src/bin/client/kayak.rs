@@ -385,11 +385,12 @@ impl LoadBalancer {
                             / (curr_rdtsc - self.output_last_rdtsc) as f64;
                         self.output_last_recvd = global_recvd;
                         self.output_last_rdtsc = curr_rdtsc;
-                        // println!(
-                        //     "rdtsc {} tput {:.2}",
-                        //     curr_rdtsc / (CPU_FREQUENCY / 1000),
-                        //     output_tput
-                        // )
+                        println!(
+                            "rdtsc {} tput {:.2} rpc {:.2}",
+                            curr_rdtsc / (CPU_FREQUENCY / 1000),
+                            output_tput,
+                            self.partition.load(Ordering::Relaxed),
+                        );
                         self.tput_vec.push(output_tput);
                         self.rpc_vec
                             .push((self.partition.load(Ordering::Relaxed) as f64) / 100.0);

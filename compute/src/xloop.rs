@@ -968,6 +968,13 @@ impl ElasticScaling {
         self.compute_outs.update(compute_outs as f64);
         let storage_outs = self.storage_load.outstanding.load(Ordering::Relaxed);
         self.storage_outs.update(storage_outs as f64);
+        // println!(
+        //     "snapshot {:.2}({:.2}) {:.2}({:.2})",
+        //     self.compute_outs.avg(),
+        //     self.compute_outs.lastest,
+        //     self.storage_outs.avg(),
+        //     self.storage_outs.lastest,
+        // );
     }
     // a wrapper around the actual update_load function
     // perform ip check, ignore response packet in case provision has changed
