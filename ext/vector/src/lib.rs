@@ -28,6 +28,7 @@ use std::pin::Pin;
 use std::rc::Rc;
 
 use sandstorm::db::DB;
+use sandstorm::pack::pack;
 use std::convert::TryInto;
 
 extern crate openssl;
@@ -40,7 +41,7 @@ const ARGS_OFFSET: usize = 8 + 8 + 4 + 1;
 // for topk
 const K: usize = 5;
 // for auth
-const SCRYPT_PARAMS: (u8, u32, u32) = (4, 1, 2);
+const SCRYPT_PARAMS: (u8, u32, u32) = (4, 2, 2);
 const AES_KEY: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F";
 const AES_IV: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F\
         \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F";
@@ -323,7 +324,7 @@ fn scalar_query_handler(
     db: Rc<DB>,
     table: u64,
     value_len: usize,
-    record_len: usize,
+    _record_len: usize,
     // args: &[u8],
 ) -> Pin<Box<Generator<Yield = u64, Return = u64>>> {
     Box::pin(move || {
@@ -331,23 +332,25 @@ fn scalar_query_handler(
         let key = args.to_vec();
         let mut obj = None;
         GET!(db, table, key, value_len, obj);
+        // for scalar, record len = 4
         if let Some(val) = obj {
-            let mut mean = vec![0f32; record_len / 4];
-            let mut num_records = 0f32;
-            for v in val.read().chunks(record_len) {
-                num_records += 1.0;
-                let v = reinterpret(v);
-                add(&mut mean, v);
+            let mut arr = vec![];
+            let mut sum_x = 0f32;
+            let mut sum_x2 = 0f32;
+            for v in val.read().chunks(4) {
+                let x = reinterpret::<f32>(v)[0];
+                sum_x += x;
+                sum_x2 += x * x;
+                arr.push(x);
             }
-            for x in mean.iter_mut() {
-                *x /= num_records;
-            }
-            unsafe {
-                db.resp(std::slice::from_raw_parts(
-                    mean.as_ptr() as *const u8,
-                    mean.len() * 4,
-                ));
-            }
+            arr.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let num_records = arr.len() as f32;
+            let mean = sum_x / num_records;
+            let std = (sum_x2 / num_records - mean * mean).sqrt();
+            let median = arr[num_records as usize / 2];
+            db.resp(pack(&mean));
+            db.resp(pack(&std));
+            db.resp(pack(&median));
             return 0;
         }
         let error = "Object does not exist";
