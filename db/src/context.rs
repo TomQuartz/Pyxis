@@ -294,6 +294,7 @@ impl<'a> DB for Context<'a> {
                 if let Some(opt) = opt {
                     let (k, v) = opt;
                     assert!(v.len() >= size);
+                    let slice = if size > 0 { v.slice(0, size) } else { v };
                     // self.tx.borrow_mut().record_get(Record::new(
                     //     OpType::SandstormRead,
                     //     version,
@@ -301,7 +302,7 @@ impl<'a> DB for Context<'a> {
                     //     v.clone(),
                     // ));
                     *self.db_credit.borrow_mut() += rdtsc() - start + GET_CREDIT;
-                    unsafe { Some(ReadBuf::new(v.slice(0, size))) }
+                    unsafe { Some(ReadBuf::new(slice)) }
                 } else {
                     *self.db_credit.borrow_mut() += rdtsc() - start + GET_CREDIT;
                     None

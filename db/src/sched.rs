@@ -242,10 +242,11 @@ impl TaskManager {
                     let req = request.parse_header::<GetRequest>();
                     let table_id = req.get_header().table_id as usize;
                     trace!("dispatch kv req on table {}", table_id);
-                    let val_len = req.get_header().val_length as usize;
-                    // let table_cfg = &self.master_service.table_cfg[table_id - 1];
-                    // let num_responses = (table_cfg.value_len + MAX_PAYLOAD - 1) / MAX_PAYLOAD;
-                    let num_responses = (val_len + MAX_PAYLOAD - 1) / MAX_PAYLOAD;
+                    // let val_len = req.get_header().val_length as usize;
+                    // let num_responses = (val_len + MAX_PAYLOAD - 1) / MAX_PAYLOAD;
+                    let table_cfg = &self.master_service.table_cfg[table_id - 1];
+                    let num_responses = (table_cfg.value_len + MAX_PAYLOAD - 1) / MAX_PAYLOAD;
+                    trace!("num resps {}", num_responses);
                     let mut responses = vec![];
                     for _ in 0..num_responses {
                         responses.push(self.create_response(resp_hdr).unwrap());

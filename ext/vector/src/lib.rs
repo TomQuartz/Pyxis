@@ -81,6 +81,10 @@ pub fn init(db: Rc<DB>) -> Pin<Box<Generator<Yield = u64, Return = u64>>> {
     let table = u64::from_le_bytes(table.try_into().unwrap());
     let value_len = usize::from_le_bytes(value_len.try_into().unwrap());
     let record_len = u32::from_le_bytes(record_len.try_into().unwrap()) as usize;
+    // println!(
+    //     "QUERY table {} value {} record {} opcode {}",
+    //     table, value_len, record_len, opcode[0]
+    // );
     let opcode: QueryOp = opcode[0].into();
     match opcode {
         QueryOp::Vector => vector_query_handler(db, table, value_len, record_len),
@@ -234,6 +238,7 @@ fn topk_query_handler(
         ASSOCGET!(db, assoc_table, keys, assoc);
         // key is extended by assoc
         if let Some(assoc) = assoc {
+            // println!("ASSOC len {}", assoc.read().len());
             keys.extend_from_slice(assoc.read());
         } else {
             let error = "Key does not exist";
@@ -256,6 +261,14 @@ fn topk_query_handler(
                 .drain(1..)
                 .map(|val| vectorize::<f32>(val, record_len))
                 .collect::<Vec<_>>();
+            // println!(
+            //     "keys {} num {} src {} assoc {} record {}",
+            //     keys.len(),
+            //     assoc_keys.len(),
+            //     src_vec.len(),
+            //     assoc_vecs.len(),
+            //     src_vec[0].len()
+            // );
             let topk = topk(src_vec, assoc_vecs);
             for &idx in &topk {
                 // let offset = idx * key_len as usize;

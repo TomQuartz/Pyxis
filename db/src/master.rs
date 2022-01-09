@@ -294,7 +294,7 @@ impl Master {
             .expect("Failed to init test table.");
 
         let mut userid = vec![0; table_config.key_len];
-        let mut passwd = vec![0; 72];
+        let mut passwd = vec![0; table_config.record_len as usize];
         let mut salt = vec![0; 16];
         // 0-24: hash; 24-40: salt
         let mut hash_salt = vec![0; 40];
@@ -303,6 +303,7 @@ impl Master {
         for i in 1..=num_records {
             let id: [u8; 4] = unsafe { transmute(i.to_le()) };
             userid[0..4].copy_from_slice(&id);
+            // fill passwd(for now, the same as key)
             passwd[0..4].copy_from_slice(&id);
             salt[0..4].copy_from_slice(&id);
             scrypt(
@@ -312,7 +313,7 @@ impl Master {
                 &mut hash_salt[0..24],
             );
             // only set the first 4 bytes of salt(24-40)
-            hash_salt[24..28].copy_from_slice(&id);
+            hash_salt[24..].copy_from_slice(&salt);
             let obj = self
                 .heap
                 .object(tenant.id, table_id, &userid, &hash_salt)
@@ -848,6 +849,7 @@ impl Master {
             key_length = hdr.key_length;
             rpc_stamp = hdr.common_header.stamp;
             value_length = hdr.val_length as usize;
+            trace!("GET table {} size {}", table_id, value_length);
         }
         // let value_len = self.table_cfg[table_id as usize - 1].value_len;
         // let record_len = self.table_cfg[table_id as usize - 1].record_len;
@@ -930,6 +932,7 @@ impl Master {
                                 }else{
                                     value
                                 };
+                                trace!("GET slice {}",slice.len());
                                 status = RpcStatus::StatusInternalError;
                                 let mut offset = 0usize;
                                 let mut payload_len = MAX_PAYLOAD;
@@ -945,7 +948,8 @@ impl Master {
                                     //     resp.add_to_payload_tail(size_of::<u32>(), &unsafe { transmute::<u32, [u8; 4]>(num_segments) }).expect("failed to add number of segments");
                                     // }
                                     let payload_len = MAX_PAYLOAD.min(slice.len() - offset);
-                                    resp.add_to_payload_tail(payload_len, &slice[offset..payload_len]).expect("failed to add payload");
+                                    trace!("GET offset {} payload {}",offset,payload_len);
+                                    resp.add_to_payload_tail(payload_len, &slice[offset..offset + payload_len]).expect("failed to add payload");
                                     offset += payload_len;
                                 }
                                 Some(())
