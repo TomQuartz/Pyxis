@@ -544,7 +544,7 @@ struct LoadBalancer {
     output_factor: u64,
     output_last_rdtsc: u64,
     output_last_recvd: usize,
-    finished: Arc<AtomicBool>,
+    finished: Arc<AtomicUsize>,
     // tput: MovingAvg,
     tput: f64,
     // outs_storage: usize,
@@ -580,7 +580,7 @@ impl LoadBalancer {
         // kth: Vec<Vec<Arc<AtomicUsize>>>,
         global_recvd: Arc<AtomicUsize>,
         init_rdtsc: u64,
-        finished: Arc<AtomicBool>,
+        finished: Arc<AtomicUsize>,
     ) -> LoadBalancer {
         // let mut latencies: Vec<Vec<u64>> = Vec::with_capacity(num_types);
         // for _ in 0..num_types {
@@ -938,18 +938,23 @@ impl LoadBalancer {
             self.elastic.snapshot();
         }
         let curr_rdtsc = cycles::rdtsc() - self.start;
-        if curr_rdtsc > self.duration {
+        if curr_rdtsc > self.duration && self.stop == 0 {
             self.stop = curr_rdtsc;
-            if !self.finished.swap(true, Ordering::Relaxed) {
+            let remaining = self.finished.fetch_sub(1, Ordering::Relaxed);
+            if remaining == self.cfg.lb.num_cores as usize {
                 self.tput = (self.global_recvd.load(Ordering::Relaxed) as f64)
                     * CPU_FREQUENCY as f64
                     / self.stop as f64;
-                self.dispatcher.sender2storage.send_reset();
+                // self.dispatcher.sender2storage.send_reset();
                 // self.dispatcher.sender2compute.send_reset();
                 // // reset storage cores available to compute to max_quota
                 // self.dispatcher
                 //     .sender2compute
                 //     .send_scaling(self.provision.max_quota);
+            } else if remaining == 1 {
+                // the last one
+                self.dispatcher.sender2storage.send_terminate();
+                self.dispatcher.sender2compute.send_terminate();
             }
         }
         // // The moment all response packets have been received, set the value of the
@@ -1060,7 +1065,7 @@ fn setup_lb(
     // kth: Vec<Vec<Arc<AtomicUsize>>>,
     global_recvd: Arc<AtomicUsize>,
     init_rdtsc: u64,
-    finished: Arc<AtomicBool>,
+    finished: Arc<AtomicUsize>,
 ) {
     if ports.len() != 1 {
         error!("LB should be configured with exactly 1 port!");
@@ -1153,7 +1158,8 @@ fn main() {
     // }
     let recvd = Arc::new(AtomicUsize::new(0));
     let init_rdtsc = cycles::rdtsc();
-    let finished = Arc::new(AtomicBool::new(false));
+    // let finished = Arc::new(AtomicBool::new(false));
+    let finished = Arc::new(AtomicUsize::new(config.lb.num_cores as usize));
     // setup lb
     for (core_id, &core) in net_context.active_cores.clone().iter().enumerate() {
         let cfg = config.clone();
@@ -1203,7 +1209,7 @@ fn main() {
     //         std::thread::sleep(std::time::Duration::from_secs(2));
     //     }
     // }
-    while !finished.load(Ordering::Relaxed) {
+    while finished.load(Ordering::Relaxed) > 0 {
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
     std::thread::sleep(std::time::Duration::from_secs(2));

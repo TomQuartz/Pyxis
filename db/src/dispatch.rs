@@ -475,6 +475,21 @@ impl Sender {
             }
         }
     }
+    pub fn send_terminate(&self) {
+        for server_idx in 0..self.dst_ports.len() {
+            for port_idx in 0..self.dst_ports[server_idx] {
+                let request = rpc::create_reset_rpc(
+                    &self.req_hdrs[server_idx].mac_header,
+                    &self.req_hdrs[server_idx].ip_header,
+                    &self.req_hdrs[server_idx].udp_header,
+                    port_idx,
+                    // self.get_dst_port_by_type(type_id),
+                    // (id & 0xffff) as u16 & (self.dst_ports - 1),
+                );
+                self.send_pkt(request);
+            }
+        }
+    }
     // set provision upon initialization and after scaling
     // this message is sent to ALL compute nodes from lb, regardless of current
     pub fn send_scaling(&self, provision: u32) {
@@ -909,6 +924,7 @@ pub struct Dispatcher {
     // time_avg: MovingTimeAvg,
     pub length: f64,
     pub reset: Cell<bool>,
+    pub terminate: Cell<bool>,
 }
 
 impl Dispatcher {
@@ -933,6 +949,7 @@ impl Dispatcher {
             // queue: RwLock::new(VecDeque::with_capacity(config.max_rx_packets)),
             length: -1.0,
             reset: Cell::new(false),
+            terminate: Cell::new(false),
             // length: MovingTimeAvg::new(moving_exp),
         }
     }
@@ -983,6 +1000,11 @@ impl Dispatcher {
                 pkt.free_packet();
                 None
             }
+            OpCode::TerminateRpc => {
+                self.terminate.replace(true);
+                pkt.free_packet();
+                None
+            }
             OpCode::ScalingRpc => {
                 let pkt = pkt.parse_header::<InvokeRequest>();
                 let hdr = pkt.get_header();
@@ -1004,6 +1026,9 @@ impl Dispatcher {
     }
     pub fn reset(&self) -> bool {
         self.reset.replace(false)
+    }
+    pub fn terminate(&mut self) -> bool {
+        self.terminate.replace(false)
     }
     /*
     // a wrapper around Receiver.recv

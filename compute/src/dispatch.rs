@@ -57,6 +57,7 @@ pub struct Dispatcher {
     // time_avg: MovingTimeAvg,
     pub length: f64,
     pub reset: Cell<bool>,
+    pub terminate: Cell<bool>,
 }
 
 impl Dispatcher {
@@ -81,6 +82,7 @@ impl Dispatcher {
             // queue: RwLock::new(VecDeque::with_capacity(config.max_rx_packets)),
             length: -1.0,
             reset: Cell::new(false),
+            terminate: Cell::new(false),
         }
     }
     /// get a packet from common queue
@@ -128,6 +130,11 @@ impl Dispatcher {
                 pkt.free_packet();
                 None
             }
+            OpCode::TerminateRpc => {
+                self.terminate.replace(true);
+                pkt.free_packet();
+                None
+            }
             OpCode::ScalingRpc => {
                 let pkt = pkt.parse_header::<InvokeRequest>();
                 let hdr = pkt.get_header();
@@ -142,7 +149,8 @@ impl Dispatcher {
                 let mut queue = self.queue.queue.write().unwrap();
                 let mut get_resps = vec![];
                 for (packet, _) in packets.into_iter() {
-                    if rpc::parse_rpc_opcode(&packet) == OpCode::SandstormGetRpc {
+                    let opcode = rpc::parse_rpc_opcode(&packet);
+                    if opcode == OpCode::SandstormGetRpc || opcode == OpCode::SandstormMultiGetRpc {
                         get_resps.push(packet);
                     } else {
                         queue.push_back(packet);
@@ -158,6 +166,9 @@ impl Dispatcher {
     }
     pub fn reset(&self) -> bool {
         self.reset.replace(false)
+    }
+    pub fn terminate(&mut self) -> bool {
+        self.terminate.replace(false)
     }
     /*
     // a wrapper around Receiver.recv

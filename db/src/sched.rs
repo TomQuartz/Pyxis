@@ -203,6 +203,16 @@ impl TaskManager {
             None
         }
     }
+    fn clear(&mut self) {
+        for mut task in self.ready.drain(..) {
+            if let Some((req, resps)) = unsafe { task.tear(&mut 0.0, 0.0) } {
+                req.free_packet();
+                for resp in resps {
+                    resp.free_packet();
+                }
+            }
+        }
+    }
     fn create_task(
         &mut self,
         resp_hdr: &mut PacketHeaders,
@@ -669,6 +679,9 @@ impl Executable for StorageNodeWorker {
             }
             while let Some(packet) = self.dispatcher.poll() {
                 self.manager.create_task(&mut self.resp_hdr, packet);
+            }
+            if self.dispatcher.terminate() {
+                self.manager.clear();
             }
             // let mut ql = self.manager.ready.len() as f64;
             // self.queue_length.update(cycles::rdtsc(), ql);
