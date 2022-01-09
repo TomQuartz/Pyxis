@@ -64,6 +64,7 @@ use std::io::Write as writef;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::RwLock;
+use workload::*;
 use xloop::CPU_FREQUENCY;
 
 #[derive(Default)]
@@ -71,7 +72,7 @@ struct Slot {
     counter: usize,
     type_id: usize,
 }
-
+/*
 struct Workload {
     // rng: Box<dyn Rng>,
     key_rng: Box<ZipfDistribution>,
@@ -117,11 +118,12 @@ impl Workload {
         &self.payload
     }
 }
+*/
 
 struct LoadGenerator {
-    rng: Box<dyn Rng>,
+    rng: Box<XorShiftRng>,
     tenant_rng: Box<ZipfDistribution>,
-    workloads: Vec<Workload>,
+    workloads: Vec<Box<dyn Workload>>,
     loop_interval: u64,
     junctures: Vec<u64>,
     cum_ratios: Vec<Vec<f32>>, // 0-10000
@@ -134,7 +136,7 @@ impl LoadGenerator {
         for workload in &config.workloads {
             let table_id = workload.table_id as usize;
             let table = &config.tables[table_id - 1];
-            workloads.push(Workload::new(workload, table));
+            workloads.push(create_workload(workload, table));
         }
         // phases
         let mut cum_time = 0u64;
@@ -188,8 +190,8 @@ impl LoadGenerator {
             partition[workload_id] > rand_prob,
             workload_id,
             self.tenant_rng.sample(&mut self.rng) as u32,
-            self.workloads[workload_id].name_len,
-            self.workloads[workload_id].sample_key(&mut self.rng),
+            self.workloads[workload_id].name_len(),
+            self.workloads[workload_id].gen(&mut self.rng),
         )
     }
 }
