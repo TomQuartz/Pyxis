@@ -19,6 +19,13 @@ use self::rand::distributions::Sample;
 use self::rand::{Rng, SeedableRng, XorShiftRng};
 use self::zipf::ZipfDistribution;
 use db::config::{TableConfig, WorkloadConfig};
+use openssl::aes::{aes_ige, AesKey};
+use openssl::symm::Mode;
+
+// for auth
+const AES_KEY: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F";
+const AES_IV: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F\
+        \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F";
 
 pub trait Workload {
     fn gen(&mut self, rng: &mut XorShiftRng) -> &[u8];
@@ -158,9 +165,22 @@ impl Workload for VectorQuery {
         let key = key.to_le_bytes();
         self.payload[self.key_offset..self.key_offset + 4].copy_from_slice(&key);
         if self.opcode == 4 {
-            // auth, fill passwd
+            // auth, fill passwd(for now, the same as key)
             let offset = self.key_offset + self.key_len;
+            // encrypted parts takes 16 bytes, reset them to 0
+            self.payload[offset..offset + 16].fill(0);
             self.payload[offset..offset + 4].copy_from_slice(&key);
+            let mut encrpyted = [0u8; 16];
+            let ekey = AesKey::new_encrypt(AES_KEY).unwrap();
+            let mut iv = AES_IV.to_vec();
+            aes_ige(
+                &self.payload[offset..offset + 16],
+                &mut encrpyted,
+                &ekey,
+                &mut iv,
+                Mode::Encrypt,
+            );
+            self.payload[offset..offset + 16].copy_from_slice(&encrpyted);
         }
         &self.payload
     }
