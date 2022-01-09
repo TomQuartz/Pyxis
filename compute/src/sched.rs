@@ -84,7 +84,24 @@ impl TaskManager {
             responses: vec![],
         }
     }
-
+    pub fn clear(&mut self) {
+        for (id, mut task) in self.waiting.drain() {
+            if let Some((req, resps)) = unsafe { task.tear(&mut 0.0, 0.0) } {
+                req.free_packet();
+                for resp in resps {
+                    resp.free_packet();
+                }
+            }
+        }
+        for mut task in self.ready.drain(..) {
+            if let Some((req, resps)) = unsafe { task.tear(&mut 0.0, 0.0) } {
+                req.free_packet();
+                for resp in resps {
+                    resp.free_packet();
+                }
+            }
+        }
+    }
     /// This method creates a task for the extension on the client-side and add
     /// it to the task-manager.
     ///
@@ -206,7 +223,7 @@ impl TaskManager {
                 }
             }
             // self.ready.push_back(task);
-        } else {
+        } else if self.waiting.len() > 0 {
             info!("No waiting task with id {}", id);
         }
         // None
@@ -956,6 +973,9 @@ impl Executable for ComputeNodeWorker {
             // let mut waiting_mean = self.queue_length.moving();
             while let Some(packet) = self.dispatcher.poll() {
                 self.dispatch(packet);
+            }
+            if self.dispatcher.terminate() {
+                self.manager.clear();
             }
             // let mut ql = self.manager.ready.len() as f64;
             // self.queue_length.update(cycles::rdtsc(), ql);

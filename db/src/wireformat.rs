@@ -70,7 +70,7 @@ pub enum OpCode {
     SandstormCommitRpc = 0x6,
 
     // #[cfg(feature = "queue_len")]
-    // TerminateRpc = 0x07,
+    TerminateRpc = 0x07,
     ResetRpc = 0x08,
 
     ScalingRpc = 0x09,
