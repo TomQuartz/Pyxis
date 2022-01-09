@@ -41,11 +41,17 @@ impl NullDB {
 }
 
 impl DB for NullDB {
-    fn get(&self, _table: u64, _key: &[u8]) -> Option<ReadBuf> {
+    fn get(&self, _table: u64, _key: &[u8], _size: usize) -> Option<ReadBuf> {
         return None;
     }
 
-    fn multiget(&self, _table: u64, _key_len: u16, _keys: &[u8]) -> Option<MultiReadBuf> {
+    fn multiget(
+        &self,
+        _table: u64,
+        _key_len: u16,
+        _keys: &[u8],
+        _size: usize,
+    ) -> Option<MultiReadBuf> {
         return None;
     }
 
@@ -67,7 +73,12 @@ impl DB for NullDB {
 
     fn debug_log(&self, _message: &str) {}
 
-    fn search_get_in_cache(&self, _table: u64, _key: &[u8]) -> (bool, bool, Option<ReadBuf>) {
+    fn search_get_in_cache(
+        &self,
+        _table: u64,
+        _key: &[u8],
+        _size: usize,
+    ) -> (bool, bool, Option<ReadBuf>) {
         (false, false, None)
     }
 
@@ -76,6 +87,7 @@ impl DB for NullDB {
         _table: u64,
         _key_len: u16,
         _keys: &[u8],
+        _size: usize,
     ) -> (bool, bool, Option<MultiReadBuf>) {
         return (false, false, None);
     }

@@ -243,22 +243,36 @@ impl Task for Container {
     }
 
     /// Refer to the `Task` trait for Documentation.
-    fn update_cache(&mut self, record: &[u8], segment_id: usize, num_segments: usize) -> bool {
+    fn update_cache(
+        &mut self,
+        record: &[u8],
+        // segment_id: usize,
+        num_segments: u32,
+        // value_len: usize,
+        offset: usize,
+    ) -> bool {
         if let Some(proxydb) = self.db.get_mut() {
-            let keylen = proxydb.get_keylen();
-            match parse_record_optype(record) {
-                OpType::SandstormRead => {
-                    // proxydb.set_read_record(record.split_at(1).1, keylen, segment_id);
-                    proxydb.collect_resp(record.split_at(1).1, keylen, segment_id, num_segments)
-                }
+            proxydb.collect_resp(record, num_segments, offset)
+            // let keylen = proxydb.get_keylen();
+            // match parse_record_optype(record) {
+            //     OpType::SandstormRead => {
+            //         // proxydb.set_read_record(record.split_at(1).1, keylen, segment_id);
+            //         proxydb.collect_resp(
+            //             record.split_at(1).1,
+            //             keylen,
+            //             segment_id,
+            //             num_segments,
+            //             value_len,
+            //         )
+            //     }
 
-                OpType::SandstormWrite => {
-                    proxydb.set_write_record(record.split_at(1).1, keylen);
-                    true
-                }
+            //     OpType::SandstormWrite => {
+            //         proxydb.set_write_record(record.split_at(1).1, keylen);
+            //         true
+            //     }
 
-                _ => false,
-            }
+            //     _ => false,
+            // }
         } else {
             false
         }

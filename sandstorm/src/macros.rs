@@ -18,21 +18,56 @@
 /// then it requests the data using the RPC call.
 #[macro_export]
 macro_rules! GET {
-    ($db:ident, $table:ident, $key:ident, $obj:ident) => {
-        let (server, found, val) = $db.search_get_in_cache($table, &$key);
+    ($db:ident, $table:ident, $key:ident, $size:ident, $obj:ident) => {
+        let (server, found, val) = $db.search_get_in_cache($table, &$key, $size);
         if server == false {
             if found == false {
                 yield 0;
-                $obj = $db.get($table, &$key);
+                $obj = $db.get($table, &$key, $size);
             } else {
                 $obj = val;
             }
         } else {
-            $obj = $db.get($table, &$key);
+            $obj = $db.get($table, &$key, $size);
         }
     };
 }
 
+#[macro_export]
+macro_rules! ASSOCGET {
+    ($db:ident, $table:ident, $keys:ident, $assoc:ident) => {
+        let (server, found, val) = $db.search_get_in_cache($table, &$keys, 0);
+        if server == false {
+            if found == false {
+                yield 0;
+                $assoc = $db.get($table, &$keys, 0);
+            } else {
+                $assoc = val;
+            }
+        } else {
+            $assoc = $db.get($table, &$keys, 0);
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! MULTIGET {
+    ($db:ident, $table:ident, $key_len:ident, $keys:ident, $size:ident, $objs:ident) => {
+        let (server, found, val) = $db.search_multiget_in_cache($table, $key_len, &$keys, $size);
+        if server == false {
+            if found == false {
+                yield 0;
+                $objs = $db.multiget($table, $key_len, &$keys, $size);
+            } else {
+                $objs = val;
+            }
+        } else {
+            $objs = $db.multiget($table, $key_len, &$keys, $size);
+        }
+    };
+}
+
+/*
 /// TODO: Change it later, not implemented fully.
 #[macro_export]
 macro_rules! MULTIGET {
@@ -59,3 +94,4 @@ macro_rules! MULTIGET {
         }
     };
 }
+*/

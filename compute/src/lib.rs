@@ -27,6 +27,7 @@ extern crate util;
 pub extern crate log;
 
 extern crate atomic_float;
+extern crate openssl;
 
 mod container;
 

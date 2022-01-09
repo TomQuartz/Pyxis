@@ -458,8 +458,10 @@ fn main() {
     //     _ => {}
     // }
     for tenant in 1..=config.num_tenants {
-        master.fill_test(tenant, &config.tables);
-        master.load_test(tenant);
+        // master.fill_test(tenant, &config.tables);
+        // master.load_test(tenant);
+        master.fill_tables(tenant, &config.tables);
+        master.load_extensions(tenant);
     }
     let master = Arc::new(master);
     let mut net_context: NetbricksContext = config_and_init_netbricks(&config.storage);

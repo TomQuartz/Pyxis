@@ -10,6 +10,7 @@ all: netbricks
 	# (cd ext/long; cargo build --release)
 	# (cd ext/aggregate; cargo build --release)
 	(cd ext/pushback; cargo build --release)
+	(cd ext/vector; cargo build --release)
 	# (cd ext/scan; cargo build --release)
 	# (cd ext/analysis; cargo build --release)
 	# (cd ext/auth; cargo build --release)

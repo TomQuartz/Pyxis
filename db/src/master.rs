@@ -14,7 +14,8 @@
  */
 
 use bincode::serialize;
-use crypto::bcrypt::bcrypt;
+// use crypto::bcrypt::bcrypt;
+use crypto::scrypt::{scrypt, ScryptParams};
 use hashbrown::HashMap;
 
 use std::fs::File;
@@ -43,7 +44,7 @@ use util::model::{get_raw_data, insert_global_model, run_ml_application, GLOBAL_
 
 use e2d2::common::EmptyMetadata;
 use e2d2::headers::UdpHeader;
-use e2d2::interface::Packet;
+use e2d2::interface::{Packet, MAX_PAYLOAD};
 use spin::RwLock;
 
 use super::config::*;
@@ -58,6 +59,8 @@ use sandstorm::{LittleEndian, ReadBytesExt};
 pub fn accessor<'a>(alloc: *const Allocator) -> &'a Allocator {
     unsafe { &*alloc }
 }
+
+const SCRYPT_PARAMS: (u8, u32, u32) = (4, 1, 2);
 
 // The number of buckets in the `tenants` hashtable inside of Master.
 const TENANT_BUCKETS: usize = 1;
@@ -146,7 +149,36 @@ impl Master {
             // ext_cfg: ext_cfg.clone(),
         }
     }
-
+    /// Loads the get(), put(), tao(), and bad() extensions.
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant`: Identifier of the tenant to load the extension for.
+    pub fn load_extensions(&mut self, tenant: TenantId) {
+        // Load the pushback() extension.
+        let name = "../ext/pushback/target/release/libpushback.so";
+        if self.extensions.load(name, tenant, "pushback") == false {
+            panic!("Failed to load pushback() extension.");
+        }
+        let name = "../ext/vector/target/release/libvector.so";
+        if self.extensions.load(name, tenant, "vector") == false {
+            panic!("Failed to load vector() extension.");
+        }
+    }
+    pub fn fill_tables(&mut self, tenant_id: TenantId, table_configs: &Vec<TableConfig>) {
+        let mut tenant = Tenant::new(tenant_id);
+        for (i, table_config) in table_configs.iter().enumerate() {
+            let table_id = (i + 1) as u64;
+            match table_config.description.as_str() {
+                "synthetic" => self.fill_synthetic(&mut tenant, table_id, table_config),
+                "vector" | "scalar" => self.fill_float(&mut tenant, table_id, table_config),
+                "assoc" => self.fill_assoc(&mut tenant, table_id, table_config),
+                "auth" => self.fill_auth(&mut tenant, table_id, table_config),
+                _ => panic!("TABLE {}: invalid table description", table_id),
+            }
+        }
+        self.insert_tenant(tenant);
+    }
     /// Adds a tenant and a table full of objects.
     ///
     /// # Arguments
@@ -156,47 +188,180 @@ impl Master {
     /// * `table_id`:  Identifier of the table to be added to the tenant. This table will contain
     ///                all the objects.
     /// * `num`:       The number of objects to be added to the data table.
-    pub fn fill_test(
+    pub fn fill_synthetic(
         &mut self,
-        tenant_id: TenantId,
-        table_configs: &Vec<TableConfig>, /*table_id: TableId, num: u32*/
+        tenant: &mut Tenant,
+        table_id: u64,
+        table_config: &TableConfig,
     ) {
-        // Create a tenant containing the table.
-        let mut tenant = Tenant::new(tenant_id);
-        for (idx, table_config) in table_configs.iter().enumerate() {
-            let table_id = idx as u64 + 1;
-            tenant.create_table(table_id);
+        tenant.create_table(table_id);
+        let table = tenant
+            .get_table(table_id)
+            .expect("Failed to init test table.");
 
-            let table = tenant
-                .get_table(table_id)
-                .expect("Failed to init test table.");
+        let mut key = vec![0; table_config.key_len];
+        let mut val = vec![0; table_config.value_len];
+        let num_records = table_config.num_records;
+        for i in 1..=num_records {
+            key[0..4].copy_from_slice(&i.to_le_bytes());
+            val[0..4].copy_from_slice(&(i % num_records + 1).to_le_bytes());
+            // let value: [u8; 4] = unsafe { transmute((i % num_records + 1).to_le()) };
+            // let temp: [u8; 4] = unsafe { transmute(i.to_le()) };
+            // &key[0..4].copy_from_slice(&temp);
+            // &val[0..4].copy_from_slice(&value);
 
-            let mut key = vec![0; table_config.key_len];
-            let mut val = vec![0; table_config.value_len];
-            let num_records = table_config.num_records;
-
-            // let mut key = vec![0; self.key_len];
-            // let mut val = vec![0; self.value_len];
-
-            // Allocate objects, and fill up the above table. Each object consists of a 30 Byte key
-            // and a 100 Byte value.
-            for i in 1..(num_records + 1) {
-                let value: [u8; 4] = unsafe { transmute((i % num_records + 1).to_le()) };
-                let temp: [u8; 4] = unsafe { transmute(i.to_le()) };
-                &key[0..4].copy_from_slice(&temp);
-                &val[0..4].copy_from_slice(&value);
-
-                let obj = self
-                    .heap
-                    .object(tenant_id, table_id, &key, &val)
-                    .expect("Failed to create test object.");
-                table.put(obj.0, obj.1);
-            }
-
-            // Add the tenant.
+            let obj = self
+                .heap
+                .object(tenant.id, table_id, &key, &val)
+                .expect("Failed to create test object.");
+            table.put(obj.0, obj.1);
         }
-        self.insert_tenant(tenant);
     }
+    pub fn fill_float(&mut self, tenant: &mut Tenant, table_id: u64, table_config: &TableConfig) {
+        assert_eq!(
+            table_config.record_len % 4,
+            0,
+            "each record should be a list of f32(4 bytes) values"
+        );
+        assert_eq!(
+            table_config.value_len % table_config.record_len as usize,
+            0,
+            "each entry should be a list of records"
+        );
+        tenant.create_table(table_id);
+        let table = tenant
+            .get_table(table_id)
+            .expect("Failed to init test table.");
+
+        let mut key = vec![0; table_config.key_len];
+        let mut val = vec![0; table_config.value_len];
+        let num_records = table_config.num_records;
+        for i in 1..=num_records {
+            // toy data
+            key[0..4].copy_from_slice(&i.to_le_bytes());
+            val[0..4].copy_from_slice(&(i % num_records + 1).to_le_bytes());
+            let obj = self
+                .heap
+                .object(tenant.id, table_id, &key, &val)
+                .expect("Failed to create test object.");
+            table.put(obj.0, obj.1);
+        }
+    }
+    pub fn fill_assoc(&mut self, tenant: &mut Tenant, table_id: u64, table_config: &TableConfig) {
+        assert_eq!(
+            table_config.value_len % table_config.key_len as usize,
+            0,
+            "each assoc entry should be a list of keys"
+        );
+        tenant.create_table(table_id);
+        let table = tenant
+            .get_table(table_id)
+            .expect("Failed to init test table.");
+
+        let mut key = vec![0; table_config.key_len];
+        let mut val = vec![0; table_config.value_len];
+        let num_assocs = table_config.value_len / table_config.key_len;
+        let num_records = table_config.num_records;
+        for i in 1..=num_records {
+            // toy data
+            key[0..4].copy_from_slice(&i.to_le_bytes());
+            for j in 0..num_assocs as u32 {
+                let assoc_id = (i + j) % num_records + 1;
+                let offset = table_config.key_len * j as usize;
+                val[offset..offset + 4].copy_from_slice(&assoc_id.to_le_bytes());
+            }
+            let obj = self
+                .heap
+                .object(tenant.id, table_id, &key, &val)
+                .expect("Failed to create test object.");
+            table.put(obj.0, obj.1);
+        }
+    }
+    /// Populates the authentication dataset.
+    ///
+    /// # Arguments
+    ///
+    /// * `tenant_id`: Identifier of the tenant to be added. Any existing tenant with the same
+    ///                identifier will be overwritten.
+    /// * `table_id`:  Identifier of the table to be added to the tenant. This table will contain
+    ///                all the objects.
+    /// * `num`:       The number of objects to be added to the data table.
+    pub fn fill_auth(&mut self, tenant: &mut Tenant, table_id: u64, table_config: &TableConfig) {
+        tenant.create_table(table_id);
+
+        let table = tenant
+            .get_table(table_id)
+            .expect("Failed to init test table.");
+
+        let mut userid = vec![0; table_config.key_len];
+        let mut passwd = vec![0; table_config.record_len as usize];
+        let mut salt = vec![0; 16];
+        // 0-24: hash; 24-40: salt
+        let mut hash_salt = vec![0; 40];
+
+        let num_records = table_config.num_records;
+        for i in 1..=num_records {
+            let id: [u8; 4] = unsafe { transmute(i.to_le()) };
+            userid[0..4].copy_from_slice(&id);
+            // fill passwd(for now, the same as key)
+            passwd[0..4].copy_from_slice(&id);
+            salt[0..4].copy_from_slice(&id);
+            scrypt(
+                &passwd,
+                &salt,
+                &ScryptParams::new(SCRYPT_PARAMS.0, SCRYPT_PARAMS.1, SCRYPT_PARAMS.2),
+                &mut hash_salt[0..24],
+            );
+            // only set the first 4 bytes of salt(24-40)
+            hash_salt[24..].copy_from_slice(&salt);
+            let obj = self
+                .heap
+                .object(tenant.id, table_id, &userid, &hash_salt)
+                .expect("Failed to create test object.");
+            table.put(obj.0, obj.1);
+        }
+    }
+    // pub fn fill_test(
+    //     &mut self,
+    //     tenant_id: TenantId,
+    //     table_configs: &Vec<TableConfig>, /*table_id: TableId, num: u32*/
+    // ) {
+    //     // Create a tenant containing the table.
+    //     let mut tenant = Tenant::new(tenant_id);
+    //     for (idx, table_config) in table_configs.iter().enumerate() {
+    //         let table_id = idx as u64 + 1;
+    //         tenant.create_table(table_id);
+
+    //         let table = tenant
+    //             .get_table(table_id)
+    //             .expect("Failed to init test table.");
+
+    //         let mut key = vec![0; table_config.key_len];
+    //         let mut val = vec![0; table_config.value_len];
+    //         let num_records = table_config.num_records;
+
+    //         // let mut key = vec![0; self.key_len];
+    //         // let mut val = vec![0; self.value_len];
+
+    //         // Allocate objects, and fill up the above table. Each object consists of a 30 Byte key
+    //         // and a 100 Byte value.
+    //         for i in 1..(num_records + 1) {
+    //             let value: [u8; 4] = unsafe { transmute((i % num_records + 1).to_le()) };
+    //             let temp: [u8; 4] = unsafe { transmute(i.to_le()) };
+    //             &key[0..4].copy_from_slice(&temp);
+    //             &val[0..4].copy_from_slice(&value);
+
+    //             let obj = self
+    //                 .heap
+    //                 .object(tenant_id, table_id, &key, &val)
+    //                 .expect("Failed to create test object.");
+    //             table.put(obj.0, obj.1);
+    //         }
+
+    //         // Add the tenant.
+    //     }
+    //     self.insert_tenant(tenant);
+    // }
     /*
     /// Populates the TAO dataset.
     ///
@@ -403,54 +568,6 @@ impl Master {
         }
     }
 
-    /// Populates the authentication dataset.
-    ///
-    /// # Arguments
-    ///
-    /// * `tenant_id`: Identifier of the tenant to be added. Any existing tenant with the same
-    ///                identifier will be overwritten.
-    /// * `table_id`:  Identifier of the table to be added to the tenant. This table will contain
-    ///                all the objects.
-    /// * `num`:       The number of objects to be added to the data table.
-    pub fn fill_auth(&self, tenant_id: TenantId, table_id: TableId, num: u32) {
-        // Create a tenant containing the table.
-        let tenant = Tenant::new(tenant_id);
-        tenant.create_table(table_id);
-
-        let table = tenant
-            .get_table(table_id)
-            .expect("Failed to init test table.");
-
-        let mut username = vec![0; 30];
-        let mut password = vec![0; 72];
-        let mut hash_salt = vec![0; 40];
-        let mut salt = vec![0; 16];
-
-        // Allocate objects, and fill up the above table. Each object consists of a 30 Byte key
-        // and a 40 Byte value(24 byte HASH followed by 16 byte SALT).
-        for i in 1..(num + 1) {
-            let temp: [u8; 4] = unsafe { transmute(i.to_le()) };
-            &username[0..4].copy_from_slice(&temp);
-            &password[0..4].copy_from_slice(&temp);
-            &hash_salt[24..28].copy_from_slice(&temp);
-            &salt[0..4].copy_from_slice(&temp);
-
-            let output: &mut [u8] = &mut [0; 24];
-            bcrypt(1, &salt, &password, output);
-            &hash_salt[0..24].copy_from_slice(&output);
-
-            // Add a mapping of the username and (HASH+SALT) in the table.
-            let obj = self
-                .heap
-                .object(tenant_id, table_id, &username, &hash_salt)
-                .expect("Failed to create test object.");
-            table.put(obj.0, obj.1);
-        }
-
-        // Add the tenant.
-        self.insert_tenant(tenant);
-    }
-
     /// Populates the ANALYSIS, AUTH, and PUSHBACK OR YCSB dataset.
     ///
     /// # Arguments
@@ -617,84 +734,6 @@ impl Master {
         self.insert_tenant(tenant);
     }
     */
-    /// Loads the get(), put(), tao(), and bad() extensions.
-    ///
-    /// # Arguments
-    ///
-    /// * `tenant`: Identifier of the tenant to load the extension for.
-    pub fn load_test(&mut self, tenant: TenantId) {
-        // Load the pushback() extension.
-        let name = "../ext/pushback/target/release/libpushback.so";
-        if self.extensions.load(name, tenant, "pushback") == false {
-            panic!("Failed to load pushback() extension.");
-        }
-        // Load the ycsbt() extension.
-        // let name = "../ext/ycsbt/target/release/libycsbt.so";
-        // if self.extensions.load(name, tenant, "ycsbt") == false {
-        //     panic!("Failed to load ycsbt() extension.");
-        // }
-        /*
-        // Load the get() extension.
-        let name = "../ext/get/target/release/libget.so";
-        if self.extensions.load(name, tenant, "get") == false {
-            panic!("Failed to load get() extension.");
-        }
-
-        // Load the put() extension.
-        let name = "../ext/put/target/release/libput.so";
-        if self.extensions.load(name, tenant, "put") == false {
-            panic!("Failed to load put() extension.");
-        }
-
-        // Load the tao() extension.
-        let name = "../ext/tao/target/release/libtao.so";
-        if self.extensions.load(name, tenant, "tao") == false {
-            panic!("Failed to load tao() extension.");
-        }
-
-        // Load the bad() extension.
-        let name = "../ext/bad/target/release/libbad.so";
-        if self.extensions.load(name, tenant, "bad") == false {
-            panic!("Failed to load bad() extension.");
-        }
-
-        // Load the long() extension.
-        let name = "../ext/long/target/release/liblong.so";
-        if self.extensions.load(name, tenant, "long") == false {
-            panic!("Failed to load long() extension.");
-        }
-
-        // Load the aggregate() extension.
-        let name = "../ext/aggregate/target/release/libaggregate.so";
-        if self.extensions.load(name, tenant, "aggregate") == false {
-            panic!("Failed to load aggregate() extension.");
-        }
-
-        // Load the scan() extension.
-        let name = "../ext/scan/target/release/libscan.so";
-        if self.extensions.load(name, tenant, "scan") == false {
-            panic!("Failed to load scan() extension.");
-        }
-
-        // Load the analysis() extension.
-        let name = "../ext/analysis/target/release/libanalysis.so";
-        if self.extensions.load(name, tenant, "analysis") == false {
-            panic!("Failed to load analysis() extension.");
-        }
-
-        // Load the auth() extension.
-        let name = "../ext/auth/target/release/libauth.so";
-        if self.extensions.load(name, tenant, "auth") == false {
-            panic!("Failed to load auth() extension.");
-        }
-
-        // Load the checksum() extension.
-        let name = "../ext/checksum/target/release/libchecksum.so";
-        if self.extensions.load(name, tenant, "checksum") == false {
-            panic!("Failed to load checksum() extension.");
-        }
-        */
-    }
 
     /// Loads the get(), put(), and tao() extensions once, and shares them across multiple tenants.
     ///
@@ -785,7 +824,7 @@ impl Master {
         &self,
         // req: Packet<UdpHeader, EmptyMetadata>,
         req: Packet<GetRequest, EmptyMetadata>,
-        mut resps: Vec<Packet<UdpHeader, EmptyMetadata>>,
+        resps: Vec<Packet<UdpHeader, EmptyMetadata>>,
     ) -> Result<
         Box<Task>,
         (
@@ -801,6 +840,7 @@ impl Master {
         let mut table_id: TableId = 0;
         let mut key_length = 0;
         let mut rpc_stamp = 0;
+        let mut value_length = 0;
 
         {
             let hdr = req.get_header();
@@ -808,30 +848,37 @@ impl Master {
             table_id = hdr.table_id as TableId;
             key_length = hdr.key_length;
             rpc_stamp = hdr.common_header.stamp;
+            value_length = hdr.val_length as usize;
+            trace!("GET table {} size {}", table_id, value_length);
         }
-
-        // Next, add a header to the response packet.
+        // let value_len = self.table_cfg[table_id as usize - 1].value_len;
+        // let record_len = self.table_cfg[table_id as usize - 1].record_len;
         let num_segments = resps.len() as u32;
-        let mut segment_id: u32 = 0;
-        let mut get_resps: Vec<Packet<GetResponse, EmptyMetadata>> = resps
+        // Next, add a header to the response packet.
+        // let mut segment_id: u32 = 1;
+        let mut get_resps: Vec<_> = resps
             .into_iter()
             .map(|p| {
-                let get_resp = p
-                    .push_header(&GetResponse::new(
-                        rpc_stamp,
-                        OpCode::SandstormGetRpc,
-                        tenant_id,
-                        num_segments,
-                        segment_id,
-                    ))
-                    .expect("Failed to setup GetResponse");
-                segment_id += 1;
-                get_resp
+                // let get_resp = p
+                p.push_header(&GetResponse::new(
+                    rpc_stamp,
+                    OpCode::SandstormGetRpc,
+                    tenant_id,
+                    num_segments,
+                    // segment_id,
+                    // value_len as u32,
+                ))
+                .expect("Failed to setup GetResponse")
+                // segment_id += 1;
+                // get_resp
             })
             .collect();
 
         // If the payload size is less than the key length, return an error.
         if req.get_payload().len() < key_length as usize {
+            for resp in get_resps.drain(1..) {
+                resp.free_packet();
+            }
             let get_resps = get_resps
                 .into_iter()
                 .map(|mut p| {
@@ -848,13 +895,10 @@ impl Master {
         let tenant = self.get_tenant(tenant_id);
         let alloc: *const Allocator = &self.heap;
 
-        // let record_len = self.record_len;
-        let record_len = self.table_cfg[table_id as usize - 1].record_len;
-
         // Create a generator for this request.
         let gen = Box::pin(move || {
             let mut status: RpcStatus = RpcStatus::StatusTenantDoesNotExist;
-            let optype: u8 = 0x1; // OpType::SandstormRead
+            // let optype: u8 = 0x1; // OpType::SandstormRead
 
             let outcome =
                 // Check if the tenant exists. If it does, then check if the
@@ -881,13 +925,32 @@ impl Master {
                 // and update the status of the rpc.
                 .and_then(| (opt, version) | {
                     if let Some(opt) = opt {
-                                let (k, value) = &opt;
+                                let (k, value) = opt;
+                                assert!(value_length<=value.len());
+                                let slice = if value_length > 0 {
+                                    value.slice(0,value_length)
+                                }else{
+                                    value
+                                };
+                                trace!("GET slice {}",slice.len());
                                 status = RpcStatus::StatusInternalError;
+                                let mut offset = 0usize;
+                                let mut payload_len = MAX_PAYLOAD;
                                 for (segment,resp) in get_resps.iter_mut().enumerate() {
-                                    resp.add_to_payload_tail(1, pack(&optype)).expect("failed to add optype");
-                                    resp.add_to_payload_tail(size_of::<Version>(), &unsafe { transmute::<Version, [u8; 8]>(version) }).expect("failed to add version number");
-                                    resp.add_to_payload_tail(k.len(), &k[..]).expect("failed to add key");
-                                    resp.add_to_payload_tail(record_len, &value[segment*record_len..(segment+1)*record_len]).expect("failed to add payload");
+                                    // resp.add_to_payload_tail(1, pack(&optype)).expect("failed to add optype");
+                                    // resp.add_to_payload_tail(size_of::<Version>(), &unsafe { transmute::<Version, [u8; 8]>(version) }).expect("failed to add version number");
+                                    // resp.add_to_payload_tail(k.len(), &k[..]).expect("failed to add key");
+                                    resp.get_mut_header().offset = offset as u32;
+                                    // resp.add_to_payload_tail(size_of::<u32>(), &unsafe { transmute::<u32, [u8; 4]>(offset as u32) }).expect("failed to add offset");
+                                    // if segment == 0 {
+                                    //     // resp.add_to_payload_tail(size_of::<Version>(), &unsafe { transmute::<Version, [u8; 8]>(version) }).expect("failed to add version number");
+                                    //     // resp.add_to_payload_tail(size_of::<u32>(), &unsafe { transmute::<u32, [u8; 4]>(value.len() as u32) }).expect("failed to add value len");
+                                    //     resp.add_to_payload_tail(size_of::<u32>(), &unsafe { transmute::<u32, [u8; 4]>(num_segments) }).expect("failed to add number of segments");
+                                    // }
+                                    let payload_len = MAX_PAYLOAD.min(slice.len() - offset);
+                                    trace!("GET offset {} payload {}",offset,payload_len);
+                                    resp.add_to_payload_tail(payload_len, &slice[offset..offset + payload_len]).expect("failed to add payload");
+                                    offset += payload_len;
                                 }
                                 Some(())
                                 // let _result = res.add_to_payload_tail(1, pack(&optype));
@@ -912,17 +975,20 @@ impl Master {
                                 status = RpcStatus::StatusOk;
                                 Some(())
                             });
-            for resp in get_resps.iter_mut() {
-                resp.get_mut_header().common_header.status = status.clone();
-            }
+            // for resp in get_resps.iter_mut() {
+            //     resp.get_mut_header().common_header.status = status.clone();
+            // }
             if outcome == None {
                 warn!(
-                    "kv req with id {} key {:?} table {} failed with status {:?}",
+                    "GET with id {} key {:?} table {} failed with status {:?}",
                     rpc_stamp,
                     req.get_payload().split_at(key_length as usize).0,
                     table_id,
                     status
                 );
+                for resp in get_resps.drain(1..) {
+                    resp.free_packet();
+                }
             }
             // match outcome {
             //     // The RPC completed successfully. Update the response header with
@@ -1468,6 +1534,233 @@ impl Master {
             res.deparse_header(PACKET_UDP_LEN as usize),
         ));
     }
+
+    /// multiget
+    #[allow(unreachable_code)]
+    #[allow(unused_assignments)]
+    pub fn multiget(
+        &self,
+        req: Packet<MultiGetRequest, EmptyMetadata>,
+        resps: Vec<Packet<UdpHeader, EmptyMetadata>>,
+    ) -> Result<
+        Box<Task>,
+        (
+            Packet<UdpHeader, EmptyMetadata>,
+            Vec<Packet<UdpHeader, EmptyMetadata>>,
+        ),
+    > {
+        // First, parse the request packet.
+        // let req = req.parse_header::<MultiGetRequest>();
+
+        // Read fields off the request header.
+        let mut tenant_id: TenantId = 0;
+        let mut table_id: TableId = 0;
+        let mut key_length = 0;
+        let mut num_keys = 0;
+        let mut value_length = 0;
+        let mut rpc_stamp = 0;
+        {
+            let hdr = req.get_header();
+            tenant_id = hdr.common_header.tenant as TenantId;
+            table_id = hdr.table_id as TableId;
+            key_length = hdr.key_len;
+            num_keys = hdr.num_keys;
+            value_length = hdr.value_len as usize;
+            rpc_stamp = hdr.common_header.stamp;
+        }
+        let num_segments = resps.len() as u32;
+        // Next, add a header to the response packet.
+        let mut multiget_resps: Vec<_> = resps
+            .into_iter()
+            .map(|p| {
+                // let multiget_resp = p
+                p.push_header(&MultiGetResponse::new(
+                    rpc_stamp,
+                    OpCode::SandstormMultiGetRpc,
+                    tenant_id,
+                    num_segments,
+                    // segment_id,
+                    // value_len as u32,
+                ))
+                .expect("Failed to setup GetResponse")
+                // segment_id += 1;
+                // multiget_resp
+            })
+            .collect();
+
+        // If the payload size is less than the key length, return an error.
+        if req.get_payload().len() < ((key_length as u32) * num_keys) as usize {
+            for resp in multiget_resps.drain(1..) {
+                resp.free_packet();
+            }
+            let multiget_resps = multiget_resps
+                .into_iter()
+                .map(|mut p| {
+                    p.get_mut_header().common_header.status = RpcStatus::StatusMalformedRequest;
+                    p.deparse_header(PACKET_UDP_LEN as usize)
+                })
+                .collect();
+            // res.get_mut_header().common_header.status = RpcStatus::StatusMalformedRequest;
+            return Err((req.deparse_header(PACKET_UDP_LEN as usize), multiget_resps));
+        }
+
+        // Lookup the tenant, and get a handle to the allocator. Required to avoid capturing a
+        // reference to Master in the generator below.
+        let tenant = self.get_tenant(tenant_id);
+        let alloc: *const Allocator = &self.heap;
+
+        // Create a generator for this request.
+        let gen = Box::pin(move || {
+            let mut n_recs: u32 = 0;
+            let mut status: RpcStatus = RpcStatus::StatusTenantDoesNotExist;
+            // let optype: u8 = 0x1;
+
+            let outcome =
+                // Check if the tenant exists. If it does, then check if the
+                // table exists, and update the status of the rpc.
+                tenant.and_then(| tenant | {
+                                status = RpcStatus::StatusTableDoesNotExist;
+                                tenant.get_table(table_id)
+                            });
+            // If the table exists, then lookup the keys in the database.
+            let mut current_packet = 0usize;
+            if let Some(table) = outcome {
+                status = RpcStatus::StatusObjectDoesNotExist;
+
+                // Iterate across keys in the request payload. There are `num_keys` keys, each
+                // of length `key_length`.
+                // let mut n = 0;
+                let mut packet_offset = 0usize;
+                let mut global_offset = 0usize;
+                for key in req.get_payload().chunks(key_length as usize) {
+                    // n += 1;
+                    // // Corner case: We've either already seen `num_keys` keys or the current key
+                    // is not `key_length` bytes long.
+                    // if n > num_keys || key.len() != key_length as usize {
+                    //     break;
+                    // }
+                    // Lookup the key, and add it to the response payload.
+                    let alloc: &Allocator = accessor(alloc);
+                    let res = table
+                        .get(key)
+                        .and_then(|entry| Some((alloc.resolve(entry.value), entry.version)))
+                        .and_then(|(opt, version)| {
+                            if let Some(opt) = opt {
+                                let (k, value) = opt;
+                                assert!(value_length <= value.len());
+                                let slice = if value_length > 0 {
+                                    value.slice(0, value_length)
+                                } else {
+                                    value
+                                };
+                                let mut slice_offset = 0usize;
+                                while slice_offset < slice.len() {
+                                    if packet_offset == MAX_PAYLOAD {
+                                        packet_offset = 0;
+                                        current_packet += 1;
+                                        multiget_resps[current_packet].get_mut_header().offset =
+                                            global_offset as u32;
+                                    }
+                                    // if packet_offset == 0 {
+                                    //     multiget_resps[current_packet]
+                                    //         .add_to_payload_tail(size_of::<u32>(), &unsafe {
+                                    //             transmute::<u32, [u8; 4]>(global_offset as u32)
+                                    //         })
+                                    //         .expect("failed to add offset");
+                                    //     if current_packet == 0 {
+                                    //         // placeholder
+                                    //         multiget_resps[current_packet]
+                                    //             .add_to_payload_tail(size_of::<u32>(), &unsafe {
+                                    //                 transmute::<u32, [u8; 4]>(num_segments)
+                                    //             })
+                                    //             .expect("failed to add number of segments");
+                                    //     }
+                                    // }
+                                    let remaining = slice.len() - slice_offset;
+                                    let add = remaining.min(MAX_PAYLOAD - packet_offset);
+                                    multiget_resps[current_packet]
+                                        .add_to_payload_tail(
+                                            add,
+                                            &slice[slice_offset..slice_offset + add],
+                                        )
+                                        .expect("failed to add payload");
+                                    slice_offset += add;
+                                    global_offset += add;
+                                    packet_offset += add;
+                                }
+                                Some(())
+                            } else {
+                                None
+                            }
+                        });
+
+                    // If the current lookup failed, then stop all lookups.
+                    match res {
+                        Some(_) => n_recs += 1,
+
+                        None => break,
+                    }
+                }
+                // // Success if all keys could be looked up at the database.
+                // if n_recs == num_keys {
+                //     status = RpcStatus::StatusOk;
+                // }
+            }
+            // Success if all keys could be looked up at the database.
+            if n_recs == num_keys {
+                status = RpcStatus::StatusOk;
+                // for resp in multiget_resps.iter_mut() {
+                //     resp.get_mut_header().common_header.status = status.clone();
+                // }
+                // // set valid segments
+                // multiget_resps[0].get_mut_payload()[4..8].copy_from_slice(&unsafe {
+                //     transmute::<u32, [u8; 4]>(current_packet as u32 + 1)
+                // });
+            } else {
+                warn!(
+                    "MULTIGET with id {} table {} failed with status {:?}",
+                    rpc_stamp,
+                    // req.get_payload().split_at(key_length as usize).0,
+                    table_id,
+                    status
+                );
+                for resp in multiget_resps.drain(1..) {
+                    resp.free_packet();
+                }
+                // multiget_resps[0].get_mut_header().common_header.status = status.clone();
+            }
+
+            // // Write the status into the RPC response header.
+            // res.get_mut_header().common_header.status = status.clone();
+
+            // // If the RPC was handled successfully, then update the response header with the number
+            // // of records that were read from the database.
+            // if status == RpcStatus::StatusOk {
+            //     res.get_mut_header().num_records = n_recs;
+            // }
+
+            // Deparse request and response packets to UDP, and return from the generator.
+            let multiget_resps = multiget_resps
+                .into_iter()
+                .map(|mut p| {
+                    p.get_mut_header().common_header.status = status.clone();
+                    p.deparse_header(PACKET_UDP_LEN as usize)
+                })
+                .collect();
+            return Some((req.deparse_header(PACKET_UDP_LEN as usize), multiget_resps));
+            // return Some((
+            //     req.deparse_header(PACKET_UDP_LEN as usize),
+            //     res.deparse_header(PACKET_UDP_LEN as usize),
+            // ));
+
+            // XXX: This yield is required to get the compiler to compile this closure into a
+            // generator. It is unreachable and benign.
+            yield 0;
+        });
+
+        // Create and return a native task.
+        return Ok(Box::new(Native::new(TaskPriority::REQUEST, gen)));
+    }
     /*
     /// Handles the multiget() RPC request.
     ///
@@ -1625,7 +1918,7 @@ impl Master {
         // Create and return a native task.
         return Ok(Box::new(Native::new(TaskPriority::REQUEST, gen)));
     }
-    */
+
 
     // This functions processes native multiget requests without creating a generator.
     #[allow(unreachable_code)]
@@ -1746,6 +2039,7 @@ impl Master {
             res.deparse_header(PACKET_UDP_LEN as usize),
         ));
     }
+    */
 
     /// Handles the invoke RPC request.
     ///
@@ -2135,7 +2429,6 @@ impl Service for Master {
     > {
         return self.invoke(req, res);
     }
-
     #[inline]
     fn service_native(
         &self,
@@ -2157,14 +2450,13 @@ impl Service for Master {
             // OpCode::SandstormGetRpc => {
             //     return self.get_native(req, res);
             // }
-            OpCode::SandstormPutRpc => {
-                return self.put_native(req, res);
-            }
+            // OpCode::SandstormPutRpc => {
+            //     return self.put_native(req, res);
+            // }
 
-            OpCode::SandstormMultiGetRpc => {
-                return self.multiget_native(req, res);
-            }
-
+            // OpCode::SandstormMultiGetRpc => {
+            //     return self.multiget_native(req, res);
+            // }
             _ => {
                 return Err((req, res));
             }

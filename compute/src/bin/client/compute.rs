@@ -198,7 +198,8 @@ fn main() {
     let num_tenants: u32 = 1;
     info!("Populating extension for {} tenants", num_tenants);
     for tenant in 1..=num_tenants {
-        master.load_test(tenant);
+        // master.load_test(tenant);
+        master.load_extensions(tenant);
     }
     // finished populating, now mark as immut
     let master = Arc::new(master);

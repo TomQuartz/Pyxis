@@ -71,7 +71,6 @@ pub enum OpCode {
 
     // #[cfg(feature = "queue_len")]
     // TerminateRpc = 0x07,
-
     ResetRpc = 0x08,
 
     ScalingRpc = 0x09,
@@ -265,6 +264,8 @@ pub struct GetRequest {
     /// to be unpacked from the request at the server.
     pub key_length: u16,
 
+    pub val_length: u32,
+
     /// This enum determines the issuer for the GetRequest, which can either be a
     /// Sandstorm client or an extension running on the client side.
     pub generator: GetGenerator,
@@ -289,6 +290,7 @@ impl GetRequest {
         req_tenant: u32,
         req_table_id: u64,
         req_key_length: u16,
+        req_val_length: u32,
         req_stamp: u64,
         req_generator: GetGenerator,
     ) -> GetRequest {
@@ -302,6 +304,7 @@ impl GetRequest {
             table_id: req_table_id,
             key_length: req_key_length,
             generator: req_generator,
+            val_length: req_val_length,
         }
     }
 }
@@ -371,12 +374,14 @@ pub struct GetResponse {
     /// successfully.
     pub common_header: RpcResponseHeader,
 
-    /// The length of the value returned in the response if the RPC completed
-    /// successfully.
+    // /// The length of the value returned in the response if the RPC completed
+    // /// successfully.
     // pub value_length: u32,
     // pub table_id: u32,
     pub num_segments: u32,
-    pub segment_id: u32,
+    pub offset: u32,
+    // pub segment_id: u32,
+    // pub value_len: u32,
 }
 
 impl GetResponse {
@@ -394,12 +399,15 @@ impl GetResponse {
         opcode: OpCode,
         tenant: u32,
         num_segments: u32,
-        segment_id: u32,
+        // segment_id: u32,
+        // value_len: u32,
     ) -> GetResponse {
         GetResponse {
             common_header: RpcResponseHeader::new(req_stamp, opcode, tenant),
             num_segments: num_segments,
-            segment_id: segment_id,
+            // segment_id: segment_id,
+            // value_len: value_len,
+            offset: 0,
         }
     }
 }
@@ -790,6 +798,8 @@ pub struct MultiGetRequest {
     /// The number of keys to be looked up at the database. Every key should be `key_len` bytes
     /// long.
     pub num_keys: u32,
+
+    pub value_len: u32,
 }
 
 // Implementation of methods on MultiGetRequest.
@@ -805,7 +815,14 @@ impl MultiGetRequest {
     ///             length.
     /// * `n_keys`: The number of keys to be looked up (each of length `k_len`).
     /// * `stamp`:  Identifier of the RPC. Can be used as a timestamp.
-    pub fn new(tenant: u32, table: u64, k_len: u16, n_keys: u32, stamp: u64) -> MultiGetRequest {
+    pub fn new(
+        tenant: u32,
+        table: u64,
+        k_len: u16,
+        n_keys: u32,
+        value_len: u32,
+        stamp: u64,
+    ) -> MultiGetRequest {
         MultiGetRequest {
             common_header: RpcRequestHeader::new(
                 Service::MasterService,
@@ -816,6 +833,7 @@ impl MultiGetRequest {
             table_id: table,
             key_len: k_len,
             num_keys: n_keys,
+            value_len: value_len,
         }
     }
 }
@@ -849,8 +867,10 @@ pub struct MultiGetResponse {
     /// Generic response header consisting of RPC status and identifier.
     pub common_header: RpcResponseHeader,
 
-    /// Number of records returned by the RPC.
-    pub num_records: u32,
+    // /// Number of records returned by the RPC.
+    // pub num_records: u32,
+    pub num_segments: u32,
+    pub offset: u32,
 }
 
 // Implementation of methods on MultiGetResponse.
@@ -864,10 +884,17 @@ impl MultiGetResponse {
     /// * `opcode`:    The opcode on the original RPC request.
     /// * `tenant`:    The tenant this response should be sent to.
     /// * `n_records`: Number of records being returned in the response.
-    pub fn new(stamp: u64, opcode: OpCode, tenant: u32, n_records: u32) -> MultiGetResponse {
+    pub fn new(
+        stamp: u64,
+        opcode: OpCode,
+        tenant: u32, /*, n_records: u32*/
+        num_segments: u32,
+    ) -> MultiGetResponse {
         MultiGetResponse {
             common_header: RpcResponseHeader::new(stamp, opcode, tenant),
-            num_records: n_records,
+            // num_records: n_records,
+            offset: 0,
+            num_segments: num_segments,
         }
     }
 }

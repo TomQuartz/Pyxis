@@ -268,7 +268,7 @@ impl Sender {
     #[allow(dead_code)]
     // TODO: hash the target storage with LSB in key
     // for now, the vec len of req_hdrs=1
-    pub fn send_get(&self, tenant: u32, table: u64, key: &[u8], id: u64) {
+    pub fn send_get(&self, tenant: u32, table: u64, key: &[u8], size: u32, id: u64) {
         let (server_idx, port_idx) = self.get_endpoint();
         let request = rpc::create_get_rpc(
             &self.req_hdrs[server_idx].mac_header,
@@ -277,6 +277,7 @@ impl Sender {
             tenant,
             table,
             key,
+            size,
             id,
             port_idx,
             GetGenerator::SandstormClient,
@@ -295,7 +296,7 @@ impl Sender {
     /// * `key`:    Byte string of key whose value is to be fetched. Limit 64 KB.
     /// * `id`:     RPC identifier.
     #[allow(dead_code)]
-    pub fn send_get_from_extension(&self, tenant: u32, table: u64, key: &[u8], id: u64) {
+    pub fn send_get_from_extension(&self, tenant: u32, table: u64, key: &[u8], size: u32, id: u64) {
         let (server_idx, port_idx) = self.get_endpoint();
         let request = rpc::create_get_rpc(
             &self.req_hdrs[server_idx].mac_header,
@@ -304,6 +305,7 @@ impl Sender {
             tenant,
             table,
             key,
+            size,
             id,
             port_idx,
             GetGenerator::SandstormExtension,
@@ -396,6 +398,7 @@ impl Sender {
         k_len: u16,
         n_keys: u32,
         keys: &[u8],
+        size: u32,
         id: u64,
     ) {
         let (server_idx, port_idx) = self.get_endpoint();
@@ -408,6 +411,7 @@ impl Sender {
             k_len,
             n_keys,
             keys,
+            size,
             id,
             port_idx,
         );

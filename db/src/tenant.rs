@@ -27,7 +27,7 @@ use sandstorm::common::{TableId, TenantId};
 /// particular tenant.
 pub struct Tenant {
     /// A unique identifier for the tenant.
-    id: TenantId,
+    pub id: TenantId,
 
     /// A map of all the data tables belonging to a tenant. Each data table
     /// has a unique identifier.

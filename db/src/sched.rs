@@ -26,7 +26,7 @@ use super::task::TaskState::*;
 
 use e2d2::common::EmptyMetadata;
 use e2d2::headers::*;
-use e2d2::interface::new_packet;
+use e2d2::interface::{new_packet, MAX_PAYLOAD};
 use wireformat;
 use wireformat::*;
 
@@ -242,13 +242,44 @@ impl TaskManager {
                     let req = request.parse_header::<GetRequest>();
                     let table_id = req.get_header().table_id as usize;
                     trace!("dispatch kv req on table {}", table_id);
+                    // let val_len = req.get_header().val_length as usize;
+                    // let num_responses = (val_len + MAX_PAYLOAD - 1) / MAX_PAYLOAD;
                     let table_cfg = &self.master_service.table_cfg[table_id - 1];
-                    let num_responses = table_cfg.value_len / table_cfg.record_len;
+                    let num_responses = (table_cfg.value_len + MAX_PAYLOAD - 1) / MAX_PAYLOAD;
+                    trace!("num resps {}", num_responses);
                     let mut responses = vec![];
                     for _ in 0..num_responses {
                         responses.push(self.create_response(resp_hdr).unwrap());
                     }
                     match self.master_service.get(req, responses) {
+                        // Ok(task) => Some((task, op)), // self.ready.push_back(task),
+                        Ok(task) => self.ready.push_back(task),
+                        Err((req, resps)) => {
+                            // Master returned an error. The allocated request and response packets
+                            // need to be freed up.
+                            warn!("failed to dispatch req");
+                            req.free_packet();
+                            for resp in resps.into_iter() {
+                                resp.free_packet();
+                            }
+                            // None
+                        }
+                    }
+                }
+                op @ OpCode::SandstormMultiGetRpc => {
+                    let req = request.parse_header::<MultiGetRequest>();
+                    let table_id = req.get_header().table_id as usize;
+                    trace!("dispatch kv req on table {}", table_id);
+                    let num_keys = req.get_header().num_keys as usize;
+                    let val_len = req.get_header().value_len as usize;
+                    // let table_cfg = &self.master_service.table_cfg[table_id - 1];
+                    // let num_responses = (table_cfg.value_len + MAX_PAYLOAD - 1) / MAX_PAYLOAD;
+                    let num_responses = (num_keys * val_len + MAX_PAYLOAD - 1) / MAX_PAYLOAD;
+                    let mut responses = vec![];
+                    for _ in 0..num_responses {
+                        responses.push(self.create_response(resp_hdr).unwrap());
+                    }
+                    match self.master_service.multiget(req, responses) {
                         // Ok(task) => Some((task, op)), // self.ready.push_back(task),
                         Ok(task) => self.ready.push_back(task),
                         Err((req, resps)) => {

@@ -6,6 +6,8 @@ use std::mem::size_of;
 use std::ptr;
 use std::slice;
 
+pub const MAX_PAYLOAD: usize = 1024;
+
 /// A packet is a safe wrapper around mbufs, that can be allocated and manipulated.
 /// We associate a header type with a packet to allow safe insertion of headers.
 #[cfg(not(feature = "packet_offset"))]

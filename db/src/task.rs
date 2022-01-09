@@ -131,7 +131,14 @@ pub trait Task {
     ///
     /// * `record`: The record, which will be added to the RW set.
     // fn update_cache(&mut self, record: &[u8], segment_id: usize, num_segments: usize) -> bool;
-    fn update_cache(&mut self, record: &[u8], segment_id: usize, num_segments: usize) -> bool;
+    fn update_cache(
+        &mut self,
+        record: &[u8],
+        // segment_id: usize,
+        num_segments: u32,
+        // value_len: usize,
+        offset: usize,
+    ) -> bool;
 
     /// This method returns the unique task identifier.
     ///

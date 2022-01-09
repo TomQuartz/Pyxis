@@ -279,7 +279,7 @@ impl<'a> Context<'a> {
 // The DB trait for Context.
 impl<'a> DB for Context<'a> {
     /// Lookup the `DB` trait for documentation on this method.
-    fn get(&self, table_id: u64, key: &[u8]) -> Option<ReadBuf> {
+    fn get(&self, table_id: u64, key: &[u8], size: usize) -> Option<ReadBuf> {
         // Lookup the database for the key value pair. If it exists, then update
         // the read set and return the value.
         let start = rdtsc();
@@ -293,14 +293,16 @@ impl<'a> DB for Context<'a> {
             .and_then(|(opt, version)| {
                 if let Some(opt) = opt {
                     let (k, v) = opt;
-                    self.tx.borrow_mut().record_get(Record::new(
-                        OpType::SandstormRead,
-                        version,
-                        k,
-                        v.clone(),
-                    ));
+                    assert!(v.len() >= size);
+                    let slice = if size > 0 { v.slice(0, size) } else { v };
+                    // self.tx.borrow_mut().record_get(Record::new(
+                    //     OpType::SandstormRead,
+                    //     version,
+                    //     k,
+                    //     v.clone(),
+                    // ));
                     *self.db_credit.borrow_mut() += rdtsc() - start + GET_CREDIT;
-                    unsafe { Some(ReadBuf::new(v)) }
+                    unsafe { Some(ReadBuf::new(slice)) }
                 } else {
                     *self.db_credit.borrow_mut() += rdtsc() - start + GET_CREDIT;
                     None
@@ -309,11 +311,11 @@ impl<'a> DB for Context<'a> {
     }
 
     /// Lookup the `DB` trait for documentation on this method.
-    fn multiget(&self, table_id: u64, key_len: u16, keys: &[u8]) -> Option<MultiReadBuf> {
+    fn multiget(&self, table: u64, key_len: u16, keys: &[u8], size: usize) -> Option<MultiReadBuf> {
         // Lookup the database for each key in the supplied list of keys. If all exist,
         // return a MultiReadBuf to the extension.
         let start = rdtsc();
-        if let Some(table) = self.tenant.get_table(table_id) {
+        if let Some(table) = self.tenant.get_table(table) {
             let mut objs = Vec::new();
 
             // Iterate through the list of keys. Lookup each one of them at the database.
@@ -328,13 +330,14 @@ impl<'a> DB for Context<'a> {
                     .and_then(|(opt, version)| {
                         if let Some(opt) = opt {
                             let (k, v) = opt;
-                            self.tx.borrow_mut().record_get(Record::new(
-                                OpType::SandstormRead,
-                                version,
-                                k,
-                                v.clone(),
-                            ));
-                            objs.push(v);
+                            assert!(v.len() >= size);
+                            // self.tx.borrow_mut().record_get(Record::new(
+                            //     OpType::SandstormRead,
+                            //     version,
+                            //     k,
+                            //     v.clone(),
+                            // ));
+                            objs.push(v.slice(0, size));
                             Some(())
                         } else {
                             None
@@ -448,7 +451,12 @@ impl<'a> DB for Context<'a> {
     }
 
     /// Lookup the `DB` trait for documentation on this method.
-    fn search_get_in_cache(&self, _table: u64, _key: &[u8]) -> (bool, bool, Option<ReadBuf>) {
+    fn search_get_in_cache(
+        &self,
+        _table: u64,
+        _key: &[u8],
+        _size: usize,
+    ) -> (bool, bool, Option<ReadBuf>) {
         (true, false, None)
     }
 
@@ -457,6 +465,7 @@ impl<'a> DB for Context<'a> {
         _table: u64,
         _key_len: u16,
         _keys: &[u8],
+        _size: usize,
     ) -> (bool, bool, Option<MultiReadBuf>) {
         return (true, false, None);
     }

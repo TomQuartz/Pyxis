@@ -1,0 +1,17 @@
+[package]
+name = "vector"
+version = "0.1.0"
+authors = ["tomquartz"]
+
+[lib]
+crate-type = ["dylib"]
+
+[dependencies]
+db          = { path = "../../db" }
+sandstorm   = { path = "../../sandstorm" }
+rust-crypto = "0.2.36"
+openssl     = "0.10.24"
+
+[features]
+default = []
+yield = []

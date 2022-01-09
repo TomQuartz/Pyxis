@@ -544,9 +544,13 @@ pub struct ComputeConfig {
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
 pub struct TableConfig {
+    pub description: String,
+    // pub table_id: u64,
     pub key_len: usize,
+    // length of all entries corresponding to the key
     pub value_len: usize,
-    pub record_len: usize,
+    // length of a single entry
+    pub record_len: u32,
     pub num_records: u32,
 }
 
@@ -554,9 +558,11 @@ pub struct TableConfig {
 #[serde(default)]
 pub struct WorkloadConfig {
     pub extension: String,
+    // TODO: add variation
     pub kv: u32,
     pub order: u32,
     pub table_id: u64,
+    pub opcode: u8,
     pub skew: f64,
 }
 
