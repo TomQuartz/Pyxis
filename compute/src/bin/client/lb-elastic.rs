@@ -1020,7 +1020,11 @@ impl Drop for LoadBalancer {
                 cycles::to_seconds(t) * 1e9
             );
             // println!("PUSHBACK Throughput {:.2}", self.tput.moving());
-            println!("PUSHBACK Throughput {:.2}", self.tput);
+            println!(
+                "Core usage {}S {}C",
+                self.provision.current.0, self.provision.current.1
+            );
+            println!("Throughput {:.2}", self.tput);
         }
         if self.id == 0 && cfg!(feature = "xtrace") {
             let mut f = File::create("xtrace.log").unwrap();
