@@ -1121,12 +1121,12 @@ fn main() {
     let mut net_context = config_and_init_netbricks(&config.lb);
     net_context.start_schedulers();
     // setup shared data
-    // let partition = if config.learnable {
-    //     5000.0
-    // } else {
-    //     config.partition * 100.0
-    // };
-    let partition = config.partition * 100.0;
+    let partition = if config.learnable {
+        5000.0
+    } else {
+        config.partition * 100.0
+    };
+    // let partition = config.partition * 100.0;
     let partition = Arc::new(AtomicF64::new(partition));
     let sampler = Sampler::new(config.workloads.len(), config.sample_factor);
     /*

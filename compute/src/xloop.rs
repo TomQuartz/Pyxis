@@ -896,6 +896,7 @@ pub struct ElasticScaling {
     pub compute_cores: Arc<AtomicI32>,
     pub storage_cores: u32,
     max_quota: i32,
+    min_quota: i32,
     // max_load_abs: f64,
     // max_load_rel: f64,
     // min_load_abs: f64,
@@ -943,6 +944,7 @@ impl ElasticScaling {
             upperbound: 0,
             lowerbound: max_quota,
             max_quota: max_quota,
+            min_quota: 8,
             // max_load_abs: config.max_load_abs,
             // max_load_rel: config.max_load_rel,
             // min_load_abs: config.min_load_abs,
@@ -1055,8 +1057,8 @@ impl ElasticScaling {
                 self.upperbound = provision;
                 if self.upperbound > self.lowerbound {
                     step = -self.max_step.min((self.upperbound - self.lowerbound) / 2);
-                } else if provision - self.max_step <= 0 {
-                    step = -provision / 2;
+                } else if provision - self.max_step < self.min_quota {
+                    step = -(provision - self.min_quota);
                 } else {
                     step = -self.max_step;
                 }
