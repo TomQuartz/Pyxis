@@ -25,9 +25,10 @@ use e2d2::common::EmptyMetadata;
 use e2d2::headers::UdpHeader;
 use e2d2::interface::Packet;
 
+use rpc::*;
 use sandstorm::common::PACKET_UDP_LEN;
 use std::{mem, slice};
-use wireformat::GetResponse;
+use wireformat::*;
 
 // The expected type signature on a generator for a native operation (ex: get()). The return
 // value is an optional tuple consisting of a request and response packet parsed/deparsed upto
@@ -159,15 +160,29 @@ impl Task for Native {
         Packet<UdpHeader, EmptyMetadata>,
         Vec<Packet<UdpHeader, EmptyMetadata>>,
     )> {
-        let (req, resps) = self.req_res.replace(None).unwrap();
-        let resps = resps
-            .into_iter()
-            .map(|p| {
-                let mut p = p.parse_header::<GetResponse>();
-                p.get_mut_header().common_header.duration = self.time;
-                p.deparse_header(PACKET_UDP_LEN as usize)
-            })
-            .collect();
+        if let Some((req, resps)) = self.req_res.replace(None) {
+            let resps = match parse_rpc_opcode(&req) {
+                OpCode::SandstormGetRpc => resps
+                    .into_iter()
+                    .map(|p| {
+                        let mut p = p.parse_header::<GetResponse>();
+                        p.get_mut_header().common_header.duration = self.time;
+                        p.deparse_header(PACKET_UDP_LEN as usize)
+                    })
+                    .collect(),
+                OpCode::SandstormMultiGetRpc => resps
+                    .into_iter()
+                    .map(|p| {
+                        let mut p = p.parse_header::<MultiGetResponse>();
+                        p.get_mut_header().common_header.duration = self.time;
+                        p.deparse_header(PACKET_UDP_LEN as usize)
+                    })
+                    .collect(),
+                op @ _ => panic!("unsupported request {:?}", op),
+            };
+            return Some((req, resps));
+        }
+        None
         // let mut get_resp = res.parse_header::<GetResponse>();
         // // add task duration to resp
         // get_resp.get_mut_header().common_header.duration = self.time;
@@ -177,7 +192,6 @@ impl Task for Native {
         // //     .add_to_payload_tail(time_u8.len(), time_u8)
         // //     .unwrap();
         // let res = get_resp.deparse_header(PACKET_UDP_LEN as usize);
-        Some((req, resps))
     }
 
     /// Refer to the `Task` trait for Documentation.
