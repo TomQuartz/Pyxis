@@ -799,7 +799,7 @@ impl TputGrad {
             self.last_x = x;
             let interval = self.upperbound - self.lowerbound;
             // convergence criterion
-            if interval < self.min_interval
+            if interval <= self.min_interval
             /* && rel_err < self.min_err */
             {
                 self.converged = true;
@@ -940,8 +940,8 @@ impl ElasticScaling {
             compute_cores: Arc::new(AtomicI32::new(config.provisions[0].compute as i32)),
             storage_cores: config.provisions[0].storage,
             // last_provision: initial_provision,
-            upperbound: max_quota,
-            lowerbound: 0,
+            upperbound: 0,
+            lowerbound: max_quota,
             max_quota: max_quota,
             // max_load_abs: config.max_load_abs,
             // max_load_rel: config.max_load_rel,
@@ -991,6 +991,13 @@ impl ElasticScaling {
         }
         // might be from storage or out-of-date compute node
         if let Ok(server_idx) = self.compute_load.ip_addrs.binary_search(&src_ip) {
+            trace!(
+                "ip {} port {} ql {} cv {}",
+                src_ip,
+                src_port,
+                queue_length,
+                task_duration_cv
+            );
             let core_idx = self.compute_load.cumsum_ports[server_idx] + src_port as usize;
             if core_idx < self.compute_cores.load(Ordering::Relaxed) as usize {
                 self.compute_load
@@ -1020,9 +1027,10 @@ impl ElasticScaling {
         let load_compute = Self::ql2load(ql_compute, cv_compute);
         let load_storage = Self::ql2load(ql_storage, cv_storage);
         debug!(
-            "outs {:.2} waiting {:.2} ql {:.2} cv {:.2}",
+            "outs {:.2} waiting {:.2} cores {:.0} ql {:.2} cv {:.2}",
             out_compute / (ncores_compute + 1e-9),
             w_compute / (ncores_compute + 1e-9),
+            ncores_compute,
             ql_compute,
             cv_compute
         );
@@ -1045,11 +1053,25 @@ impl ElasticScaling {
             if load_compute < self.min_load {
                 // self.confidence = 0;
                 self.upperbound = provision;
-                step = -self.bounded_step();
+                if self.upperbound > self.lowerbound {
+                    step = -self.max_step.min((self.upperbound - self.lowerbound) / 2);
+                } else if provision - self.max_step <= 0 {
+                    step = -provision / 2;
+                } else {
+                    step = -self.max_step;
+                }
+                // step = -self.bounded_step();
             } else if load_compute > self.max_load {
                 // self.confidence = 0;
                 self.lowerbound = provision;
-                step = self.bounded_step();
+                if self.upperbound > self.lowerbound {
+                    step = self.max_step.min((self.upperbound - self.lowerbound) / 2);
+                } else if provision + self.max_step > self.max_quota {
+                    step = self.max_quota - provision;
+                } else {
+                    step = self.max_step;
+                }
+                // step = self.bounded_step();
             }
             /* else we have a resonable load on compute */
             // convergence: step=0, either because max_quota is reached or load is in accepted range
@@ -1058,8 +1080,10 @@ impl ElasticScaling {
                     .store(provision + step, Ordering::Relaxed);
             } else {
                 // converged, reset
-                self.lowerbound = 0;
-                self.upperbound = self.max_quota;
+                // self.lowerbound = 0;
+                // self.upperbound = self.max_quota;
+                self.lowerbound = self.max_quota;
+                self.upperbound = 0;
             }
         }
         // NOTE: stats is reset by lb

@@ -873,9 +873,10 @@ impl LoadBalancer {
                     let curr_rdtsc = cycles::rdtsc() - self.start;
                     let global_recvd = self.global_recvd.load(Ordering::Relaxed);
                     if self.learnable
+                        // TODO: move min_recvd into xloop
                         && self.xloop.ready(curr_rdtsc)
                         && packet_recvd_signal
-                        && global_recvd - self.xloop.last_recvd > 1000
+                        && global_recvd - self.xloop.last_recvd > self.cfg.xloop.min_recvd
                     // && global_recvd > 1000
                     {
                         if self.sampler.undetermined_requests() == 0 {

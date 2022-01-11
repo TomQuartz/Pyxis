@@ -478,7 +478,7 @@ impl Sender {
     pub fn send_terminate(&self) {
         for server_idx in 0..self.dst_ports.len() {
             for port_idx in 0..self.dst_ports[server_idx] {
-                let request = rpc::create_reset_rpc(
+                let request = rpc::create_terminate_rpc(
                     &self.req_hdrs[server_idx].mac_header,
                     &self.req_hdrs[server_idx].ip_header,
                     &self.req_hdrs[server_idx].udp_header,

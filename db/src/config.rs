@@ -467,6 +467,7 @@ pub struct KayakConfig {
 #[serde(default)]
 pub struct XloopConfig {
     pub factor: u64,
+    pub min_recvd: usize,
     pub lr: f64,
     pub max_step_rel: f64,
     pub max_step_abs: f64,
