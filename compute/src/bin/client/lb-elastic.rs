@@ -1025,7 +1025,11 @@ impl Drop for LoadBalancer {
                 "Core usage {}S {}C",
                 self.provision.current.0, self.provision.current.1
             );
-            println!("Throughput {:.2}", self.tput);
+            println!(
+                "Throughput {:.2} partition {:.2}",
+                self.tput,
+                self.partition.get() / 100.0
+            );
         }
         if self.id == 0 && cfg!(feature = "xtrace") {
             let mut f = File::create("xtrace.log").unwrap();
