@@ -500,6 +500,15 @@ pub struct ElasticConfig {
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
+pub struct SamplerConfig {
+    pub factor: u64,
+    pub batch_size: usize,
+    pub history_size: usize,
+    pub max_err: f64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(default)]
 pub struct LBConfig {
     pub num_tenants: usize,
     pub tenant_skew: f64,
@@ -510,7 +519,8 @@ pub struct LBConfig {
     // pub max_out: u32,
     pub output_factor: u64,
     // profile ratio, cost, and sort
-    pub sample_factor: u64,
+    // pub sample_factor: u64,
+    pub sampler: SamplerConfig,
     // xloop with tput
     pub xloop: XloopConfig,
     // elastic

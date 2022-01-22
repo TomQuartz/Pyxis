@@ -161,7 +161,7 @@ impl<'a> Task for Container<'a> {
     }
 
     /// Refer to the Task trait for Documentation.
-    fn db_time(&self) -> u64 {
+    fn db_time(&mut self) -> u64 {
         self.db_time.clone()
     }
 
@@ -250,8 +250,8 @@ impl<'a> Task for Container<'a> {
         0
     }
 
-    fn set_time(&mut self, overhead: u64) {
+    fn set_time(&mut self, _overhead: u64) {
         // assert_eq!(self.state,INITIALIZED,"setting overhead for task not in INITIALIZED state");
-        self.time = overhead;
+        // self.time = overhead;
     }
 }

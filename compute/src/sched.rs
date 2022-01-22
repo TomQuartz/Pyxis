@@ -194,6 +194,7 @@ impl TaskManager {
         num_segments: u32,
         // value_len: usize,
         offset: usize,
+        overhead: u64,
         // ) -> Option<Box<Task>> {
     ) {
         if let Some(mut task) = self.waiting.remove(&id) {
@@ -212,9 +213,11 @@ impl TaskManager {
                 //         ready = true;
                 //     }
                 // }
+                task.set_time(overhead);
                 let ready = task.update_cache(record, num_segments, offset);
                 if ready {
                     trace!("ext id {} all segments recvd", id);
+                    task.db_time();
                     self.ready.push_back(task);
                     // return Some(task);
                 } else {
@@ -700,9 +703,8 @@ impl ComputeNodeWorker {
     // }
 
     pub fn send_response(&mut self) {
-        let resps = &mut self.manager.responses;
-        if resps.len() > 0 {
-            self.dispatcher.sender.send_pkts(resps);
+        for resp in self.manager.responses.drain(..) {
+            self.dispatcher.sender.send_pkt(resp);
         }
     }
     pub fn run_tasks(&mut self, queue_length: &mut f64) {
@@ -803,6 +805,7 @@ impl ComputeNodeWorker {
         let p = response.parse_header::<GetResponse>();
         let hdr = p.get_header();
         let timestamp = hdr.common_header.stamp; // this is the timestamp when this ext is inserted in taskmanager
+        let overhead = hdr.common_header.duration;
         let num_segments = hdr.num_segments;
         let offset = hdr.offset as usize;
         // let segment_id = hdr.segment_id as usize;
@@ -821,6 +824,7 @@ impl ComputeNodeWorker {
                 num_segments,
                 // value_len,
                 offset,
+                overhead,
             )
             // self.sender.return_credit();
         } else {
@@ -842,6 +846,7 @@ impl ComputeNodeWorker {
         let p = response.parse_header::<MultiGetResponse>();
         let hdr = p.get_header();
         let timestamp = hdr.common_header.stamp; // this is the timestamp when this ext is inserted in taskmanager
+        let overhead = hdr.common_header.duration;
         let num_segments = hdr.num_segments;
         let offset = hdr.offset as usize;
         // let segment_id = hdr.segment_id as usize;
@@ -860,6 +865,7 @@ impl ComputeNodeWorker {
                 num_segments,
                 // value_len,
                 offset,
+                overhead,
             )
             // self.sender.return_credit();
         } else {

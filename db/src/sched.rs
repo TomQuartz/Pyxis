@@ -165,8 +165,8 @@ impl Executable for Dispatcher {
 struct TaskManager {
     master_service: Arc<Master>,
     // resp_hdr: PacketHeaders,
-    pub ready: VecDeque<Box<Task>>,
-    responses: Vec<Packet<IpHeader, EmptyMetadata>>,
+    pub ready: VecDeque<(OpCode, Box<Task>)>,
+    responses: Vec<Packet<UdpHeader, EmptyMetadata>>,
 }
 impl TaskManager {
     fn new(master_service: Arc<Master>) -> TaskManager {
@@ -204,7 +204,7 @@ impl TaskManager {
         }
     }
     fn clear(&mut self) {
-        for mut task in self.ready.drain(..) {
+        for (_, mut task) in self.ready.drain(..) {
             if let Some((req, resps)) = unsafe { task.tear(&mut 0.0, 0.0) } {
                 req.free_packet();
                 for resp in resps {
@@ -238,7 +238,7 @@ impl TaskManager {
                     let response = self.create_response(resp_hdr).unwrap();
                     match self.master_service.dispatch_invoke(request, response) {
                         // Ok(task) => Some((task, op)),
-                        Ok(task) => self.ready.push_back(task),
+                        Ok(task) => self.ready.push_back((op, task)),
                         Err((req, res)) => {
                             // Master returned an error. The allocated request and response packets
                             // need to be freed up.
@@ -263,7 +263,7 @@ impl TaskManager {
                     }
                     match self.master_service.get(req, responses) {
                         // Ok(task) => Some((task, op)), // self.ready.push_back(task),
-                        Ok(task) => self.ready.push_back(task),
+                        Ok(task) => self.ready.push_back((op, task)),
                         Err((req, resps)) => {
                             // Master returned an error. The allocated request and response packets
                             // need to be freed up.
@@ -291,7 +291,7 @@ impl TaskManager {
                     }
                     match self.master_service.multiget(req, responses) {
                         // Ok(task) => Some((task, op)), // self.ready.push_back(task),
-                        Ok(task) => self.ready.push_back(task),
+                        Ok(task) => self.ready.push_back((op, task)),
                         Err((req, resps)) => {
                             // Master returned an error. The allocated request and response packets
                             // need to be freed up.
@@ -359,6 +359,7 @@ impl TaskManager {
     // }
     fn run_task(
         &mut self,
+        op: OpCode,
         mut task: Box<Task>,
         queue_len: &mut f64,
         task_duration_cv: f64,
@@ -367,7 +368,7 @@ impl TaskManager {
         if task.run().0 == COMPLETED {
             // The task finished execution, check for request and response packets. If they
             // exist, then free the request packet, and enqueue the response packet.
-            if let Some((req, resps)) = unsafe { task.tear(queue_len, task_duration_cv) } {
+            if let Some((req, mut resps)) = unsafe { task.tear(queue_len, task_duration_cv) } {
                 trace!("task complete");
                 req.free_packet();
                 // return Some(
@@ -376,15 +377,16 @@ impl TaskManager {
                 //         .map(|resp| rpc::fixup_header_length_fields(resp))
                 //         .collect::<Vec<_>>(),
                 // );
-                for resp in resps.into_iter() {
-                    self.responses.push(rpc::fixup_header_length_fields(resp));
-                }
+                self.responses.append(&mut resps);
+                // for resp in resps.into_iter() {
+                //     self.responses.push(rpc::fixup_header_length_fields(resp));
+                // }
                 // self.responses
                 //     .write()
                 //     .push(rpc::fixup_header_length_fields(res));
             }
         } else {
-            self.ready.push_back(task);
+            self.ready.push_back((op, task));
         }
         // None
     }
@@ -605,16 +607,19 @@ impl StorageNodeWorker {
             // id: id,
         }
     }
-    fn send_response(&mut self) {
-        let responses = &mut self.manager.responses;
-        self.dispatcher.sender.send_pkts(responses);
+    fn send_response(&mut self, op: OpCode) {
+        if self.manager.responses.len() > 0 {
+            self.dispatcher
+                .sender
+                .send_pkts(op, &mut self.manager.responses);
+        }
     }
     fn run_tasks(&mut self, queue_length: &mut f64) {
-        while let Some(task) = self.manager.ready.pop_front() {
+        while let Some((op, task)) = self.manager.ready.pop_front() {
             let start = cycles::rdtsc();
             let cv = self.task_duration_cv.cv();
-            self.manager.run_task(task, queue_length, cv);
-            self.send_response();
+            self.manager.run_task(op, task, queue_length, cv);
+            self.send_response(op);
             let end = cycles::rdtsc();
             let duration = (end - start) as f64;
             self.task_duration_cv.update(duration);

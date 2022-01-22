@@ -180,7 +180,7 @@ impl Task for Container {
     }
 
     /// Refer to the Task trait for Documentation.
-    fn db_time(&self) -> u64 {
+    fn db_time(&mut self) -> u64 {
         self.db_time.clone()
     }
 

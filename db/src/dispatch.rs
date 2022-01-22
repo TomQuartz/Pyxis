@@ -36,6 +36,7 @@ use super::wireformat::*;
 use super::e2d2::common::EmptyMetadata;
 use super::e2d2::headers::*;
 use super::e2d2::interface::*;
+use super::e2d2::native::zcsi::MBuf;
 
 use sandstorm::common;
 
@@ -527,19 +528,20 @@ impl Sender {
 
     /// Sends a request/packet parsed upto IP out the network interface.
     #[inline]
-    fn send_pkt(&self, request: Packet<IpHeader, EmptyMetadata>) {
+    pub fn send_pkt(&self, request: Packet<IpHeader, EmptyMetadata>) {
         // Send the request out the network.
         unsafe {
-            let mut pkts = [request.get_mbuf()];
+            let mut pkts = vec![request.get_mbuf()];
 
-            let sent = self
-                .net_port
-                .send(&mut pkts)
-                .expect("Failed to send packet!");
+            // let sent = self
+            //     .net_port
+            //     .send(&mut pkts)
+            //     .expect("Failed to send packet!");
 
-            if sent < pkts.len() as u32 {
-                warn!("Failed to send all packets!");
-            }
+            // if sent < pkts.len() as u32 {
+            //     warn!("Failed to send all packets!");
+            // }
+            self.send_mbufs(&mut pkts);
         }
 
         // // Update the number of requests sent out by this generator.
@@ -549,38 +551,64 @@ impl Sender {
         // // }
         // self.requests_sent.set(r + 1);
     }
-
-    pub fn send_pkts(&self, packets: &mut Vec<Packet<IpHeader, EmptyMetadata>>) {
+    pub fn send_mbufs(&self, mbufs: &mut Vec<*mut MBuf>) {
+        let mut to_send = mbufs.len();
+        loop {
+            // let sent = self.dispatcher.receiver.net_port.send(&mut mbufs).unwrap() as usize;
+            let sent = self.net_port.send(mbufs).unwrap() as usize;
+            // if sent == 0 {
+            //     warn!(
+            //         "Was able to send only {} of {} packets.",
+            //         num_packets - to_send,
+            //         num_packets
+            //     );
+            //     break;
+            // }
+            if sent < to_send {
+                // warn!("Was able to send only {} of {} packets.", sent, num_packets);
+                to_send -= sent;
+                mbufs.drain(0..sent as usize);
+            } else {
+                break;
+            }
+        }
+    }
+    pub fn send_pkts(&self, op: OpCode, packets: &mut Vec<Packet<UdpHeader, EmptyMetadata>>) {
         trace!("send {} resps", packets.len());
+        let start = cycles::rdtsc();
         unsafe {
             let mut mbufs = vec![];
             let num_packets = packets.len();
-            let mut to_send = num_packets;
+            // let mut to_send = num_packets;
 
             // Extract Mbuf's from the batch of packets.
-            while let Some(packet) = packets.pop() {
-                mbufs.push(packet.get_mbuf());
-            }
-
-            // Send out the above MBuf's.
-            loop {
-                // let sent = self.dispatcher.receiver.net_port.send(&mut mbufs).unwrap() as usize;
-                let sent = self.net_port.send(&mut mbufs).unwrap() as usize;
-                // if sent == 0 {
-                //     warn!(
-                //         "Was able to send only {} of {} packets.",
-                //         num_packets - to_send,
-                //         num_packets
-                //     );
-                //     break;
-                // }
-                if sent < to_send {
-                    // warn!("Was able to send only {} of {} packets.", sent, num_packets);
-                    to_send -= sent;
-                    mbufs.drain(0..sent as usize);
-                } else {
-                    break;
-                }
+            // while let Some(packet) = packets.pop() {
+            //     mbufs.push(packet.get_mbuf());
+            // }
+            mbufs.extend(
+                packets
+                    .drain(..=num_packets - 1)
+                    .map(|pkt| rpc::fixup_header_length_fields(pkt).get_mbuf()),
+            );
+            self.send_mbufs(&mut mbufs);
+            if packets.len() > 0 {
+                // still one left
+                let duration = cycles::rdtsc() - start;
+                let mut packet = packets.pop().unwrap();
+                packet = match op {
+                    OpCode::SandstormGetRpc => {
+                        let mut resp = packet.parse_header::<GetResponse>();
+                        resp.get_mut_header().common_header.duration += duration;
+                        resp.deparse_header(common::PACKET_UDP_LEN as usize)
+                    }
+                    OpCode::SandstormMultiGetRpc => {
+                        let mut resp = packet.parse_header::<MultiGetResponse>();
+                        resp.get_mut_header().common_header.duration += duration;
+                        resp.deparse_header(common::PACKET_UDP_LEN as usize)
+                    }
+                    _ => panic!("multi-packet response is not supported for {:?}", op),
+                };
+                self.send_pkt(rpc::fixup_header_length_fields(packet));
             }
         }
         // unsafe {

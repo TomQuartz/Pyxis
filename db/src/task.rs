@@ -92,7 +92,7 @@ pub trait Task {
     /// # Return
     ///
     /// The total time for which the task has spent in db operations in cycles.
-    fn db_time(&self) -> u64;
+    fn db_time(&mut self) -> u64;
 
     /// When called, this method should return the priority of the task.
     ///

@@ -141,7 +141,7 @@ impl TimeAvg {
 */
 #[derive(Clone)]
 pub struct Avg {
-    counter: f64,
+    pub counter: f64,
     lastest: f64,
     E_x: f64,
     E_x2: f64,
@@ -167,7 +167,17 @@ impl Avg {
         self.E_x2 =
             self.E_x2 * ((self.counter - 1.0) / self.counter) + delta * delta / self.counter;
     }
-    pub fn batch_update(&mut self, delta: f64, cnt: f64) {
+    pub fn diff(&mut self, other: &Avg, max_err: f64) -> bool {
+        self.counter > 0.0
+            && other.counter > 0.0
+            && relative_err(self.avg(), other.avg()) >= max_err
+    }
+    pub fn merge(&mut self, other: &Avg) {
+        if other.counter > 0.0 {
+            self.batch_update(other.avg(), other.counter);
+        }
+    }
+    fn batch_update(&mut self, delta: f64, cnt: f64) {
         self.counter += cnt;
         self.E_x = self.E_x * ((self.counter - cnt) / self.counter) + delta * (cnt / self.counter);
         self.E_x2 = self.E_x2 * ((self.counter - cnt) / self.counter)

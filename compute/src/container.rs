@@ -142,7 +142,7 @@ impl Task for Container {
                 GeneratorState::Yielded(_) => {
                     self.state = YIELDED;
                     if let Some(proxydb) = self.db.get_mut() {
-                        self.db_time = proxydb.db_credit();
+                        // self.db_time = proxydb.db_credit();
                         if proxydb.get_waiting() == true {
                             self.state = WAITING;
                         }
@@ -151,7 +151,7 @@ impl Task for Container {
 
                 GeneratorState::Complete(_) => {
                     if let Some(proxydb) = self.db.get_mut() {
-                        self.db_time = proxydb.db_credit();
+                        // self.db_time = proxydb.db_credit();
                     }
                     self.state = COMPLETED;
                 }
@@ -185,8 +185,11 @@ impl Task for Container {
     }
 
     /// Refer to the Task trait for Documentation.
-    fn db_time(&self) -> u64 {
-        self.db_time.clone()
+    fn db_time(&mut self) -> u64 {
+        // self.db_time.clone()
+        self.storage_overhead += self.db_time;
+        self.db_time = 0;
+        self.storage_overhead
     }
 
     /// Refer to the Task trait for Documentation.
@@ -252,7 +255,11 @@ impl Task for Container {
         offset: usize,
     ) -> bool {
         if let Some(proxydb) = self.db.get_mut() {
-            proxydb.collect_resp(record, num_segments, offset)
+            let start = cycles::rdtsc();
+            let ready = proxydb.collect_resp(record, num_segments, offset);
+            let duration = cycles::rdtsc() - start;
+            self.time += duration;
+            ready
             // let keylen = proxydb.get_keylen();
             // match parse_record_optype(record) {
             //     OpType::SandstormRead => {
@@ -284,6 +291,7 @@ impl Task for Container {
     }
 
     fn set_time(&mut self, overhead: u64) {
-        self.storage_overhead += overhead;
+        // self.storage_overhead += overhead;
+        self.db_time = self.db_time.max(overhead);
     }
 }
