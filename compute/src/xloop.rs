@@ -167,6 +167,12 @@ impl Avg {
         self.E_x2 =
             self.E_x2 * ((self.counter - 1.0) / self.counter) + delta * delta / self.counter;
     }
+    pub fn batch_update(&mut self, delta: f64, cnt: f64) {
+        self.counter += cnt;
+        self.E_x = self.E_x * ((self.counter - cnt) / self.counter) + delta * (cnt / self.counter);
+        self.E_x2 = self.E_x2 * ((self.counter - cnt) / self.counter)
+            + delta * delta * (cnt / self.counter);
+    }
     pub fn avg(&self) -> f64 {
         self.E_x
     }
@@ -809,9 +815,12 @@ impl TputGrad {
                 self.elapsed = curr_rdtsc - self.start;
                 self.start = 0;
             } else {
-                step_raw = -self.lr * interval * delta_inv_tput / (delta_x + 1e-9);
-                let max_step = self.max_step_abs.min(self.max_step_rel * interval);
-                let min_step = self.min_step_abs.max(self.min_step_rel * interval);
+                // step_raw = -self.lr * interval * delta_inv_tput / (delta_x + 1e-9);
+                // let max_step = self.max_step_abs.min(self.max_step_rel * interval);
+                // let min_step = self.min_step_abs.max(self.min_step_rel * interval);
+                step_raw = -self.lr * interval * (delta_inv_tput / (delta_x + 1e-9)).signum();
+                let max_step = self.max_step_abs;
+                let min_step = self.min_step_abs;
                 step = clamp(step_raw, min_step, max_step);
                 // update
                 xinterface.update(step);

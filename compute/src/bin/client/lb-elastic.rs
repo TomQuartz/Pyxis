@@ -254,14 +254,17 @@ impl LoadGenerator {
             max_outs: max_outs,
         }
     }
-    fn gen_request(&mut self, mut curr_rdtsc: u64) -> usize {
-        let phase_id = if self.loop_interval > 0 {
+    fn phase(&self, mut curr_rdtsc: u64) -> usize {
+        if self.loop_interval > 0 {
             curr_rdtsc %= self.loop_interval;
             // self.junctures.iter().position(|&t| t > curr_rdtsc).unwrap()
             self.junctures.partition_point(|&t| t <= curr_rdtsc)
         } else {
             0
-        };
+        }
+    }
+    fn gen_request(&mut self, mut curr_rdtsc: u64) -> usize {
+        let phase_id = self.phase(curr_rdtsc);
         let cum_ratio = &self.cum_ratios[phase_id];
         let rand_ratio = (self.rng.gen::<u32>() % 10000) as f32;
         // let type_id = cum_ratio.iter().position(|&p| p > rand_ratio).unwrap();
@@ -279,13 +282,7 @@ impl LoadGenerator {
         )
     }
     fn max_out(&self, mut curr_rdtsc: u64) -> usize {
-        let phase_id = if self.loop_interval > 0 {
-            curr_rdtsc %= self.loop_interval;
-            // self.junctures.iter().position(|&t| t > curr_rdtsc).unwrap()
-            self.junctures.partition_point(|&t| t <= curr_rdtsc)
-        } else {
-            0
-        };
+        let phase_id = self.phase(curr_rdtsc);
         self.max_outs[phase_id]
     }
 }
@@ -321,21 +318,26 @@ impl TypeStats {
     fn get_key(&self) -> f64 {
         (self.cost_storage.avg() - self.overhead_storage.avg()) / (self.cost_compute.avg() + 1e-9)
     }
-    // fn reset(&mut self) {}
+    // TODO:
+    // 1. return counter in get_key(counter c_s + c_c); delete type counter, use returned counter to compare with thershold
+    // 2. expose one for concurrent update, another for local sort
+    // 4. periodically snapshot stats in time window; compare with local stats(impl partial_eq); batch update local
+    // 5. sort and write to global type_order
 }
 #[derive(Clone)]
 struct Sampler {
     type_stats: Vec<Arc<RwLock<TypeStats>>>,
-    type_order: Vec<usize>,
     // TODO: detects out-of-date type
     // type_history: Vec<TypeStats>,
+    type_order: Vec<Arc<AtomicUsize>>,
+    // TODO: remove this
     type_counter: Vec<Arc<AtomicUsize>>,
     // sample factor
     last_rdtsc: u64,
     last_recvd: usize,
     interval: u64,
-    // last_recvd: usize,
-    cum_ratio: Vec<Arc<(AtomicF64, AtomicF64)>>,
+    // cum_ratio: Vec<Arc<(AtomicF64, AtomicF64)>>,
+    current_types: Arc<AtomicUsize>,
     undetermined: Arc<AtomicUsize>,
     msg: String,
 }
@@ -344,17 +346,21 @@ impl Sampler {
     fn new(num_types: usize, sample_factor: u64) -> Sampler {
         let mut type_stats = vec![];
         let mut type_counter = vec![];
-        let mut cum_ratio = vec![];
+        let mut type_order = vec![];
+        // let mut cum_ratio = vec![];
         for _ in 0..num_types {
             type_stats.push(Arc::new(RwLock::new(TypeStats::new())));
             type_counter.push(Arc::new(AtomicUsize::new(0)));
-            cum_ratio.push(Arc::new((AtomicF64::new(0.0), AtomicF64::new(0.0))));
+            type_order.push(Arc::new(AtomicUsize::new(0)));
+            // cum_ratio.push(Arc::new((AtomicF64::new(0.0), AtomicF64::new(0.0))));
         }
         Sampler {
             type_stats: type_stats,
-            type_order: (0..num_types).collect(),
+            // type_order: (0..num_types).collect(),
+            type_order: type_order,
+            current_types: Arc::new(AtomicUsize::new(0)),
             type_counter: type_counter,
-            cum_ratio: cum_ratio,
+            // cum_ratio: cum_ratio,
             undetermined: Arc::new(AtomicUsize::new(0)),
             last_rdtsc: 0,
             last_recvd: 0,
@@ -363,10 +369,16 @@ impl Sampler {
         }
     }
     fn get_range(&self, type_id: usize) -> (f64, f64) {
-        (
-            self.cum_ratio[type_id].0.load(Ordering::Acquire),
-            self.cum_ratio[type_id].1.load(Ordering::Acquire),
-        )
+        let current_types = self.current_types.load(Ordering::Acquire);
+        let order = self.type_order[type_id].load(Ordering::Acquire);
+        if current_types == 0 || order == 0 {
+            (0.0, 0.0)
+        } else {
+            (
+                10000.0 * (order - 1) as f64 / current_types as f64,
+                10000.0 * order as f64 / current_types as f64,
+            )
+        }
     }
     fn ready(&mut self, curr_rdtsc: u64 /*, recvd: usize*/) -> bool {
         if self.last_rdtsc == 0 {
@@ -385,37 +397,37 @@ impl Sampler {
     fn undetermined_requests(&self) -> usize {
         self.undetermined.load(Ordering::Relaxed)
     }
-    fn sample_ratio(&mut self, curr_rdtsc: u64) {
-        self.last_rdtsc = curr_rdtsc;
-        let mut sum = 0usize;
-        let mut cum_sum = vec![];
-        for &idx in &self.type_order {
-            let cnt = self.type_counter[idx].load(Ordering::Relaxed);
-            sum += cnt;
-            cum_sum.push(sum as f64);
-        }
-        let mut prev = 0f64;
-        self.msg.clear();
-        for (&idx, &cnt) in self.type_order.iter().zip(cum_sum.iter()) {
-            let count = if cnt == prev { 0f64 } else { cnt };
-            self.cum_ratio[idx]
-                .0
-                .store(10000.0 * prev / sum as f64, Ordering::Release);
-            self.cum_ratio[idx]
-                .1
-                .store(10000.0 * count / sum as f64, Ordering::Release);
-            write!(
-                self.msg,
-                "{}({:.2},{}) ",
-                idx,
-                10000.0 * count / sum as f64,
-                cnt,
-            );
-            prev = cnt;
-        }
-        // debug!("{}", self.msg);
-        self.reset_counter();
-    }
+    // fn sample_ratio(&mut self, curr_rdtsc: u64) {
+    //     self.last_rdtsc = curr_rdtsc;
+    //     let mut sum = 0usize;
+    //     let mut cum_sum = vec![];
+    //     for &idx in &self.type_order {
+    //         let cnt = self.type_counter[idx].load(Ordering::Relaxed);
+    //         sum += cnt;
+    //         cum_sum.push(sum as f64);
+    //     }
+    //     let mut prev = 0f64;
+    //     self.msg.clear();
+    //     for (&idx, &cnt) in self.type_order.iter().zip(cum_sum.iter()) {
+    //         let count = if cnt == prev { 0f64 } else { cnt };
+    //         self.cum_ratio[idx]
+    //             .0
+    //             .store(10000.0 * prev / sum as f64, Ordering::Release);
+    //         self.cum_ratio[idx]
+    //             .1
+    //             .store(10000.0 * count / sum as f64, Ordering::Release);
+    //         write!(
+    //             self.msg,
+    //             "{}({:.2},{}) ",
+    //             idx,
+    //             10000.0 * count / sum as f64,
+    //             cnt,
+    //         );
+    //         prev = cnt;
+    //     }
+    //     // debug!("{}", self.msg);
+    //     self.reset_counter();
+    // }
     fn inc_counter(&self, type_id: usize) {
         self.type_counter[type_id].fetch_add(1, Ordering::Relaxed);
     }
@@ -426,24 +438,26 @@ impl Sampler {
         }
     }
     fn sort_type(&mut self) {
-        let type_stats: Vec<f64> = self
-            .type_stats
-            .iter()
-            .map(|s| s.read().unwrap().get_key())
-            .collect();
-        self.type_order.sort_by(|&idx1, &idx2| {
-            let key1 = type_stats[idx1];
-            let key2 = type_stats[idx2];
-            key1.partial_cmp(&key2).unwrap()
-        });
-        debug!("order {:?} stats {:?}", self.type_order, type_stats);
+        let mut current_types = 0usize;
+        // sort first
+        for (i, counter) in self.type_counter.iter().enumerate() {
+            let cnt = counter.load(Ordering::Relaxed);
+            if cnt > 0 {
+                current_types += 1;
+                self.type_order[i].store(current_types, Ordering::Release);
+            } else {
+                self.type_order[i].store(0, Ordering::Release);
+            }
+        }
+        self.current_types.store(current_types, Ordering::Release);
+        self.reset_counter();
     }
-    fn update_stats(&self, type_id: usize, c_s: f64, c_c: f64, o_s: f64) {
-        self.type_stats[type_id]
-            .write()
-            .unwrap()
-            .update(c_s, c_c, o_s);
-    }
+    // fn update_stats(&self, type_id: usize, c_s: f64, c_c: f64, o_s: f64) {
+    //     self.type_stats[type_id]
+    //         .write()
+    //         .unwrap()
+    //         .update(c_s, c_c, o_s);
+    // }
     // fn reset_stats(&self) {
     //     // set history
     //     // set timestamp
@@ -698,8 +712,8 @@ impl LoadBalancer {
         // change storage cores
         self.adjust_provision(curr);
         if self.id == 0 && self.sampler.ready(curr /*, recvd*/) {
-            // self.sampler.sort_type();
-            self.sampler.sample_ratio(curr);
+            self.sampler.sort_type();
+            // self.sampler.sample_ratio(curr);
         }
         while self.outstanding_reqs.len() < self.generator.max_out(curr) {
             // println!(
@@ -899,10 +913,19 @@ impl LoadBalancer {
                         } else {
                             self.xloop.sync(curr_rdtsc, global_recvd);
                         }
-                        debug!("{} ratio {} {}", self.xloop, self.sampler, self.elastic);
+                        debug!(
+                            "{} {} phase {}",
+                            self.xloop,
+                            self.elastic,
+                            self.generator.phase(curr_rdtsc),
+                        );
                         // self.xloop.msg.clear();
                         self.elastic.msg.clear();
                     }
+                    // if self.sampler.ready(curr_rdtsc /*, recvd*/) {
+                    //     self.sampler.sort_type();
+                    //     // self.sampler.sample_ratio(curr);
+                    // }
                     if self.output_factor != 0
                         && (curr_rdtsc - self.output_last_rdtsc
                             > CPU_FREQUENCY / self.output_factor)
@@ -913,7 +936,7 @@ impl LoadBalancer {
                         self.output_last_recvd = global_recvd;
                         self.output_last_rdtsc = curr_rdtsc;
                         println!(
-                            "rdtsc {} tput {:.2} x {:.2} cores {},{} load {:.3},{:.3} ratio {}",
+                            "rdtsc {} tput {:.2} x {:.2} cores {},{} load {:.3},{:.3} phase {}",
                             curr_rdtsc,
                             output_tput,
                             self.partition.get(),
@@ -921,7 +944,7 @@ impl LoadBalancer {
                             self.provision.current.1,
                             self.elastic.load_summary.0,
                             self.elastic.load_summary.1,
-                            self.sampler,
+                            self.generator.phase(curr_rdtsc),
                         )
                         // self.tput.update(output_tput);
                         // if self.output {
@@ -1125,12 +1148,12 @@ fn main() {
     let mut net_context = config_and_init_netbricks(&config.lb);
     net_context.start_schedulers();
     // setup shared data
-    let partition = if config.learnable {
-        5000.0
-    } else {
-        config.partition * 100.0
-    };
-    // let partition = config.partition * 100.0;
+    // let partition = if config.learnable {
+    //     5000.0
+    // } else {
+    //     config.partition * 100.0
+    // };
+    let partition = config.partition * 100.0;
     let partition = Arc::new(AtomicF64::new(partition));
     let sampler = Sampler::new(config.workloads.len(), config.sample_factor);
     /*
