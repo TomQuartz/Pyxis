@@ -4,7 +4,7 @@ set -exu
 KAYAK_PATH="./kayak.toml"
 LB_PATH="lb.toml"
 
-LOG_PATH="../logs/multi-type/"
+LOG_PATH="../logs/multi-type_rerun/"
 
 date=`date +%Y-%m-%d`
 

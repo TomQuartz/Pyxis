@@ -3,7 +3,7 @@ set -exu
 
 LB_PATH="lb.toml"
 
-LOG_PATH="../logs/lb_convergence/"
+LOG_PATH="../logs/cvg/"
 
 date=`date +%Y-%m-%d`
 
@@ -22,7 +22,7 @@ OUTPUT=${LOG_PATH}${OUTPUT_FILE}
 # # lb
 line_learnable_lb=6
 line_partition_lb=7
-line_max_out_lb=85
+line_max_out_lb=123
 
 sed -i -e "${line_learnable_lb}c learnable = true" ${LB_PATH}
 sed -i -e "${line_partition_lb}c partition = 0" ${LB_PATH}

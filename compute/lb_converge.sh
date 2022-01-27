@@ -3,7 +3,7 @@ set -exu
 
 LB_PATH="lb.toml"
 
-LOG_PATH="../logs/opt/"
+LOG_PATH="../logs/multi-type_opt/"
 
 date=`date +%Y-%m-%d`
 
@@ -22,11 +22,13 @@ OUTPUT=${LOG_PATH}${OUTPUT_FILE}
 # # lb
 line_learnable_lb=6
 line_partition_lb=7
-line_max_out_lb=85
+line_output_factor_lb=9
+line_max_out_lb=123
 
 sed -i -e "${line_learnable_lb}c learnable = false" ${LB_PATH}
+sed -i -e "${line_output_factor_lb}c output_factor = 0" ${LB_PATH}
 
-partition=(37 38 39 41 42 43 44 46 47 61 62 63 64)
+partition=(98 99 100)
 for p in ${partition[@]}
 do
     sed -i -e "${line_partition_lb}c partition = ${p}" ${LB_PATH}

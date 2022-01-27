@@ -470,17 +470,17 @@ impl Sampler {
             let history = &mut self.type_history[type_id];
             let mut stats = self.type_stats[type_id].write().unwrap();
             let cnt = stats.get_counter();
-            debug!(
-                "type {} cnt {} history {:.0} s {:.2}({:.0}) c {:.2}({:.0}) s' {:.2}",
-                type_id,
-                cnt,
-                history.get_counter(),
-                history.cost_storage.avg(),
-                history.cost_storage.counter,
-                history.cost_compute.avg(),
-                history.cost_compute.counter,
-                history.overhead_storage.avg(),
-            );
+            // debug!(
+            //     "type {} cnt {} history {:.0} s {:.2}({:.0}) c {:.2}({:.0}) s' {:.2}",
+            //     type_id,
+            //     cnt,
+            //     history.get_counter(),
+            //     history.cost_storage.avg(),
+            //     history.cost_storage.counter,
+            //     history.cost_compute.avg(),
+            //     history.cost_compute.counter,
+            //     history.overhead_storage.avg(),
+            // );
             if cnt >= self.batch_size {
                 if history.get_counter() > self.history_size
                     && (history.cost_storage.diff(&stats.cost_storage, self.max_err)

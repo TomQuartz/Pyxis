@@ -26,41 +26,44 @@ def read(filename, split = " "):
 if __name__ == "__main__":
     res = read(arg[1])
     num_tenant = 1
-    # mov_avg = 0
-    output_factor = 20.
-    r = {i:[] for i in range(num_tenant)}
-    t = {i:[] for i in range(num_tenant)}
+    output_factor = 10.
+    tput = []
+    cores = []
     for i in res:
         try:
             if i[0] == "rdtsc":
                 d = 0
-                r[d].append(float(i[5]))
-                t[d].append(float(i[3]))
+                tput.append(float(i[3].strip()) / 1e3)
+                cores.append(int((i[7].strip().split(','))[-1]))
         except:
             pass
-    time_slice = {i: [j / output_factor for j in range(0, len(r[i]))] for i in range(num_tenant)}
-    for i in range(len(t[0])):
-        t[0][i] /= 1000
-        r[0][i] /= 100
+    # print(tput)
+    # print(cores)
+    time = [j / output_factor for j in range(0, len(tput))]
 
-    # if mov_avg:
-    #     for i in range(2, len(t[0]) - 2):
-    #         t[0][i] = (t[0][i-1] + t[0][i] + t[0][i+1]) / 5
-
-    end = len(time_slice[0])
-    end = int(output_factor) * 3 + 1
+    end = len(time)
+    # end = int(output_factor) * 3 + 1
 
     plt.cla()
     fig, ax1 = plt.subplots()
-    ax1.set_xlabel('Time (s)')
-    ax1.set_ylabel('Partition (%)')
-    ax1.set_ylim(0.0, 100.0)
-    ax1.plot(time_slice[0][:end], r[0][:end], label='partition', color='red', linestyle='--')
+    x_ticks = [i * 5 for i in range(7)]
+    plt.xticks(x_ticks)
+    plt.xlim(0, 20)
+    plt.xlabel('Time (s)')
+    y1_ticks = [0., 1., 2., 3., 4.]
+    ax1.set_yticks(y1_ticks)
+    ax1.set_ylim(0.0, 3.2)
+    ax1.set_ylabel('Throughput (MOps)')
+    ax1.plot(time[:end], tput[:end], label='Throughput', color='black', linestyle='solid')
     ax2 = ax1.twinx()
-    ax2.set_ylabel('Throughput (MOps)')
-    # ax2.set_ylim(0.0, 2.0)
-    ax2.plot(time_slice[0][:end], t[0][:end], label='tput', color='blue', linestyle='solid')
-    fig.legend(loc='upper right')
+    ax2.set_ylabel('# of Cores on App Servers')
+    ax2.set_ylim(0, 144)
+    y2_ticks = [0, 32, 64, 96, 128]
+    ax2.set_yticks(y2_ticks)
+    ax2.plot(time[:end], cores[:end], label='# of Cores', color='red', linestyle='--')
+    fig.legend()
+    ax1.spines['top'].set_color('none')
+    ax2.spines['top'].set_color('none')
     file_path = os.path.dirname(os.path.realpath(__file__))
     file_path = os.path.join(file_path, arg[1]+'.png')
     # print(file_path)

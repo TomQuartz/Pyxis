@@ -24,11 +24,11 @@ OUTPUT=${LOG_PATH}${OUTPUT_FILE}
 # lb
 line_learnable_lb=6
 line_partition_lb=7
-line_num_cores_lb=37
-line_max_out_lb=85
+line_num_cores_lb=43
+line_max_out_lb=123
 
-maxout=(64)
-cores=()
+maxout=(1 2 4 8 12 16 24 32 48 64 96 128 192)
+cores=(2 4 6)
 echo "lb:" >> ${OUTPUT}
 
 sed -i -e "${line_learnable_lb}c learnable = true" ${LB_PATH}
@@ -60,7 +60,7 @@ line_xloop_factor=10
 line_learn_rate=12
 line_num_cores_kayak=19
 
-maxout=(32)
+maxout=()
 cores=()
 echo "kayak:" >> ${OUTPUT}
 
@@ -86,7 +86,7 @@ done
 
 
 # only C
-maxout=(32)
+maxout=()
 cores=()
 echo "only C:" >> ${OUTPUT}
 
@@ -112,7 +112,7 @@ done
 
 
 # only S
-maxout=(32)
+maxout=()
 cores=()
 echo "only S:" >> ${OUTPUT}
 
