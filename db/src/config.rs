@@ -461,6 +461,7 @@ pub struct KayakConfig {
     pub tables: Vec<TableConfig>,
     pub workloads: Vec<WorkloadConfig>,
     pub phases: Vec<PhaseConfig>,
+    pub batch_size: usize,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]

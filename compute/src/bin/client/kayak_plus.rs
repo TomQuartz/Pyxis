@@ -217,14 +217,13 @@ struct LoadBalancer {
     learnable: bool,
     partition: Vec<Arc<AtomicF64>>,
     // TODO: add kayak's params, e.g. xloop_factor
-    // xloop_last_rdtsc: u64,
-    // xloop_last_recvd: u64,
-    // xloop_last_tput: f64,
-    // xloop_last_X: Vec<f64>,
-    num_types: usize,
-    xloop_type: usize,
     xloop_last_rdtsc: u64,
-    xloop_history: Vec<XloopHistory>,
+    xloop_last_recvd: u64,
+    xloop_last_tput: f64,
+    xloop_last_X: Vec<f64>,
+    num_types: usize,
+    // xloop_type: usize,
+    // xloop_history: Vec<XloopHistory>,
     xloop_factor: u64,
     xloop_learning_rate: f64,
     xloop_interval: Vec<f64>,
@@ -237,6 +236,8 @@ struct LoadBalancer {
     finished: Arc<AtomicBool>,
     tput: f64,
     cfg: config::KayakConfig,
+    batch_size: usize,
+    iters: usize,
 }
 
 #[derive(Default)]
@@ -277,10 +278,10 @@ impl LoadBalancer {
         //     slots.push(Slot::default());
         // }
         let num_types = partition.len();
-        let mut xloop_history = vec![];
-        for _ in 0..num_types {
-            xloop_history.push(XloopHistory::default());
-        }
+        // let mut xloop_history = vec![];
+        // for _ in 0..num_types {
+        //     xloop_history.push(XloopHistory::default());
+        // }
         LoadBalancer {
             duration: config.duration * CPU_FREQUENCY,
             tput: 0.0,
@@ -301,13 +302,12 @@ impl LoadBalancer {
             partition: partition,
             learnable: config.learnable,
             num_types: num_types,
-            xloop_last_rdtsc: 0,
-            xloop_history: xloop_history,
-            xloop_type: 0,
-            // xloop_last_rdtsc: cycles::rdtsc(),
-            // xloop_last_recvd: 0,
-            // xloop_last_tput: 0.0,
-            // xloop_last_X: vec![45.0; num_types],
+            // xloop_history: xloop_history,
+            // xloop_type: 0,
+            xloop_last_rdtsc: cycles::rdtsc(),
+            xloop_last_recvd: 0,
+            xloop_last_tput: 0.0,
+            xloop_last_X: vec![45.0; num_types],
             xloop_factor: config.xloop_factor,
             xloop_learning_rate: config.xloop_learning_rate,
             xloop_interval: Vec::new(),
@@ -317,6 +317,8 @@ impl LoadBalancer {
             output_last_rdtsc: init_rdtsc,
             output_last_recvd: 0,
             cfg: config.clone(),
+            batch_size: config.batch_size,
+            iters: 0,
         }
     }
 
@@ -445,50 +447,51 @@ impl LoadBalancer {
                             (curr_rdtsc - self.xloop_last_rdtsc) as f64
                                 / (CPU_FREQUENCY / 1000) as f64,
                         );
-                        for (i, partition) in self.partition.iter().enumerate() {
-                            let recvd = self.global_recvd[i].load(Ordering::Relaxed);
-                            // if recvd > 100 && recvd as u64 % self.xloop_factor == 0 {
-                            let xloop_tput = (recvd as u64 - self.xloop_history[i].xloop_last_recvd)
-                                as f64
-                                * (CPU_FREQUENCY / 1000) as f64
-                                / (curr_rdtsc - self.xloop_last_rdtsc) as f64;
-                            // self.xloop_history[self.xloop_type].xloop_last_rdtsc = curr_rdtsc;
-                            self.xloop_history[i].xloop_last_recvd = recvd as u64;
-                            // if self.learnable {
-                            let delta_tput = xloop_tput - self.xloop_history[i].xloop_last_tput;
-                            self.xloop_history[i].xloop_last_tput = xloop_tput;
-                            // for (i, partition) in self.partition.iter().enumerate() {
-                            let x = (partition.load(Ordering::Relaxed) as f64) / 100.0;
-                            let delta_X = x - self.xloop_history[i].xloop_last_X;
-                            self.xloop_history[i].xloop_last_X = x;
-                            let grad = self.xloop_learning_rate * delta_tput / delta_X;
-                            let mut bounded_offset_X: f64 = -1.0;
-                            if grad > 0.0 {
-                                if grad < 1.0 {
-                                    bounded_offset_X = 1.0;
-                                } else if grad > 20.0 {
-                                    bounded_offset_X = 5.0;
-                                } else {
-                                    bounded_offset_X = grad;
-                                }
+                        let i = (self.iters / self.batch_size) % self.partition.len();
+                        let partition = &mut self.partition[i];
+                        // for (i, partition) in self.partition.iter().enumerate() {
+                        // let recvd = self.global_recvd[i].load(Ordering::Relaxed);
+                        let recvd = global_recvd;
+                        // if recvd > 100 && recvd as u64 % self.xloop_factor == 0 {
+                        let xloop_tput = (recvd as u64 - self.xloop_last_recvd) as f64
+                            * (CPU_FREQUENCY / 1000) as f64
+                            / (curr_rdtsc - self.xloop_last_rdtsc) as f64;
+                        // self.xloop_history[self.xloop_type].xloop_last_rdtsc = curr_rdtsc;
+                        self.xloop_last_recvd = recvd as u64;
+                        // if self.learnable {
+                        let delta_tput = xloop_tput - self.xloop_last_tput;
+                        self.xloop_last_tput = xloop_tput;
+                        // for (i, partition) in self.partition.iter().enumerate() {
+                        let x = (partition.load(Ordering::Relaxed) as f64) / 100.0;
+                        let delta_X = x - self.xloop_last_X[i];
+                        self.xloop_last_X[i] = x;
+                        let grad = self.xloop_learning_rate * delta_tput / delta_X;
+                        let mut bounded_offset_X: f64 = -1.0;
+                        if grad > 0.0 {
+                            if grad < 1.0 {
+                                bounded_offset_X = 1.0;
+                            } else if grad > 10.0 {
+                                bounded_offset_X = 5.0;
                             } else {
-                                if grad > -1.0 {
-                                    bounded_offset_X = -1.0;
-                                } else if grad < -20.0 {
-                                    bounded_offset_X = -5.0;
-                                } else {
-                                    bounded_offset_X = grad;
-                                }
+                                bounded_offset_X = grad;
                             }
-                            debug!("rpc {} delta_X {:.2} delta_tput/delta_X {:.2}, grad {:.2}, bounded_offset_X {:.2}",
-                                    i, delta_X, delta_tput / delta_X, grad, bounded_offset_X);
-                            let mut new_X = bounded_offset_X + x;
-                            if new_X > 100.0 || new_X < 0.0 {
-                                new_X = x - bounded_offset_X;
+                        } else {
+                            if grad > -1.0 {
+                                bounded_offset_X = -1.0;
+                            } else if grad < -10.0 {
+                                bounded_offset_X = -5.0;
+                            } else {
+                                bounded_offset_X = grad;
                             }
-                            partition.store(new_X * 100.0, Ordering::Relaxed);
-                            // }
                         }
+                        debug!("rpc {} tput {:.2} delta_X {:.2} delta_tput {:.2}, grad {:.2}, bounded_offset_X {:.2}",
+                            i, xloop_tput, delta_X, delta_tput, grad, bounded_offset_X);
+                        let mut new_X = bounded_offset_X + x;
+                        if new_X > 100.0 || new_X < 0.0 {
+                            new_X = x - bounded_offset_X;
+                        }
+                        partition.store(new_X * 100.0, Ordering::Relaxed);
+                        self.iters += 1;
                         self.xloop_last_rdtsc = curr_rdtsc;
                         /*
                         self.xloop_interval.push(
@@ -616,13 +619,11 @@ impl Drop for LoadBalancer {
             println!("PUSHBACK Throughput {:.2}", self.tput);
         }
         if self.id == 0 {
-            std::thread::sleep(std::time::Duration::from_secs(2));
+            std::thread::sleep(std::time::Duration::from_secs(1));
             let mut avg_x_interval: f64 = 0.0;
             let mut std_x_interval: f64 = 0.0;
             // println!("xloop learning rate: {}", self.xloop_learning_rate);
             println!("number of xloop tunes: {}", self.xloop_interval.len());
-            let n = self.xloop_interval.len() as f64;
-            println!("{:?}",self.xloop_interval);
             for i in &self.xloop_interval[1..] {
                 avg_x_interval += i;
             }

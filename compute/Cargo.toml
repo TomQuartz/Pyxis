@@ -32,6 +32,10 @@ path = "src/bin/client/kayak.rs"
 name = "kayak-2"
 path = "src/bin/client/kayak-2.rs"
 
+[[bin]]
+name = "kayak_plus"
+path = "src/bin/client/kayak_plus.rs"
+
 #[[bin]]
 #name = "lb-qgrad"
 #path = "src/bin/client/lb-qgrad.rs"
