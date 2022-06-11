@@ -847,50 +847,6 @@ impl TputGrad {
                 self.upperbound,
             );
         }
-        /*
-        // elastic scaling
-        if converged{
-            let (out_storage,w_storage,cv_storage,ncores_storage)=self.storage_load.aggr_all();
-            let (out_compute,w_compute,cv_compute,ncores_compute)=self.compute_load.aggr_all();
-            let out_storage = out_storage/ncores_storage;
-            let out_compute = out_compute/ncores_compute;
-            let w_compute = w_compute/ncores_compute;
-            // w_storage == 0
-            let ql_storage = out_storage+w_compute;
-            let ql_compute = out_compute-w_compute;
-            // ub and lb of ql_compute
-            let (upperbound_compute,lowerbound_compute) = if ql_storage-self.min_ql_diff>self.ql_lowerbound{ // min 5, max 10, lb 1
-                (ql_storage-self.min_ql_diff,(ql_storage-self.max_ql_diff).max(self.ql_lowerbound))
-            }else{
-                (ql_storage,ql_storage*self.exp_lowerbound)
-            };
-            balanced = if ql_compute > upperbound_compute{
-                Some(1)  // compute overload
-            }else if ql_compute > lowerbound_compute{
-                Some(0)   // balanced
-            }else{
-                Some(-1)   // storage overload
-            };
-            // NOTE: if converged, ql_storage is always larger than ql_compute
-            // // ub and lb of ql_compute
-            // let (upperbound_compute,lowerbound_compute) = if ql_storage-self.min_ql_diff>self.ql_lowerbound{ // min 5, max 10, lb 1
-            //     (ql_storage-self.min_ql_diff,(ql_storage-self.max_ql_diff).max(self.ql_lowerbound))
-            // }else{
-            //     (ql_storage,ql_storage*self.exp_lowerbound)
-            // };
-            // balanced = if ql_compute > upperbound_compute{
-            //     Some(1)  // compute overload
-            // }else if ql_compute > lowerbound_compute{
-            //     Some(0)   // balanced
-            // }else{
-            //     Some(-1)   // storage overload
-            // };
-            write!(self.msg,"storage {:.2}({:.2}+{:.2}) compute {:.2}({:.2}-{:.2}) range ({:.2},{:.2})",ql_storage,out_storage,w_compute,ql_compute,out_compute,w_compute,upperbound_compute,lowerbound_compute);
-        }
-        */
-        // // reset avg of waiting, locally on lb
-        // self.compute_load.reset();
-        // self.storage_load.reset();
         if cfg!(feature = "xtrace") {
             self.xtrace.push(self.msg.clone());
         }
@@ -898,6 +854,104 @@ impl TputGrad {
 }
 
 impl fmt::Display for TputGrad {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.msg)
+    }
+}
+
+#[derive(Clone)]
+pub struct Rloop {
+    rloop_factor: u64,
+    rloop_last_rdtsc: u64,
+    rloop_rate_decay: f64,
+    min_samples: usize,
+    // anomalies: usize,
+    max_err_rel: f64,
+    window_size: usize,
+    pub rloop_max_out: Arc<AtomicUsize>,
+    pub kth: Avg,
+    // pub latencies: Vec<u64>,
+    pub metrics: Vec<u64>,
+    pub slo: u64,
+    pub rloop_enabled: bool,
+    msg: String,
+}
+
+impl Rloop {
+    pub fn new(config: &RloopConfig) -> Rloop {
+        Rloop {
+            rloop_last_rdtsc: 0,
+            rloop_rate_decay: config.rloop_rate_decay,
+            min_samples: config.min_samples,
+            max_err_rel: config.max_err_rel,
+            window_size: config.window_size,
+            rloop_max_out: Arc::new(AtomicUsize::new(config.rloop_max_out)),
+            kth: 0,
+            // latencies: Vec::with_capacity(64000000),
+            metrics: Vec::with_capacity(64000000),
+            slo: config.slo,
+            rloop_enabled: config.rloop_enabled,
+        }
+    }
+    pub fn ready(&mut self, curr_rdtsc: u64) -> bool {
+        if self.last_rdtsc == 0 {
+            self.last_rdtsc = curr_rdtsc;
+            false
+        } else {
+            curr_rdtsc - self.last_rdtsc > self.interval && self.kth.counter >= self.min_samples
+        }
+    }
+    pub fn record_latency(&mut self, lat: u64, ord: u64) {
+        // self.latencies.push(lat);
+        self.metrics.push(lat / ord);
+        if self.metrics.len() % self.window_size == 0{
+            let len = self.metrics.len();
+            let mut tmp = &self.metrics[(len - self.window_size)..len];
+            let mut tmpvec = tmp.to_vec();
+            kth = *order_stat::kth(&mut tmpvec, 98);
+            self.kth.update(kth);
+        }
+    }
+    pub fn rate_control(&mut self, curr: u64) {
+        // let len = self.latencies.len();
+        // let mut tmp = &self.latencies[(len - self.window_size)..len];
+        // let mut tmpvec = tmp.to_vec();
+        // self.kth = *order_stat::kth(&mut tmpvec, 98);
+        let kth = self.kth.avg();
+        let rel_err = relative_err(kth, self.slo as f64);
+        let max_out = self.rloop_max_out.load(Ordering::Relaxed);
+        let mut new_max_out = max_out;
+        if self.rloop_enabled && rel_err > self.max_err_rel {
+            if kth < self.slo as f64{
+                new_max_out = max_out + 1;
+            } else {
+                new_max_out = (self.rloop_rate_decay * max_out as f64) as usize;
+            }
+        }
+        if new_max_out != max_out{
+            self.rloop_max_out.store(new_max_out);
+        }
+        self.msg.clear()
+        write!(
+            self.msg,
+            "rdtsc {} max_out {}({}) slo {}/{}({:.1}%) kth {}",
+            curr,
+            new_max_out,
+            max_out,
+            kth,
+            self.slo,
+            rel_err*100.0,
+            self.kth
+        );
+        self.kth.reset();
+        self.rloop_last_rdtsc = curr;
+    }
+    pub fn max_out(&self)->usize{
+        self.rloop_max_out.load(Ordering::Relaxed)
+    }
+}
+
+impl fmt::Display for Rloop {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.msg)
     }

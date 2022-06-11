@@ -326,6 +326,11 @@ impl TypeStats {
     fn get_counter(&self) -> f64 {
         self.cost_storage.counter + self.cost_compute.counter
     }
+    fn get_cost(&self) -> u64 {
+        let c = self.cost_compute.avg() as u64;
+        let s = self.cost_storage.avg() as u64;
+        std::cmp::max(c, s)
+    }
     fn get_key(&self) -> f64 {
         (self.cost_storage.avg() - self.overhead_storage.avg()) / (self.cost_compute.avg() + 1e-9)
     }
@@ -574,8 +579,8 @@ struct LoadBalancer {
     // requests: usize,
     global_recvd: Arc<AtomicUsize>,
     recvd: usize,
-    // latencies: Vec<Vec<u64>>,
-    latencies: Vec<u64>,
+    latencies: Vec<Vec<u64>>,
+    // latencies: Vec<u64>,
     // kth: Vec<Vec<Arc<AtomicUsize>>>,
     // avg_lat: Vec<usize>,
     // outstanding_reqs: HashSet<u64>,
@@ -598,6 +603,11 @@ struct LoadBalancer {
     // bimodal_ratio: Vec<Vec<u32>>,
     // bimodal_rpc: Vec<u32>,
     // modal_idx: usize,
+    // rloop_factor: u64,
+    // rloop_last_rdtsc: u64,
+    // rloop_rate_decay: f64,
+    // rloop_max_out: Arc<AtomicUsize>,
+    // kth: u64,
     // output
     output_factor: u64,
     output_last_rdtsc: u64,
@@ -608,6 +618,7 @@ struct LoadBalancer {
     // outs_storage: usize,
     // outs_compute: usize,
     cfg: config::LBConfig,
+    rloop: Rloop,
 }
 
 // Implementation of methods on LoadBalancer.
@@ -639,11 +650,13 @@ impl LoadBalancer {
         global_recvd: Arc<AtomicUsize>,
         init_rdtsc: u64,
         finished: Arc<AtomicUsize>,
+        rloop: Rloop,
     ) -> LoadBalancer {
-        // let mut latencies: Vec<Vec<u64>> = Vec::with_capacity(num_types);
-        // for _ in 0..num_types {
-        //     latencies.push(Vec::with_capacity(config.num_reqs));
-        // }
+        let num_types = config.workloads.len();
+        let mut latencies: Vec<Vec<u64>> = Vec::with_capacity(num_types);
+        for _ in 0..num_types {
+            latencies.push(Vec::with_capacity(4000000));
+        }
         // let mut slots = vec![];
         // for _ in 0..config.max_out {
         //     slots.push(Slot::default());
@@ -674,7 +687,8 @@ impl LoadBalancer {
             // requests: config.num_reqs / 2,
             global_recvd: global_recvd,
             recvd: 0,
-            latencies: Vec::with_capacity(64000000), // latencies: latencies,
+            // latencies: Vec::with_capacity(64000000),
+            latencies: latencies,
             // kth: kth,
             // avg_lat: vec![0; num_types],
             // outstanding_reqs: HashSet::new(),
@@ -702,6 +716,9 @@ impl LoadBalancer {
             output_factor: config.output_factor,
             output_last_rdtsc: init_rdtsc,
             output_last_recvd: 0,
+            // rloop_factor: config.rloop_factor,
+            // rloop_last_rdtsc: 0,
+            rloop: Rloop,
         }
     }
     fn adjust_provision(&mut self, curr_rdtsc: u64) {
@@ -760,7 +777,8 @@ impl LoadBalancer {
         //     self.sampler.sort_type();
         //     // self.sampler.sample_ratio(curr);
         // }
-        while self.outstanding_reqs.len() < self.generator.max_out(curr) {
+        let max_out = std::cmp::min(self.generator.max_out(curr), self.rloop.max_out());
+        while self.outstanding_reqs.len() < max_out {
             // println!(
             //     "len {} outs {}",
             //     self.outstanding_reqs.len(),
@@ -894,8 +912,17 @@ impl LoadBalancer {
                                         hdr.server_load,
                                         hdr.task_duration_cv,
                                     );
-                                    // self.latencies[type_id].push(curr_rdtsc - timestamp);
-                                    self.latencies.push(curr_rdtsc - timestamp);
+                                    self.latencies[type_id].push(curr_rdtsc - timestamp);
+                                    // self.latencies.push(curr_rdtsc - timestamp);
+                                    if self.id == 0 && {
+                                        let order = self.sampler.type_history[type_id].get_cost();
+                                        if order > 0 {
+                                            self.rloop.record_latency(
+                                                curr_rdtsc - timestamp,
+                                                order,
+                                            );    
+                                        }
+                                    }
                                     self.outstanding_reqs.remove(&timestamp);
                                     if self.elastic.storage_load.ip2load.contains_key(&src_ip) {
                                         self.elastic.storage_load.dec_outstanding(/*src_ip, src_port*/);
@@ -942,6 +969,14 @@ impl LoadBalancer {
                 // }
                 if self.id == 0 {
                     let curr_rdtsc = cycles::rdtsc() - self.start;
+                    if self.rloop.ready(curr_rdtsc) && packet_recvd_signal {
+                        if !self.sampler.undetermined() {
+                            self.rloop.rate_control(curr_rdtsc);
+                        } else {
+                            self.rloop.kth.reset();
+                        }
+                        debug!("{}", self.rloop);
+                    }
                     let global_recvd = self.global_recvd.load(Ordering::Relaxed);
                     // xloop
                     if self.learnable
@@ -1085,23 +1120,23 @@ impl Drop for LoadBalancer {
         }
         if self.tput > 0.0 {
             // for (type_id, lat) in self.latencies.iter_mut().enumerate() {
-            let mut lat = &mut self.latencies;
-            lat.sort();
-            let m;
-            let t = lat[(lat.len() * 99) / 100];
-            match lat.len() % 2 {
-                0 => {
-                    let n = lat.len();
-                    m = (lat[n / 2] + lat[(n / 2) + 1]) / 2;
-                }
+            // let mut lat = &mut self.latencies;
+            // lat.sort();
+            // let m;
+            // let t = lat[(lat.len() * 99) / 100];
+            // match lat.len() % 2 {
+            //     0 => {
+            //         let n = lat.len();
+            //         m = (lat[n / 2] + lat[(n / 2) + 1]) / 2;
+            //     }
 
-                _ => m = lat[lat.len() / 2],
-            }
-            println!(
-                ">>> lat50:{:.2} lat99:{:.2}",
-                cycles::to_seconds(m) * 1e9,
-                cycles::to_seconds(t) * 1e9
-            );
+            //     _ => m = lat[lat.len() / 2],
+            // }
+            // println!(
+            //     ">>> lat50:{:.2} lat99:{:.2}",
+            //     cycles::to_seconds(m) * 1e9,
+            //     cycles::to_seconds(t) * 1e9
+            // );
             // println!("PUSHBACK Throughput {:.2}", self.tput.moving());
             println!(
                 "Core usage {}S {}C",
@@ -1113,13 +1148,32 @@ impl Drop for LoadBalancer {
                 self.partition.get() / 100.0
             );
         }
-        if self.id == 0 && cfg!(feature = "xtrace") {
-            let mut f = File::create("xtrace.log").unwrap();
-            // writeln!(f, "{:?}\n", self.cfg);
-            for s in &self.xloop.xtrace {
-                writeln!(f, "{}", s);
+        if self.id == 0 {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            self.rloop.metrics.sort();
+            let metric = self.rloop.metrics[(self.rloop.metrics.len() * 99) / 100];
+            println!("total SLO metric {}", metric);
+            for (i, lat) in self.latencies.iter_mut().enumerate() {
+                lats.sort();
+                let t = lat[(lat.len() * 99) / 100];
+                let m = lat[lat.len() / 2];
+                let order = self.sampler.type_history[i].get_cost();
+                println!(
+                    ">>> {} metric {} lat50:{:.2} lat99:{:.2}",
+                    i,
+                    t / order,
+                    cycles::to_seconds(m) * 1e9,
+                    cycles::to_seconds(t) * 1e9,
+                );
             }
         }
+        // if self.id == 0 && cfg!(feature = "xtrace") {
+        //     let mut f = File::create("xtrace.log").unwrap();
+        //     // writeln!(f, "{:?}\n", self.cfg);
+        //     for s in &self.xloop.xtrace {
+        //         writeln!(f, "{}", s);
+        //     }
+        // }
     }
 }
 
@@ -1157,6 +1211,7 @@ fn setup_lb(
     global_recvd: Arc<AtomicUsize>,
     init_rdtsc: u64,
     finished: Arc<AtomicUsize>,
+    rloop: Rloop,
 ) {
     if ports.len() != 1 {
         error!("LB should be configured with exactly 1 port!");
@@ -1176,6 +1231,7 @@ fn setup_lb(
         global_recvd,
         init_rdtsc,
         finished,
+        rloop,
     )) {
         Ok(_) => {
             info!(
@@ -1252,6 +1308,7 @@ fn main() {
     let init_rdtsc = cycles::rdtsc();
     // let finished = Arc::new(AtomicBool::new(false));
     let finished = Arc::new(AtomicUsize::new(config.lb.num_cores as usize));
+    let rloop = Rloop::new(&config.rloop);
     // setup lb
     for (core_id, &core) in net_context.active_cores.clone().iter().enumerate() {
         let cfg = config.clone();
@@ -1263,6 +1320,7 @@ fn main() {
         // let storage_load_copy = storage_load.clone();
         // let compute_load_copy = compute_load.clone();
         let finished_copy = finished.clone();
+        let rloop_copy = rloop.clone();
         net_context.add_pipeline_to_core(
             core,
             Arc::new(
@@ -1282,6 +1340,7 @@ fn main() {
                         recvd_copy.clone(),
                         init_rdtsc,
                         finished_copy.clone(),
+                        rloop_copy.clone(),
                     )
                 },
             ),
