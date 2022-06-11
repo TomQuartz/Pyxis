@@ -501,6 +501,20 @@ pub struct ElasticConfig {
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
+pub struct RloopConfig {
+    pub rloop_enabled: bool,
+    pub rloop_factor: u64,
+    pub rloop_last_rdtsc: u64,
+    pub rloop_rate_decay: f64,
+    pub min_samples: usize,
+    pub max_err_rel: f64,
+    pub rloop_max_out: usize,
+    pub slo: u64,
+    pub window_size: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(default)]
 pub struct SamplerConfig {
     pub factor: u64,
     pub batch_size: usize,
@@ -513,6 +527,10 @@ pub struct SamplerConfig {
 pub struct LBConfig {
     pub num_tenants: usize,
     pub tenant_skew: f64,
+    // pub rloop_factor: u64,
+    // pub rloop_last_rdtsc: u64,
+    // pub rloop_max_out: usize,
+    pub rloop: RloopConfig,
     // stop after duration
     pub duration: u64,
     pub learnable: bool,
