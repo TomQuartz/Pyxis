@@ -326,14 +326,24 @@ impl TypeStats {
     fn get_counter(&self) -> f64 {
         self.cost_storage.counter + self.cost_compute.counter
     }
-    fn get_cost(&self) -> u64 {
-        let c = self.cost_compute.avg() as u64;
-        let s = self.cost_storage.avg() as u64;
-        std::cmp::max(c, s)
+    fn get_cost(&self) -> f64 {
+        let c = self.cost_compute.avg();
+        let s = self.cost_storage.avg();
+        if c < s {
+            c
+        } else {
+            s
+        }
     }
     fn get_key(&self) -> f64 {
         (self.cost_storage.avg() - self.overhead_storage.avg()) / (self.cost_compute.avg() + 1e-9)
     }
+    // fn get_key(&self) -> (u64, f64) {
+    //     let c = self.cost_compute.avg();
+    //     let s = self.cost_storage.avg();
+    //     let s_ = self.overhead_storage.avg();
+    //     (std::cmp::max(c as u64, s as u64), (s - s_) / c)
+    // }
     fn reset(&mut self) {
         self.cost_storage.reset();
         self.cost_compute.reset();
@@ -356,6 +366,7 @@ struct Sampler {
     type_stats: Vec<Arc<RwLock<TypeStats>>>,
     // TODO: detects out-of-date type
     type_history: Vec<TypeStats>,
+    type_cost: Vec<Arc<AtomicF64>>,
     batch_size: f64,
     history_size: f64,
     max_err: f64,
@@ -380,11 +391,13 @@ impl Sampler {
         // let mut type_counter = vec![];
         let mut type_order = vec![];
         let mut undetermined = vec![];
+        let mut type_cost = vec![];
         // let mut cum_ratio = vec![];
         for _ in 0..num_types {
             type_stats.push(Arc::new(RwLock::new(TypeStats::new())));
             type_history.push(TypeStats::new());
             // type_counter.push(Arc::new(AtomicUsize::new(0)));
+            type_cost.push(Arc::new(AtomicF64::new(0.0)));
             type_order.push(Arc::new(AtomicUsize::new(0)));
             undetermined.push(Arc::new(AtomicBool::new(false)));
             // cum_ratio.push(Arc::new((AtomicF64::new(0.0), AtomicF64::new(0.0))));
@@ -393,6 +406,7 @@ impl Sampler {
             num_types: num_types,
             type_stats: type_stats,
             type_history: type_history,
+            type_cost: type_cost,
             batch_size: config.batch_size as f64,
             history_size: config.history_size as f64,
             max_err: config.max_err,
@@ -420,6 +434,9 @@ impl Sampler {
                 10000.0 * order as f64 / current_types as f64,
             )
         }
+    }
+    fn get_cost(&self, type_id: usize) -> f64 {
+        self.type_cost[type_id].load(Ordering::Acquire)
     }
     fn ready(&mut self, curr_rdtsc: u64 /*, recvd: usize*/) -> bool {
         if self.last_rdtsc == 0 {
@@ -460,6 +477,7 @@ impl Sampler {
             self.type_order[type_id].store(order, Ordering::Release);
             // weak concurrency
             self.undetermined[type_id].store(false, Ordering::Release);
+            self.type_cost[type_id].store(self.type_history[type_id].get_cost(), Ordering::Release);
         }
         self.current_types.store(order, Ordering::Release);
     }
@@ -487,21 +505,24 @@ impl Sampler {
             //     history.overhead_storage.avg(),
             // );
             if cnt >= self.batch_size {
-                if history.get_counter() > self.history_size
-                    && (history.cost_storage.diff(&stats.cost_storage, self.max_err)
-                        || history.cost_compute.diff(&stats.cost_compute, self.max_err)
-                        || history
-                            .overhead_storage
-                            .diff(&stats.overhead_storage, self.max_err))
-                {
-                    // change in type stats detected, reset history and fall back to 50% rpc
-                    history.reset();
-                    debug!("RESET!");
-                    self.type_order[type_id].store(0, Ordering::Release);
-                } else {
-                    history.merge(&stats);
-                    current_types.push(type_id);
-                }
+                // if history.get_counter() > self.history_size
+                //     && (history.cost_storage.diff(&stats.cost_storage, self.max_err)
+                //         || history.cost_compute.diff(&stats.cost_compute, self.max_err)
+                //         || history
+                //             .overhead_storage
+                //             .diff(&stats.overhead_storage, self.max_err))
+                // {
+                //     // change in type stats detected, reset history and fall back to 50% rpc
+                //     history.reset();
+                //     debug!("RESET!");
+                //     self.type_order[type_id].store(0, Ordering::Release);
+                //     self.type_cost[type_id].store(0.0, Ordering::Relaxed);
+                // } else {
+                //     history.merge(&stats);
+                //     current_types.push(type_id);
+                // }
+                history.merge(&stats);
+                current_types.push(type_id);
                 stats.reset();
             } else if cnt > 0f64 && history.get_counter() > 0f64 {
                 current_types.push(type_id);
@@ -718,7 +739,7 @@ impl LoadBalancer {
             output_last_recvd: 0,
             // rloop_factor: config.rloop_factor,
             // rloop_last_rdtsc: 0,
-            rloop: Rloop,
+            rloop: rloop,
         }
     }
     fn adjust_provision(&mut self, curr_rdtsc: u64) {
@@ -777,7 +798,10 @@ impl LoadBalancer {
         //     self.sampler.sort_type();
         //     // self.sampler.sample_ratio(curr);
         // }
-        let max_out = std::cmp::min(self.generator.max_out(curr), self.rloop.max_out());
+        let mut max_out = self.generator.max_out(curr);
+        if self.rloop.enabled {
+            max_out = std::cmp::min(max_out, self.rloop.max_out());
+        }
         while self.outstanding_reqs.len() < max_out {
             // println!(
             //     "len {} outs {}",
@@ -914,14 +938,10 @@ impl LoadBalancer {
                                     );
                                     self.latencies[type_id].push(curr_rdtsc - timestamp);
                                     // self.latencies.push(curr_rdtsc - timestamp);
-                                    if self.id == 0 && {
-                                        let order = self.sampler.type_history[type_id].get_cost();
-                                        if order > 0 {
-                                            self.rloop.record_latency(
-                                                curr_rdtsc - timestamp,
-                                                order,
-                                            );    
-                                        }
+                                    // if self.id == 0 {
+                                    let order = self.sampler.get_cost(type_id);
+                                    if order > 0.0 {
+                                        self.rloop.record_latency(curr_rdtsc - timestamp, order);
                                     }
                                     self.outstanding_reqs.remove(&timestamp);
                                     if self.elastic.storage_load.ip2load.contains_key(&src_ip) {
@@ -967,95 +987,100 @@ impl LoadBalancer {
                 //         );
                 //     }
                 // }
-                if self.id == 0 {
-                    let curr_rdtsc = cycles::rdtsc() - self.start;
-                    if self.rloop.ready(curr_rdtsc) && packet_recvd_signal {
-                        if !self.sampler.undetermined() {
-                            self.rloop.rate_control(curr_rdtsc);
-                        } else {
-                            self.rloop.kth.reset();
-                        }
-                        debug!("{}", self.rloop);
-                    }
-                    let global_recvd = self.global_recvd.load(Ordering::Relaxed);
-                    // xloop
-                    if self.learnable
-                        // TODO: move min_recvd into xloop
-                        && self.xloop.ready(curr_rdtsc)
-                        && packet_recvd_signal
-                        && global_recvd - self.xloop.last_recvd > self.cfg.xloop.min_recvd
-                    // && global_recvd > 1000
-                    {
-                        if !self.sampler.undetermined() {
-                            self.xloop
-                                .update_x(&self.partition, curr_rdtsc, global_recvd);
-                            // short circuit scaling if anomalies > 0, which is always true if not converged
-                            if self.xloop.anomalies > 0 || self.elastic.scaling() {
-                                self.elastic.reset();
-                                // self.elastic.compute_load.reset();
-                                // self.elastic.compute_outs.reset();
-                                self.dispatcher.sender2compute.send_reset();
-                                // self.elastic.storage_load.reset();
-                                // self.elastic.storage_outs.reset();
-                                self.dispatcher.sender2storage.send_reset();
-                            }
-                            // self.elastic.reset();
-                            // self.dispatcher.sender2compute.send_reset();
-                            // self.dispatcher.sender2storage.send_reset();
-                            // skip reset if anomalies==0(implies convergence) and scaling has no update
-                        } else {
-                            self.xloop.sync(curr_rdtsc, global_recvd);
-                        }
-                        debug!(
-                            "{} {} phase {}",
-                            self.xloop,
-                            self.elastic,
-                            self.generator.phase(curr_rdtsc),
-                        );
-                        // self.xloop.msg.clear();
-                        self.elastic.msg.clear();
-                    }
-                    // sort types
-                    if self.sampler.ready(curr_rdtsc) && packet_recvd_signal {
-                        self.sampler.sort_type();
-                    }
-                    // output
-                    if self.output_factor != 0
-                        && (curr_rdtsc - self.output_last_rdtsc
-                            > CPU_FREQUENCY / self.output_factor)
-                    {
-                        let output_tput = (global_recvd - self.output_last_recvd) as f64
-                            * (CPU_FREQUENCY / 1000) as f64
-                            / (curr_rdtsc - self.output_last_rdtsc) as f64;
-                        self.output_last_recvd = global_recvd;
-                        self.output_last_rdtsc = curr_rdtsc;
-                        println!(
-                            "rdtsc {} tput {:.2} x {:.2} cores {},{} load {:.3},{:.3} phase {}",
-                            curr_rdtsc,
-                            output_tput,
-                            self.partition.get(),
-                            self.provision.current.0,
-                            self.provision.current.1,
-                            self.elastic.load_summary.0,
-                            self.elastic.load_summary.1,
-                            self.generator.phase(curr_rdtsc),
-                        )
-                        // self.tput.update(output_tput);
-                        // if self.output {
-                        //     println!(
-                        //         "rdtsc {} tput {:.2}",
-                        //         (1000 * curr_rdtsc) / CPU_FREQUENCY,
-                        //         output_tput
-                        //     )
-                        // }
-                    }
-                }
             }
         }
+        let curr_rdtsc = cycles::rdtsc() - self.start;
         if self.id == 0 {
+            if packet_recvd_signal && self.rloop.ready(curr_rdtsc) {
+                if !self.sampler.undetermined() {
+                    self.rloop
+                        .rate_control(curr_rdtsc, self.generator.max_out(curr_rdtsc));
+                    debug!("{}", self.rloop);
+                }
+            }
+            let global_recvd = self.global_recvd.load(Ordering::Relaxed);
+            // xloop
+            if self.learnable
+                // TODO: move min_recvd into xloop
+                && self.xloop.ready(curr_rdtsc)
+                && packet_recvd_signal
+                && global_recvd - self.xloop.last_recvd > self.cfg.xloop.min_recvd
+            // && global_recvd > 1000
+            {
+                if !self.sampler.undetermined() {
+                    self.xloop
+                        .update_x(&self.partition, curr_rdtsc, global_recvd);
+                    // short circuit scaling if anomalies > 0, which is always true if not converged
+                    if self.xloop.anomalies > 0 || self.elastic.scaling() {
+                        self.elastic.reset();
+                        // self.elastic.compute_load.reset();
+                        // self.elastic.compute_outs.reset();
+                        self.dispatcher.sender2compute.send_reset();
+                        // self.elastic.storage_load.reset();
+                        // self.elastic.storage_outs.reset();
+                        self.dispatcher.sender2storage.send_reset();
+                    }
+                    // self.elastic.reset();
+                    // self.dispatcher.sender2compute.send_reset();
+                    // self.dispatcher.sender2storage.send_reset();
+                    // skip reset if anomalies==0(implies convergence) and scaling has no update
+                } else {
+                    self.xloop.sync(curr_rdtsc, global_recvd);
+                }
+                debug!(
+                    "{} {} phase {}",
+                    self.xloop,
+                    self.elastic,
+                    self.generator.phase(curr_rdtsc),
+                );
+                // self.xloop.msg.clear();
+                self.elastic.msg.clear();
+            }
+            // sort types
+            if self.sampler.ready(curr_rdtsc) && packet_recvd_signal {
+                self.sampler.sort_type();
+            }
+            // output
+            if self.output_factor != 0
+                && (curr_rdtsc - self.output_last_rdtsc > CPU_FREQUENCY / self.output_factor)
+            {
+                let output_tput = (global_recvd - self.output_last_recvd) as f64
+                    * (CPU_FREQUENCY / 1000) as f64
+                    / (curr_rdtsc - self.output_last_rdtsc) as f64;
+                self.output_last_recvd = global_recvd;
+                self.output_last_rdtsc = curr_rdtsc;
+                println!(
+                    "rdtsc {} tput {:.2} x {:.2} tail {:.2}({:.2}) outs {}/{} cores {},{} load {:.3},{:.3} phase {}",
+                    curr_rdtsc,
+                    output_tput,
+                    self.partition.get(),
+                    self.rloop.tail,
+                    self.rloop.std,
+                    self.rloop.max_out(),
+                    self.generator.max_out(curr_rdtsc),
+                    self.provision.current.0,
+                    self.provision.current.1,
+                    self.elastic.load_summary.0,
+                    self.elastic.load_summary.1,
+                    self.generator.phase(curr_rdtsc),
+                )
+                // self.tput.update(output_tput);
+                // if self.output {
+                //     println!(
+                //         "rdtsc {} tput {:.2}",
+                //         (1000 * curr_rdtsc) / CPU_FREQUENCY,
+                //         output_tput
+                //     )
+                // }
+            }
+            // elastic
             self.elastic.snapshot();
         }
-        let curr_rdtsc = cycles::rdtsc() - self.start;
+
+        // if self.id == 0 {
+        //     self.elastic.snapshot();
+        // }
+        // let curr_rdtsc = cycles::rdtsc() - self.start;
         if curr_rdtsc > self.duration && self.stop == 0 {
             self.stop = curr_rdtsc;
             let remaining = self.finished.fetch_sub(1, Ordering::Relaxed);
@@ -1150,18 +1175,18 @@ impl Drop for LoadBalancer {
         }
         if self.id == 0 {
             std::thread::sleep(std::time::Duration::from_secs(1));
-            self.rloop.metrics.sort();
+            self.rloop.metrics.sort_by(|a, b| a.partial_cmp(b).unwrap());
             let metric = self.rloop.metrics[(self.rloop.metrics.len() * 99) / 100];
             println!("total SLO metric {}", metric);
             for (i, lat) in self.latencies.iter_mut().enumerate() {
-                lats.sort();
+                lat.sort();
                 let t = lat[(lat.len() * 99) / 100];
                 let m = lat[lat.len() / 2];
                 let order = self.sampler.type_history[i].get_cost();
                 println!(
-                    ">>> {} metric {} lat50:{:.2} lat99:{:.2}",
+                    ">>> {} metric {:.1} lat50:{:.2} lat99:{:.2}",
                     i,
-                    t / order,
+                    (t as f64) / order as f64,
                     cycles::to_seconds(m) * 1e9,
                     cycles::to_seconds(t) * 1e9,
                 );

@@ -470,19 +470,19 @@ pub struct XloopConfig {
     pub factor: u64,
     pub min_recvd: usize,
     pub lr: f64,
-    pub max_step_rel: f64,
+    // pub max_step_rel: f64,
     pub max_step_abs: f64,
-    pub min_step_rel: f64,
+    // pub min_step_rel: f64,
     pub min_step_abs: f64,
     // the major criterion
     pub min_interval: f64,
     // not useful
-    pub min_delta_rel: f64,
-    pub min_delta_abs: f64,
+    // pub min_delta_rel: f64,
+    // pub min_delta_abs: f64,
     pub max_err: f64,
     pub tolerance: u32,
     // not useful
-    pub min_err: f64,
+    // pub min_err: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -502,15 +502,14 @@ pub struct ElasticConfig {
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 #[serde(default)]
 pub struct RloopConfig {
-    pub rloop_enabled: bool,
-    pub rloop_factor: u64,
-    pub rloop_last_rdtsc: u64,
-    pub rloop_rate_decay: f64,
+    pub enabled: bool,
+    pub factor: u64,
+    pub rate_decay: f64,
     pub min_samples: usize,
     pub max_err_rel: f64,
-    pub rloop_max_out: usize,
-    pub slo: u64,
-    pub window_size: u64,
+    pub max_out: usize,
+    pub slo: f64,
+    pub window_size: usize,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]

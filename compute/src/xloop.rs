@@ -614,9 +614,9 @@ pub struct TputGrad {
     // min_ql_diff: f64,
     // ql_lowerbound: f64,
     // exp_lowerbound: f64,
-    max_step_rel: f64,
+    // max_step_rel: f64,
     max_step_abs: f64,
-    min_step_rel: f64,
+    // min_step_rel: f64,
     min_step_abs: f64,
     lr: f64,
     // lr_decay: f64,
@@ -625,13 +625,13 @@ pub struct TputGrad {
     upperbound: f64,
     lowerbound: f64,
     min_interval: f64,
-    min_delta_rel: f64,
-    min_delta_abs: f64,
+    // min_delta_rel: f64,
+    // min_delta_abs: f64,
     max_err: f64,
     tolerance: u32,
     pub anomalies: u32,
     // not useful
-    min_err: f64,
+    // min_err: f64,
     pub converged: bool,
     // best_y: f64,
     // best_x: f64,
@@ -667,18 +667,18 @@ impl TputGrad {
             // ql_lowerbound: config.ql_lowerbound,
             // exp_lowerbound: config.exp_lowerbound,
             lr: config.lr,
-            max_step_rel: config.max_step_rel,
+            // max_step_rel: config.max_step_rel,
             max_step_abs: config.max_step_abs,
-            min_step_rel: config.min_step_rel,
+            // min_step_rel: config.min_step_rel,
             min_step_abs: config.min_step_abs,
             min_interval: config.min_interval,
-            min_delta_rel: config.min_delta_rel,
-            min_delta_abs: config.min_delta_abs,
+            // min_delta_rel: config.min_delta_rel,
+            // min_delta_abs: config.min_delta_abs,
             max_err: config.max_err,
             tolerance: config.tolerance,
             anomalies: 0,
             // not useful
-            min_err: config.min_err,
+            // min_err: config.min_err,
             converged: true,
             upperbound: 10000.0,
             lowerbound: 0.0,
@@ -791,8 +791,9 @@ impl TputGrad {
             );
         } else {
             // thresh for bounding interval
-            let min_delta_rel = self.min_delta_rel * delta_x.abs();
-            let min_delta = self.min_delta_abs.max(min_delta_rel);
+            // let min_delta_rel = self.min_delta_rel * delta_x.abs();
+            // let min_delta = self.min_delta_abs.max(min_delta_rel);
+            let min_delta = 0.0;
             // grad
             let mut step = 0f64;
             let mut step_raw = 0f64;
@@ -837,9 +838,9 @@ impl TputGrad {
             }
             write!(
                 self.msg,
-                "min_delta {:.2}({:.2}) step {:.2}({:.2}) range {:.2}({:.2},{:.2}) ",
-                min_delta,
-                min_delta_rel,
+                "step {:.2}({:.2}) range {:.2}({:.2},{:.2}) ",
+                // min_delta,
+                // min_delta_rel,
                 step,
                 step_raw,
                 interval,
@@ -861,93 +862,111 @@ impl fmt::Display for TputGrad {
 
 #[derive(Clone)]
 pub struct Rloop {
-    rloop_factor: u64,
-    rloop_last_rdtsc: u64,
-    rloop_rate_decay: f64,
+    interval: u64,
+    last_rdtsc: u64,
+    rate_decay: f64,
     min_samples: usize,
     // anomalies: usize,
     max_err_rel: f64,
     window_size: usize,
-    pub rloop_max_out: Arc<AtomicUsize>,
-    pub kth: Avg,
-    // pub latencies: Vec<u64>,
-    pub metrics: Vec<u64>,
-    pub slo: u64,
-    pub rloop_enabled: bool,
+    pub max_out: Arc<AtomicUsize>,
+    // pub kth: Avg,
+    pub kth: Arc<RwLock<Avg>>, // avg of 99%
+    pub metrics: Vec<f64>,
+    pub slo: f64,
+    pub enabled: bool,
+    pub tail: f64,
+    pub std: f64,
     msg: String,
 }
 
 impl Rloop {
     pub fn new(config: &RloopConfig) -> Rloop {
+        // let mut kth = vec![];
+        // let ncores = config.lb.num_cores as usize;
+        // for _ in 0..ncores {
+        //     kth.push(RwLock::new(Avg::new()));
+        // }
+        // let config = &config.rloop;
         Rloop {
-            rloop_last_rdtsc: 0,
-            rloop_rate_decay: config.rloop_rate_decay,
+            interval: CPU_FREQUENCY / config.factor,
+            last_rdtsc: 0,
+            rate_decay: config.rate_decay,
             min_samples: config.min_samples,
             max_err_rel: config.max_err_rel,
             window_size: config.window_size,
-            rloop_max_out: Arc::new(AtomicUsize::new(config.rloop_max_out)),
-            kth: 0,
+            max_out: Arc::new(AtomicUsize::new(config.max_out)),
+            // kth: Avg::new(),
+            kth: Arc::new(RwLock::new(Avg::new())),
             // latencies: Vec::with_capacity(64000000),
             metrics: Vec::with_capacity(64000000),
             slo: config.slo,
-            rloop_enabled: config.rloop_enabled,
+            enabled: config.enabled,
+            tail: 0.0,
+            std: 0.0,
+            msg: String::new(),
         }
     }
     pub fn ready(&mut self, curr_rdtsc: u64) -> bool {
         if self.last_rdtsc == 0 {
             self.last_rdtsc = curr_rdtsc;
-            false
-        } else {
-            curr_rdtsc - self.last_rdtsc > self.interval && self.kth.counter >= self.min_samples
+            return false;
+        } else if curr_rdtsc - self.last_rdtsc > self.interval {
+            let mut kth = self.kth.write().unwrap();
+            if kth.counter >= self.min_samples as f64 {
+                self.tail = kth.avg();
+                self.std = kth.std();
+                kth.reset();
+                return true;
+            }
         }
+        false
     }
-    pub fn record_latency(&mut self, lat: u64, ord: u64) {
+    pub fn record_latency(&mut self, lat: u64, ord: f64) {
         // self.latencies.push(lat);
-        self.metrics.push(lat / ord);
-        if self.metrics.len() % self.window_size == 0{
-            let len = self.metrics.len();
-            let mut tmp = &self.metrics[(len - self.window_size)..len];
-            let mut tmpvec = tmp.to_vec();
-            kth = *order_stat::kth(&mut tmpvec, 98);
-            self.kth.update(kth);
+        self.metrics.push(lat as f64 / ord);
+        if self.metrics.len() % self.window_size == 0 {
+            let kth =
+                *order_stat::kth_by(&mut self.metrics[..], 98, |x, y| x.partial_cmp(y).unwrap());
+            self.kth.write().unwrap().update(kth);
+            self.metrics.clear();
         }
     }
-    pub fn rate_control(&mut self, curr: u64) {
+    pub fn rate_control(&mut self, curr: u64, upperbound: usize) {
         // let len = self.latencies.len();
         // let mut tmp = &self.latencies[(len - self.window_size)..len];
         // let mut tmpvec = tmp.to_vec();
         // self.kth = *order_stat::kth(&mut tmpvec, 98);
-        let kth = self.kth.avg();
-        let rel_err = relative_err(kth, self.slo as f64);
-        let max_out = self.rloop_max_out.load(Ordering::Relaxed);
+        let kth = self.tail;
+        let rel_err = relative_err(kth, self.slo);
+        let max_out = self.max_out.load(Ordering::Relaxed);
         let mut new_max_out = max_out;
-        if self.rloop_enabled && rel_err > self.max_err_rel {
-            if kth < self.slo as f64{
+        if self.enabled && rel_err > self.max_err_rel {
+            if kth < self.slo {
                 new_max_out = max_out + 1;
             } else {
-                new_max_out = (self.rloop_rate_decay * max_out as f64) as usize;
+                new_max_out = (self.rate_decay * max_out as f64) as usize;
             }
         }
-        if new_max_out != max_out{
-            self.rloop_max_out.store(new_max_out);
+        if new_max_out <= upperbound {
+            self.max_out.store(new_max_out, Ordering::Relaxed);
         }
-        self.msg.clear()
+        self.msg.clear();
         write!(
             self.msg,
-            "rdtsc {} max_out {}({}) slo {}/{}({:.1}%) kth {}",
+            "rdtsc {} max_out {}({}) slo {:.1}/{:.1}({:.1}%) std {}",
             curr,
             new_max_out,
             max_out,
             kth,
             self.slo,
-            rel_err*100.0,
-            self.kth
+            rel_err * 100.0,
+            self.std,
         );
-        self.kth.reset();
-        self.rloop_last_rdtsc = curr;
+        self.last_rdtsc = curr;
     }
-    pub fn max_out(&self)->usize{
-        self.rloop_max_out.load(Ordering::Relaxed)
+    pub fn max_out(&self) -> usize {
+        self.max_out.load(Ordering::Relaxed)
     }
 }
 
