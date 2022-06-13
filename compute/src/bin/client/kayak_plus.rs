@@ -474,16 +474,16 @@ impl LoadBalancer {
                         if grad > 0.0 {
                             if grad < 1.0 {
                                 bounded_offset_X = 1.0;
-                            } else if grad > self.xloop_max_step {
-                                bounded_offset_X = self.xloop_max_step;
+                            } else if grad > 10.0 {
+                                bounded_offset_X = 5.0;
                             } else {
                                 bounded_offset_X = grad;
                             }
                         } else {
                             if grad > -1.0 {
                                 bounded_offset_X = -1.0;
-                            } else if grad < -self.xloop_max_step {
-                                bounded_offset_X = -self.xloop_max_step;
+                            } else if grad < -10.0 {
+                                bounded_offset_X = -5.0;
                             } else {
                                 bounded_offset_X = grad;
                             }
