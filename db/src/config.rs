@@ -448,6 +448,7 @@ pub struct KayakConfig {
     pub partition: f64,
     pub max_out: u32,
     pub xloop_factor: u64,
+    pub xloop_max_step: f64,
     pub output_factor: u64,
     // TODO: add kayak configurations here
     pub xloop_learning_rate: f64,
