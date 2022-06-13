@@ -329,11 +329,8 @@ impl TypeStats {
     fn get_cost(&self) -> f64 {
         let c = self.cost_compute.avg();
         let s = self.cost_storage.avg();
-        if c < s {
-            c
-        } else {
-            s
-        }
+        // max(max(c, s), 12000 as f64)
+        c.max(s)
     }
     fn get_key(&self) -> f64 {
         (self.cost_storage.avg() - self.overhead_storage.avg()) / (self.cost_compute.avg() + 1e-9)
@@ -459,7 +456,7 @@ impl Sampler {
         }
         some
     }
-    fn sort_type(&mut self) {
+    fn sort_type(&mut self, curr: u64) {
         let mut current_types = self.update_history();
         // sort first
         current_types.sort_by(|&idx1, &idx2| {
@@ -470,7 +467,7 @@ impl Sampler {
         });
         // self.msg.clear();
         // write!(self.msg, "order {:?}", current_types);
-        debug!("order {:?}", current_types);
+        // debug!("rdtsc {} order {:?}", curr, current_types);
         let mut order = 0usize;
         for type_id in current_types {
             order += 1;
@@ -735,7 +732,7 @@ impl LoadBalancer {
             // modal_idx: 0,
             // output for bimodal
             output_factor: config.output_factor,
-            output_last_rdtsc: init_rdtsc,
+            output_last_rdtsc: 0,
             output_last_recvd: 0,
             // rloop_factor: config.rloop_factor,
             // rloop_last_rdtsc: 0,
@@ -936,11 +933,10 @@ impl LoadBalancer {
                                         hdr.server_load,
                                         hdr.task_duration_cv,
                                     );
-                                    self.latencies[type_id].push(curr_rdtsc - timestamp);
-                                    // self.latencies.push(curr_rdtsc - timestamp);
                                     // if self.id == 0 {
                                     let order = self.sampler.get_cost(type_id);
                                     if order > 0.0 {
+                                        self.latencies[type_id].push(curr_rdtsc - timestamp);
                                         self.rloop.record_latency(curr_rdtsc - timestamp, order);
                                     }
                                     self.outstanding_reqs.remove(&timestamp);
@@ -988,99 +984,97 @@ impl LoadBalancer {
                 //     }
                 // }
             }
-        }
-        let curr_rdtsc = cycles::rdtsc() - self.start;
-        if self.id == 0 {
-            if packet_recvd_signal && self.rloop.ready(curr_rdtsc) {
-                if !self.sampler.undetermined() {
-                    self.rloop
-                        .rate_control(curr_rdtsc, self.generator.max_out(curr_rdtsc));
-                    debug!("{}", self.rloop);
-                }
-            }
-            let global_recvd = self.global_recvd.load(Ordering::Relaxed);
-            // xloop
-            if self.learnable
-                // TODO: move min_recvd into xloop
-                && self.xloop.ready(curr_rdtsc)
-                && packet_recvd_signal
-                && global_recvd - self.xloop.last_recvd > self.cfg.xloop.min_recvd
-            // && global_recvd > 1000
-            {
-                if !self.sampler.undetermined() {
-                    self.xloop
-                        .update_x(&self.partition, curr_rdtsc, global_recvd);
-                    // short circuit scaling if anomalies > 0, which is always true if not converged
-                    if self.xloop.anomalies > 0 || self.elastic.scaling() {
-                        self.elastic.reset();
-                        // self.elastic.compute_load.reset();
-                        // self.elastic.compute_outs.reset();
-                        self.dispatcher.sender2compute.send_reset();
-                        // self.elastic.storage_load.reset();
-                        // self.elastic.storage_outs.reset();
-                        self.dispatcher.sender2storage.send_reset();
+            let curr_rdtsc = cycles::rdtsc() - self.start;
+            if self.id == 0 {
+                if packet_recvd_signal && self.rloop.ready(curr_rdtsc) {
+                    if !self.sampler.undetermined() {
+                        self.rloop
+                            .rate_control(curr_rdtsc, self.generator.max_out(curr_rdtsc));
+                        debug!("{}", self.rloop);
                     }
-                    // self.elastic.reset();
-                    // self.dispatcher.sender2compute.send_reset();
-                    // self.dispatcher.sender2storage.send_reset();
-                    // skip reset if anomalies==0(implies convergence) and scaling has no update
-                } else {
-                    self.xloop.sync(curr_rdtsc, global_recvd);
                 }
-                debug!(
-                    "{} {} phase {}",
-                    self.xloop,
-                    self.elastic,
-                    self.generator.phase(curr_rdtsc),
-                );
-                // self.xloop.msg.clear();
-                self.elastic.msg.clear();
+                let global_recvd = self.global_recvd.load(Ordering::Relaxed);
+                // xloop
+                if self.learnable
+                    // TODO: move min_recvd into xloop
+                    && self.xloop.ready(curr_rdtsc)
+                    && packet_recvd_signal
+                    && global_recvd - self.xloop.last_recvd > self.cfg.xloop.min_recvd
+                // && global_recvd > 1000
+                {
+                    if !self.sampler.undetermined() {
+                        self.xloop
+                            .update_x(&self.partition, curr_rdtsc, global_recvd);
+                        // short circuit scaling if anomalies > 0, which is always true if not converged
+                        if self.xloop.anomalies > 0 || self.elastic.scaling() {
+                            self.elastic.reset();
+                            // self.elastic.compute_load.reset();
+                            // self.elastic.compute_outs.reset();
+                            self.dispatcher.sender2compute.send_reset();
+                            // self.elastic.storage_load.reset();
+                            // self.elastic.storage_outs.reset();
+                            self.dispatcher.sender2storage.send_reset();
+                        }
+                        // self.elastic.reset();
+                        // self.dispatcher.sender2compute.send_reset();
+                        // self.dispatcher.sender2storage.send_reset();
+                        // skip reset if anomalies==0(implies convergence) and scaling has no update
+                    } else {
+                        self.xloop.sync(curr_rdtsc, global_recvd);
+                    }
+                    debug!(
+                        "{} {} phase {}",
+                        self.xloop,
+                        self.elastic,
+                        self.generator.phase(curr_rdtsc),
+                    );
+                    // self.xloop.msg.clear();
+                    self.elastic.msg.clear();
+                }
+                // sort types
+                if self.sampler.ready(curr_rdtsc) && packet_recvd_signal {
+                    self.sampler.sort_type(curr_rdtsc);
+                }
+                // output
+                if self.output_factor != 0
+                    && (curr_rdtsc - self.output_last_rdtsc > CPU_FREQUENCY / self.output_factor)
+                {
+                    let output_tput = (global_recvd - self.output_last_recvd) as f64
+                        * (CPU_FREQUENCY / 1000) as f64
+                        / (curr_rdtsc - self.output_last_rdtsc) as f64;
+                    self.output_last_recvd = global_recvd;
+                    self.output_last_rdtsc = curr_rdtsc;
+                    println!(
+                        "rdtsc {} tput {:.2} x {:.2} tail {:.2}({:.2}) outs {}/{} cores {},{} load {:.3},{:.3} phase {}",
+                        curr_rdtsc,
+                        output_tput,
+                        self.partition.get(),
+                        self.rloop.tail,
+                        self.rloop.std,
+                        self.rloop.max_out(),
+                        self.generator.max_out(curr_rdtsc),
+                        self.provision.current.0,
+                        self.provision.current.1,
+                        self.elastic.load_summary.0,
+                        self.elastic.load_summary.1,
+                        self.generator.phase(curr_rdtsc),
+                    )
+                    // self.tput.update(output_tput);
+                    // if self.output {
+                    //     println!(
+                    //         "rdtsc {} tput {:.2}",
+                    //         (1000 * curr_rdtsc) / CPU_FREQUENCY,
+                    //         output_tput
+                    //     )
+                    // }
+                }
             }
-            // sort types
-            if self.sampler.ready(curr_rdtsc) && packet_recvd_signal {
-                self.sampler.sort_type();
-            }
-            // output
-            if self.output_factor != 0
-                && (curr_rdtsc - self.output_last_rdtsc > CPU_FREQUENCY / self.output_factor)
-            {
-                let output_tput = (global_recvd - self.output_last_recvd) as f64
-                    * (CPU_FREQUENCY / 1000) as f64
-                    / (curr_rdtsc - self.output_last_rdtsc) as f64;
-                self.output_last_recvd = global_recvd;
-                self.output_last_rdtsc = curr_rdtsc;
-                println!(
-                    "rdtsc {} tput {:.2} x {:.2} tail {:.2}({:.2}) outs {}/{} cores {},{} load {:.3},{:.3} phase {}",
-                    curr_rdtsc,
-                    output_tput,
-                    self.partition.get(),
-                    self.rloop.tail,
-                    self.rloop.std,
-                    self.rloop.max_out(),
-                    self.generator.max_out(curr_rdtsc),
-                    self.provision.current.0,
-                    self.provision.current.1,
-                    self.elastic.load_summary.0,
-                    self.elastic.load_summary.1,
-                    self.generator.phase(curr_rdtsc),
-                )
-                // self.tput.update(output_tput);
-                // if self.output {
-                //     println!(
-                //         "rdtsc {} tput {:.2}",
-                //         (1000 * curr_rdtsc) / CPU_FREQUENCY,
-                //         output_tput
-                //     )
-                // }
-            }
-            // elastic
-            self.elastic.snapshot();
         }
 
-        // if self.id == 0 {
-        //     self.elastic.snapshot();
-        // }
-        // let curr_rdtsc = cycles::rdtsc() - self.start;
+        if self.id == 0 {
+            self.elastic.snapshot();
+        }
+        let curr_rdtsc = cycles::rdtsc() - self.start;
         if curr_rdtsc > self.duration && self.stop == 0 {
             self.stop = curr_rdtsc;
             let remaining = self.finished.fetch_sub(1, Ordering::Relaxed);
@@ -1144,51 +1138,45 @@ impl Drop for LoadBalancer {
             info!("client thread {} recvd {}", self.id, self.recvd);
         }
         if self.tput > 0.0 {
-            // for (type_id, lat) in self.latencies.iter_mut().enumerate() {
-            // let mut lat = &mut self.latencies;
-            // lat.sort();
-            // let m;
-            // let t = lat[(lat.len() * 99) / 100];
-            // match lat.len() % 2 {
-            //     0 => {
-            //         let n = lat.len();
-            //         m = (lat[n / 2] + lat[(n / 2) + 1]) / 2;
-            //     }
-
-            //     _ => m = lat[lat.len() / 2],
-            // }
-            // println!(
-            //     ">>> lat50:{:.2} lat99:{:.2}",
-            //     cycles::to_seconds(m) * 1e9,
-            //     cycles::to_seconds(t) * 1e9
-            // );
-            // println!("PUSHBACK Throughput {:.2}", self.tput.moving());
-            println!(
-                "Core usage {}S {}C",
-                self.provision.current.0, self.provision.current.1
-            );
+            let mut metric = 0.0;
+            for (i, lat) in self.latencies.iter_mut().enumerate() {
+                let len = lat.len();
+                let tail = *order_stat::kth(&mut lat[..], (len * 99 / 100)-1);
+                let meantime = self.sampler.get_cost(i);
+                println!(
+                    ">>> {} meantime {:.0} lat99:{}({:.2})",
+                    i,
+                    meantime,
+                    tail,
+                    tail as f64 / meantime,
+                );
+                if tail as f64 / meantime > metric {
+                    metric = tail as f64 / meantime;
+                }
+            }
+            println!("total SLO metric {:.2}", metric);
             println!(
                 "Throughput {:.2} partition {:.2}",
                 self.tput,
                 self.partition.get() / 100.0
             );
+            println!(
+                "Core usage {}S {}C",
+                self.provision.current.0, self.provision.current.1
+            );
         }
         if self.id == 0 {
-            std::thread::sleep(std::time::Duration::from_secs(1));
-            self.rloop.metrics.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            let metric = self.rloop.metrics[(self.rloop.metrics.len() * 99) / 100];
-            println!("total SLO metric {}", metric);
-            for (i, lat) in self.latencies.iter_mut().enumerate() {
-                lat.sort();
-                let t = lat[(lat.len() * 99) / 100];
-                let m = lat[lat.len() / 2];
-                let order = self.sampler.type_history[i].get_cost();
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            for (i, history) in self.sampler.type_history.iter().enumerate() {
                 println!(
-                    ">>> {} metric {:.1} lat50:{:.2} lat99:{:.2}",
+                    "type {} history {:.0} s {:.2}({:.0}) c {:.2}({:.0}) s' {:.2}",
                     i,
-                    (t as f64) / order as f64,
-                    cycles::to_seconds(m) * 1e9,
-                    cycles::to_seconds(t) * 1e9,
+                    history.get_counter(),
+                    history.cost_storage.avg(),
+                    history.cost_storage.counter,
+                    history.cost_compute.avg(),
+                    history.cost_compute.counter,
+                    history.overhead_storage.avg(),
                 );
             }
         }
