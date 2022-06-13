@@ -140,7 +140,7 @@ pub fn init(db: Rc<DB>) -> Pin<Box<Generator<Yield = u64, Return = u64>>> {
         let table = u64::from_le_bytes(table.try_into().unwrap());
         let size = usize::from_le_bytes(size.try_into().unwrap());
         let kv = u32::from_le_bytes(kv.try_into().unwrap());
-        let ord = u32::from_le_bytes(ord.try_into().unwrap());
+        let mut ord = u32::from_le_bytes(ord.try_into().unwrap());
         let mut key = key.to_vec();
 
         let mut res = 0u64;
@@ -192,14 +192,14 @@ pub fn init(db: Rc<DB>) -> Pin<Box<Generator<Yield = u64, Return = u64>>> {
         cfg_if! {
             if #[cfg(feature = "yield")]{
                 loop {
-                    if ord <= 2000 {
+                    if ord <= 24000 {
                         let start = cycles::rdtsc();
                         while cycles::rdtsc() - start < ord as u64 {}
                         break;
                     } else {
                         let start = cycles::rdtsc();
-                        while cycles::rdtsc() - start < 2000 as u64 {}
-                        ord -= 2000;
+                        while cycles::rdtsc() - start < 24000 as u64 {}
+                        ord -= 24000;
                         yield 0;
                     }
                 }
