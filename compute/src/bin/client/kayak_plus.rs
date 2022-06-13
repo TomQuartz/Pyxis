@@ -628,17 +628,17 @@ impl Drop for LoadBalancer {
             let mut std_x_interval: f64 = 0.0;
             // println!("xloop learning rate: {}", self.xloop_learning_rate);
             println!("number of xloop tunes: {}", self.xloop_interval.len());
-            for i in &self.xloop_interval[1..] {
-                avg_x_interval += i;
-            }
-            avg_x_interval /= self.xloop_interval.len() as f64;
-            println!("xloop interval avg: {}", avg_x_interval);
-            for i in &self.xloop_interval[1..] {
-                std_x_interval += (i - avg_x_interval) * (i - avg_x_interval);
-            }
-            std_x_interval /= (self.xloop_interval.len() - 1) as f64;
-            std_x_interval = std_x_interval.sqrt();
-            println!("xloop interval std: {}", std_x_interval);
+            // for i in &self.xloop_interval[1..] {
+            //     avg_x_interval += i;
+            // }
+            // avg_x_interval /= self.xloop_interval.len() as f64;
+            // println!("xloop interval avg: {}", avg_x_interval);
+            // for i in &self.xloop_interval[1..] {
+            //     std_x_interval += (i - avg_x_interval) * (i - avg_x_interval);
+            // }
+            // std_x_interval /= (self.xloop_interval.len() - 1) as f64;
+            // std_x_interval = std_x_interval.sqrt();
+            // println!("xloop interval std: {}", std_x_interval);
             // for t in 0..self.tput_vec.len() {
             //     println!(
             //         "tput {:.2} rpc {:.2}",

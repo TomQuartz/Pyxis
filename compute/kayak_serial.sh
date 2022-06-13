@@ -3,7 +3,7 @@ set -exu
 
 KAYAK_PATH="kayak.toml"
 
-LOG_PATH="../logs/kayak_serial/"
+LOG_PATH="../logs/kayak_test/"
 
 date=`date +%Y-%m-%d`
 
@@ -31,13 +31,13 @@ line_partition_kayak=7
 # sudo ../scripts/run-kayak >> ${OUTPUT}
 # echo "" >> ${OUTPUT}
 
-sed -i -e "${line_learnable_kayak}c learnable = true" ${KAYAK_PATH}
+sed -i -e "${line_learnable_kayak}c learnable = false" ${KAYAK_PATH}
 # sed -i -e "${line_max_out_kayak}c max_out = 16" ${KAYAK_PATH}
 # sed -i -e "${line_num_cores_kayak}c num_cores = 8" ${KAYAK_PATH}
-partition=(0)
+partition=(0 100)
 for p in ${partition[@]}
 do
-    # sed -i -e "${line_partition_kayak}c partition = ${p}" ${KAYAK_PATH}
+    sed -i -e "${line_partition_kayak}c partition = ${p}" ${KAYAK_PATH}
     echo "partition = ${p}" >> ${OUTPUT}
     sudo ../scripts/run-kayak-plus >> ${OUTPUT}
     echo "" >> ${OUTPUT}
