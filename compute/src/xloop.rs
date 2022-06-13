@@ -926,8 +926,11 @@ impl Rloop {
         // self.latencies.push(lat);
         self.metrics.push(lat as f64 / ord);
         if self.metrics.len() % self.window_size == 0 {
-            let kth =
-                *order_stat::kth_by(&mut self.metrics[..], 98, |x, y| x.partial_cmp(y).unwrap());
+            let kth = *order_stat::kth_by(
+                &mut self.metrics[..],
+                98 * self.window_size / 100,
+                |x, y| x.partial_cmp(y).unwrap(),
+            );
             self.kth.write().unwrap().update(kth);
             self.metrics.clear();
         }
