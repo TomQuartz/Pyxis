@@ -329,11 +329,8 @@ impl TypeStats {
     fn get_cost(&self) -> f64 {
         let c = self.cost_compute.avg();
         let s = self.cost_storage.avg();
-        if c < s {
-            c
-        } else {
-            s
-        }
+        // max(max(c, s), 12000 as f64)
+        c.max(s)
     }
     fn get_key(&self) -> f64 {
         (self.cost_storage.avg() - self.overhead_storage.avg()) / (self.cost_compute.avg() + 1e-9)
@@ -470,7 +467,7 @@ impl Sampler {
         });
         // self.msg.clear();
         // write!(self.msg, "order {:?}", current_types);
-        debug!("rdtsc {} order {:?}", curr, current_types);
+        // debug!("rdtsc {} order {:?}", curr, current_types);
         let mut order = 0usize;
         for type_id in current_types {
             order += 1;
@@ -1144,15 +1141,12 @@ impl Drop for LoadBalancer {
             let mut metric = 0.0;
             for (i, lat) in self.latencies.iter_mut().enumerate() {
                 let len = lat.len();
-                let median = *order_stat::kth(&mut lat[..], len * 49 / 100);
-                let tail = *order_stat::kth(&mut lat[..], len * 98 / 100);
+                let tail = *order_stat::kth(&mut lat[..], (len * 99 / 100)-1);
                 let meantime = self.sampler.get_cost(i);
                 println!(
-                    ">>> {} meantime {:.0} lat50:{}({:.2}) lat99:{}({:.2})",
+                    ">>> {} meantime {:.0} lat99:{}({:.2})",
                     i,
                     meantime,
-                    median,
-                    median as f64 / meantime,
                     tail,
                     tail as f64 / meantime,
                 );

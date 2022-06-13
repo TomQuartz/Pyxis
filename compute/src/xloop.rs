@@ -868,6 +868,7 @@ pub struct Rloop {
     min_samples: usize,
     // anomalies: usize,
     max_err_rel: f64,
+    max_err_abs: f64,
     window_size: usize,
     pub max_out: Arc<AtomicUsize>,
     // pub kth: Avg,
@@ -894,6 +895,7 @@ impl Rloop {
             rate_decay: config.rate_decay,
             min_samples: config.min_samples,
             max_err_rel: config.max_err_rel,
+            max_err_abs: config.max_err_abs,
             window_size: config.window_size,
             max_out: Arc::new(AtomicUsize::new(config.max_out)),
             // kth: Avg::new(),
@@ -942,6 +944,7 @@ impl Rloop {
         // self.kth = *order_stat::kth(&mut tmpvec, 98);
         let kth = self.tail;
         let rel_err = relative_err(kth, self.slo);
+        let max_err = self.max_err_abs.max(self.slo * self.max_err_rel);
         let max_out = self.max_out.load(Ordering::Relaxed);
         let mut new_max_out = max_out;
         if self.enabled && rel_err > self.max_err_rel {
@@ -951,7 +954,7 @@ impl Rloop {
                 new_max_out = (self.rate_decay * max_out as f64) as usize;
             }
         }
-        if new_max_out <= upperbound {
+        if new_max_out != max_out && new_max_out <= upperbound && new_max_out > 0 {
             self.max_out.store(new_max_out, Ordering::Relaxed);
         }
         self.msg.clear();

@@ -508,6 +508,7 @@ pub struct RloopConfig {
     pub rate_decay: f64,
     pub min_samples: usize,
     pub max_err_rel: f64,
+    pub max_err_abs: f64,
     pub max_out: usize,
     pub slo: f64,
     pub window_size: usize,
