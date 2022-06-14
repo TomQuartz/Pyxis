@@ -332,6 +332,8 @@ struct LoadBalancer {
     tput_vec: Vec<f64>,
     rpc_vec: Vec<f64>,
 
+    output: bool,
+    log: Vec<(f64, f64)>,
     output_factor: u64,
     output_last_rdtsc: u64,
     output_last_recvd: usize,
@@ -415,7 +417,7 @@ impl LoadBalancer {
             num_types: num_types,
             xloop_history: xloop_history,
             // xloop_type: 0,
-            xloop_last_rdtsc: cycles::rdtsc(),
+            xloop_last_rdtsc: 0,
             // xloop_last_recvd: 0,
             // xloop_last_tput: 0.0,
             // xloop_last_X: vec![45.0; num_types],
@@ -426,8 +428,10 @@ impl LoadBalancer {
             xloop_interval: Vec::new(),
             tput_vec: Vec::new(),
             rpc_vec: Vec::new(),
+            output: config.output,
+            log: Vec::with_capacity(40000),
             output_factor: config.output_factor,
-            output_last_rdtsc: init_rdtsc,
+            output_last_rdtsc: 0,
             output_last_recvd: 0,
             cfg: config.clone(),
             batch_size: config.batch_size,
@@ -438,7 +442,7 @@ impl LoadBalancer {
     }
 
     fn send_once(&mut self /*, slot_id: usize*/) {
-        let curr = cycles::rdtsc();
+        let curr = cycles::rdtsc() - self.start;
         let partition: Vec<f64> = self
             .partition
             .iter()
@@ -470,7 +474,9 @@ impl LoadBalancer {
     }
 
     fn send_all(&mut self) {
-        self.start = cycles::rdtsc();
+        if self.start == 0 {
+            self.start = cycles::rdtsc();
+        }
         for i in 0..self.max_out as usize {
             self.send_once();
         }
@@ -482,7 +488,7 @@ impl LoadBalancer {
         // Try to receive packets from the network port.
         // If there are packets, sample the latency of the server.
         if let Some(mut packets) = self.dispatcher.receiver.recv(|pkt| Some(pkt)) {
-            let curr_rdtsc = cycles::rdtsc();
+            let curr_rdtsc = cycles::rdtsc() - self.start;
             while let Some((packet, (src_ip, src_port))) = packets.pop() {
                 match parse_rpc_opcode(&packet) {
                     // The response corresponds to an invoke() RPC.
@@ -536,7 +542,7 @@ impl LoadBalancer {
                     _ => packet.free_packet(),
                 }
                 if self.id == 0 {
-                    let curr_rdtsc = cycles::rdtsc();
+                    let curr_rdtsc = cycles::rdtsc() - self.start;
                     if packet_recvd_signal && self.rloop.ready(curr_rdtsc) {
                         self.rloop.rate_control(curr_rdtsc, self.max_out as usize);
                         debug!("{}", self.rloop);
@@ -564,10 +570,13 @@ impl LoadBalancer {
                             .iter()
                             .map(|x| x.load(Ordering::Relaxed).round() as u64)
                             .collect();
-                        println!(
-                            "rdtsc {} tput {:.2} tail {:.2}({:.2}) rpc {:?}",
-                            curr_rdtsc, output_tput, self.rloop.tail, self.rloop.std, partition
-                        );
+                        if self.output {
+                            println!(
+                                "rdtsc {} tput {:.2} tail {:.2}({:.2}) rpc {:?}",
+                                curr_rdtsc, output_tput, self.rloop.tail, self.rloop.std, partition
+                            );
+                        }
+                        self.log.push((output_tput, self.rloop.tail));
                         // self.tput_vec.push(output_tput);
                         // self.rpc_vec
                         //     .push((self.partition.load(Ordering::Relaxed) as f64) / 100.0);
@@ -639,8 +648,8 @@ impl LoadBalancer {
                 }
             }
         }
-        let curr_rdtsc = cycles::rdtsc();
-        if curr_rdtsc - self.start > self.duration {
+        let curr_rdtsc = cycles::rdtsc() - self.start;
+        if curr_rdtsc > self.duration {
             self.stop = curr_rdtsc;
             if !self.finished.swap(true, Ordering::Relaxed) {
                 let global_recvd = self
@@ -652,8 +661,7 @@ impl LoadBalancer {
                 // self.tput = (self.global_recvd.load(Ordering::Relaxed) as f64)
                 //     * CPU_FREQUENCY as f64
                 //     / (self.stop - self.start) as f64;
-                self.tput =
-                    (global_recvd as f64) * CPU_FREQUENCY as f64 / (self.stop - self.start) as f64;
+                self.tput = (global_recvd as f64) * CPU_FREQUENCY as f64 / self.stop as f64;
                 // self.dispatcher.sender2storage.send_reset();
                 // self.dispatcher.sender2compute.send_reset();
             }
@@ -703,7 +711,7 @@ impl Drop for LoadBalancer {
                     metric = tail as f64 / meantime;
                 }
             }
-            println!("total SLO metric {:.2}", metric);
+            // println!("total SLO metric {:.2}", metric);
             // let mut lat = &mut self.latencies;
             // lat.sort();
             // let m;
@@ -722,10 +730,25 @@ impl Drop for LoadBalancer {
             //     cycles::to_seconds(t) * 1e9
             // );
             // println!("PUSHBACK Throughput {:.2}", self.tput.moving());
-            println!("PUSHBACK Throughput {:.2}", self.tput);
+            println!("Average Throughput {:.2}", self.tput);
         }
         if self.id == 0 {
             std::thread::sleep(std::time::Duration::from_secs(2));
+            let (best_tput, best_slo) = *self
+                .log
+                .iter()
+                .max_by(|x, y| x.0.partial_cmp(&y.0).unwrap())
+                .unwrap();
+            // let total_slo = self
+            //     .rloop
+            //     .log
+            //     .iter()
+            //     .map(|&(t, slo)| slo as f64)
+            //     .sum::<f64>()
+            //     / self.rloop.log.len() as f64;
+            // println!("total SLO metric {:.2}", total_slo);
+            println!("Best Throughput {:.2}", best_tput);
+            println!("Best SLO metric {:.2}", best_slo);
             let mut avg_x_interval: f64 = 0.0;
             let mut std_x_interval: f64 = 0.0;
             // println!("xloop learning rate: {}", self.xloop_learning_rate);

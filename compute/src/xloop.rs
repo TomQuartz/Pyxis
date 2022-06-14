@@ -986,9 +986,9 @@ impl Rloop {
             self.std,
         );
         self.last_rdtsc = curr;
-        if self.trace {
-            self.log.push((curr, kth));
-        }
+        // if self.trace {
+        self.log.push((curr, kth));
+        // }
     }
     pub fn max_out(&self) -> usize {
         self.max_out.load(Ordering::Relaxed)

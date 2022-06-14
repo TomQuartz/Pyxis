@@ -451,6 +451,7 @@ pub struct KayakConfig {
     pub xloop_max_step: f64,
     pub xloop_min_step: f64,
     pub output_factor: u64,
+    pub output: bool,
     pub sample_factor: u64,
     // TODO: add kayak configurations here
     pub xloop_learning_rate: f64,
@@ -544,6 +545,7 @@ pub struct LBConfig {
     pub partition: f64,
     // pub max_out: u32,
     pub output_factor: u64,
+    pub output: bool,
     // profile ratio, cost, and sort
     // pub sample_factor: u64,
     pub sampler: SamplerConfig,

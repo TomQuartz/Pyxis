@@ -627,6 +627,7 @@ struct LoadBalancer {
     // rloop_max_out: Arc<AtomicUsize>,
     // kth: u64,
     // output
+    output: bool,
     output_factor: u64,
     output_last_rdtsc: u64,
     output_last_recvd: usize,
@@ -731,6 +732,7 @@ impl LoadBalancer {
             // bimodal_rpc: config.bimodal_rpc.clone(),
             // modal_idx: 0,
             // output for bimodal
+            output: config.output,
             output_factor: config.output_factor,
             output_last_rdtsc: 0,
             output_last_recvd: 0,
@@ -1044,21 +1046,23 @@ impl LoadBalancer {
                         / (curr_rdtsc - self.output_last_rdtsc) as f64;
                     self.output_last_recvd = global_recvd;
                     self.output_last_rdtsc = curr_rdtsc;
-                    println!(
-                        "rdtsc {} tput {:.2} x {:.2} tail {:.2}({:.2}) outs {}/{} cores {},{} load {:.3},{:.3} phase {}",
-                        curr_rdtsc,
-                        output_tput,
-                        self.partition.get(),
-                        self.rloop.tail,
-                        self.rloop.std,
-                        self.rloop.max_out(),
-                        self.generator.max_out(curr_rdtsc),
-                        self.provision.current.0,
-                        self.provision.current.1,
-                        self.elastic.load_summary.0,
-                        self.elastic.load_summary.1,
-                        self.generator.phase(curr_rdtsc),
-                    )
+                    if self.output {
+                        println!(
+                            "rdtsc {} tput {:.2} x {:.2} tail {:.2}({:.2}) outs {}/{} cores {},{} load {:.3},{:.3} phase {}",
+                            curr_rdtsc,
+                            output_tput,
+                            self.partition.get(),
+                            self.rloop.tail,
+                            self.rloop.std,
+                            self.rloop.max_out(),
+                            self.generator.max_out(curr_rdtsc),
+                            self.provision.current.0,
+                            self.provision.current.1,
+                            self.elastic.load_summary.0,
+                            self.elastic.load_summary.1,
+                            self.generator.phase(curr_rdtsc),
+                        )
+                    }
                     // self.tput.update(output_tput);
                     // if self.output {
                     //     println!(

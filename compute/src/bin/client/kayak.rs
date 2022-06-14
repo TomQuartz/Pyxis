@@ -278,35 +278,35 @@ impl TypeStats {
 #[derive(Clone)]
 struct Sampler {
     type_stats: Vec<Arc<RwLock<TypeStats>>>,
-    // type_cost: Vec<Arc<AtomicF64>>,
-    // interval: u64,
-    // last_rdtsc: u64,
+    type_cost: Vec<Arc<AtomicF64>>,
+    interval: u64,
+    last_rdtsc: u64,
 }
 
 impl Sampler {
     fn new(config: &KayakConfig) -> Sampler {
         let mut type_stats = vec![];
-        // let mut type_cost = vec![];
+        let mut type_cost = vec![];
         for _ in 0..config.workloads.len() {
             type_stats.push(Arc::new(RwLock::new(TypeStats::new())));
-            // type_cost.push(Arc::new(AtomicF64::new(0.0)));
+            type_cost.push(Arc::new(AtomicF64::new(0.0)));
         }
         Sampler {
             type_stats: type_stats,
-            // type_cost: type_cost,
-            // interval: CPU_FREQUENCY / config.sample_factor,
-            // last_rdtsc: 0,
+            type_cost: type_cost,
+            interval: CPU_FREQUENCY / config.sample_factor,
+            last_rdtsc: 0,
         }
     }
-    // fn sample(&self) {
-    //     for i in 0..self.type_cost.len() {
-    //         let stats = self.type_stats[i].read().unwrap();
-    //         self.type_cost[i].store(stats.get_cost(), Ordering::Relaxed);
-    //     }
-    // }
+    fn sample(&self) {
+        for i in 0..self.type_cost.len() {
+            let stats = self.type_stats[i].read().unwrap();
+            self.type_cost[i].store(stats.get_cost(), Ordering::Relaxed);
+        }
+    }
     fn get_cost(&self, type_id: usize) -> f64 {
-        // self.type_cost[type_id].load(Ordering::Relaxed);
-        self.type_stats[type_id].read().unwrap().get_cost()
+        self.type_cost[type_id].load(Ordering::Relaxed)
+        // self.type_stats[type_id].read().unwrap().get_cost()
     }
     fn update_stats(&self, type_id: usize, c_s: f64, c_c: f64, o_s: f64) {
         self.type_stats[type_id]
@@ -314,17 +314,17 @@ impl Sampler {
             .unwrap()
             .update(c_s, c_c, o_s);
     }
-    // fn ready(&mut self, curr_rdtsc: u64 /*, recvd: usize*/) -> bool {
-    //     if self.last_rdtsc == 0 {
-    //         self.last_rdtsc = curr_rdtsc;
-    //         false
-    //     } else if curr_rdtsc - self.last_rdtsc > self.interval {
-    //         self.last_rdtsc = curr_rdtsc;
-    //         true
-    //     } else {
-    //         false
-    //     }
-    // }
+    fn ready(&mut self, curr_rdtsc: u64 /*, recvd: usize*/) -> bool {
+        if self.last_rdtsc == 0 {
+            self.last_rdtsc = curr_rdtsc;
+            false
+        } else if curr_rdtsc - self.last_rdtsc > self.interval {
+            self.last_rdtsc = curr_rdtsc;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 /// Receives responses to PUSHBACK requests sent out by PushbackSend.
@@ -358,6 +358,7 @@ struct LoadBalancer {
     tput_vec: Vec<f64>,
     rpc_vec: Vec<f64>,
 
+    output: bool,
     output_factor: u64,
     output_last_rdtsc: u64,
     output_last_recvd: usize,
@@ -365,6 +366,7 @@ struct LoadBalancer {
     tput: f64,
     cfg: config::KayakConfig,
     sampler: Sampler,
+    rloop: Rloop,
 }
 
 // Implementation of methods on LoadBalancer.
@@ -391,6 +393,7 @@ impl LoadBalancer {
         init_rdtsc: u64,
         finished: Arc<AtomicBool>,
         sampler: Sampler,
+        rloop: Rloop,
     ) -> LoadBalancer {
         // let mut slots = vec![];
         // for _ in 0..config.max_out {
@@ -421,7 +424,7 @@ impl LoadBalancer {
             max_out: config.max_out,
             partition: partition,
             learnable: config.learnable,
-            xloop_last_rdtsc: cycles::rdtsc(),
+            xloop_last_rdtsc: 0,
             xloop_last_recvd: 0,
             xloop_last_tput: 0.0,
             xloop_last_X: 45.0,
@@ -430,16 +433,18 @@ impl LoadBalancer {
             xloop_interval: Vec::new(),
             tput_vec: Vec::new(),
             rpc_vec: Vec::new(),
+            output: config.output,
             output_factor: config.output_factor,
-            output_last_rdtsc: init_rdtsc,
+            output_last_rdtsc: 0,
             output_last_recvd: 0,
             cfg: config.clone(),
             sampler: sampler,
+            rloop: rloop,
         }
     }
 
     fn send_once(&mut self /*, slot_id: usize*/) {
-        let curr = cycles::rdtsc();
+        let curr = cycles::rdtsc() - self.start;
         let partition = self.partition.load(Ordering::Relaxed);
         let (to_storage, type_id, tenant, name_len, request_payload) =
             self.generator.gen_request(curr, partition);
@@ -467,7 +472,9 @@ impl LoadBalancer {
     }
 
     fn send_all(&mut self) {
-        self.start = cycles::rdtsc();
+        if self.start == 0 {
+            self.start = cycles::rdtsc();
+        }
         for i in 0..self.max_out as usize {
             self.send_once();
         }
@@ -479,7 +486,7 @@ impl LoadBalancer {
         // Try to receive packets from the network port.
         // If there are packets, sample the latency of the server.
         if let Some(mut packets) = self.dispatcher.receiver.recv(|pkt| Some(pkt)) {
-            let curr_rdtsc = cycles::rdtsc();
+            let curr_rdtsc = cycles::rdtsc() - self.start;
             while let Some((packet, (src_ip, src_port))) = packets.pop() {
                 match parse_rpc_opcode(&packet) {
                     // The response corresponds to an invoke() RPC.
@@ -497,7 +504,12 @@ impl LoadBalancer {
                                     packet_recvd_signal = true;
                                     self.recvd += 1;
                                     self.global_recvd.fetch_add(1, Ordering::Relaxed);
-                                    self.latencies[type_id].push(curr_rdtsc - timestamp);
+                                    // self.latencies[type_id].push(curr_rdtsc - timestamp);
+                                    let order = self.sampler.get_cost(type_id);
+                                    if order > 0.0 {
+                                        self.latencies[type_id].push(curr_rdtsc - timestamp);
+                                        self.rloop.record_latency(curr_rdtsc - timestamp, order);
+                                    }
                                     if hdr.overhead > 0 {
                                         self.sampler.update_stats(
                                             type_id,
@@ -528,7 +540,11 @@ impl LoadBalancer {
                     _ => packet.free_packet(),
                 }
                 if self.id == 0 {
-                    let curr_rdtsc = cycles::rdtsc();
+                    let curr_rdtsc = cycles::rdtsc() - self.start;
+                    if packet_recvd_signal && self.rloop.ready(curr_rdtsc) {
+                        self.rloop.rate_control(curr_rdtsc, self.max_out as usize);
+                        debug!("{}", self.rloop);
+                    }
                     let global_recvd = self.global_recvd.load(Ordering::Relaxed);
                     // TODO: impl kayak xloop here
                     // if self.learnable && xxxx
@@ -542,12 +558,16 @@ impl LoadBalancer {
                             / (curr_rdtsc - self.output_last_rdtsc) as f64;
                         self.output_last_recvd = global_recvd;
                         self.output_last_rdtsc = curr_rdtsc;
-                        println!(
-                            "rdtsc {} tput {:.2} rpc {:.2}",
-                            curr_rdtsc / (CPU_FREQUENCY / 1000),
-                            output_tput,
-                            self.partition.load(Ordering::Relaxed),
-                        );
+                        if self.output {
+                            println!(
+                                "rdtsc {} tput {:.2} tail {:.2}({:.2}) rpc {:.2}",
+                                curr_rdtsc / (CPU_FREQUENCY / 1000),
+                                output_tput,
+                                self.rloop.tail,
+                                self.rloop.std,
+                                self.partition.load(Ordering::Relaxed),
+                            );
+                        }
                         self.tput_vec.push(output_tput);
                         self.rpc_vec
                             .push((self.partition.load(Ordering::Relaxed) as f64) / 100.0);
@@ -602,17 +622,20 @@ impl LoadBalancer {
                             }
                             self.partition.store(new_X * 100.0, Ordering::Relaxed);
                         }
+                        if self.sampler.ready(curr_rdtsc) && packet_recvd_signal {
+                            self.sampler.sample();
+                        }
                     }
                 }
             }
         }
-        let curr_rdtsc = cycles::rdtsc();
-        if curr_rdtsc - self.start > self.duration {
+        let curr_rdtsc = cycles::rdtsc() - self.start;
+        if curr_rdtsc > self.duration {
             self.stop = curr_rdtsc;
             if !self.finished.swap(true, Ordering::Relaxed) {
                 self.tput = (self.global_recvd.load(Ordering::Relaxed) as f64)
                     * CPU_FREQUENCY as f64
-                    / (self.stop - self.start) as f64;
+                    / self.stop as f64;
                 // self.dispatcher.sender2storage.send_reset();
                 // self.dispatcher.sender2compute.send_reset();
             }
@@ -662,7 +685,7 @@ impl Drop for LoadBalancer {
                     metric = tail as f64 / meantime;
                 }
             }
-            println!("total SLO metric {:.2}", metric);
+            // println!("total SLO metric {:.2}", metric);
             // let mut lat = &mut self.latencies;
             // lat.sort();
             // let m;
@@ -685,6 +708,14 @@ impl Drop for LoadBalancer {
         }
         if self.id == 0 {
             std::thread::sleep(std::time::Duration::from_secs(2));
+            let total_slo = self
+                .rloop
+                .log
+                .iter()
+                .map(|&(t, slo)| slo as f64)
+                .sum::<f64>()
+                / self.rloop.log.len() as f64;
+            println!("total SLO metric {:.2}", total_slo);
             let mut avg_x_interval: f64 = 0.0;
             let mut std_x_interval: f64 = 0.0;
             // println!("xloop learning rate: {}", self.xloop_learning_rate);
@@ -764,6 +795,7 @@ fn setup_lb(
     init_rdtsc: u64,
     finished: Arc<AtomicBool>,
     sampler: Sampler,
+    rloop: Rloop,
 ) {
     if ports.len() != 1 {
         error!("LB should be configured with exactly 1 port!");
@@ -778,6 +810,7 @@ fn setup_lb(
         init_rdtsc,
         finished,
         sampler,
+        rloop,
     )) {
         Ok(_) => {
             info!(
@@ -814,6 +847,7 @@ fn main() {
     let init_rdtsc = cycles::rdtsc();
     let finished = Arc::new(AtomicBool::new(false));
     let sampler = Sampler::new(&config);
+    let rloop = Rloop::new(&config.rloop);
     // setup lb
     for (core_id, &core) in net_context.active_cores.clone().iter().enumerate() {
         let cfg = config.clone();
@@ -821,6 +855,7 @@ fn main() {
         let recvd_copy = recvd.clone();
         let finished_copy = finished.clone();
         let sampler_copy = sampler.clone();
+        let rloop_copy = rloop.clone();
         net_context.add_pipeline_to_core(
             core,
             Arc::new(
@@ -835,6 +870,7 @@ fn main() {
                         init_rdtsc,
                         finished_copy.clone(),
                         sampler_copy.clone(),
+                        rloop_copy.clone(),
                     )
                 },
             ),
