@@ -982,6 +982,7 @@ impl Executable for ComputeNodeWorker {
             }
             if self.dispatcher.terminate() {
                 self.manager.clear();
+                self.task_duration_cv.reset();
             }
             // let mut ql = self.manager.ready.len() as f64;
             // self.queue_length.update(cycles::rdtsc(), ql);

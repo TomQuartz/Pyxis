@@ -65,7 +65,7 @@ use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::sync::RwLock;
 use workload::*;
-use xloop::CPU_FREQUENCY;
+use xloop::*;
 
 #[derive(Default)]
 struct Slot {
@@ -196,6 +196,106 @@ impl LoadGenerator {
     }
 }
 
+#[derive(Clone)]
+struct TypeStats {
+    cost_storage: Avg,
+    cost_compute: Avg,
+    // NOTE: we need two fields for storage, in case parition is in the middle of some type
+    overhead_storage: Avg,
+    // TODO: avoid using out-of-date response, set timestamp after xloop
+    // timestamp: u64,
+}
+impl TypeStats {
+    fn new() -> TypeStats {
+        TypeStats {
+            cost_storage: Avg::new(),
+            cost_compute: Avg::new(),
+            overhead_storage: Avg::new(),
+        }
+    }
+    fn update(&mut self, c_s: f64, c_c: f64, o_s: f64) {
+        if c_s > 0f64 {
+            // from storage
+            self.cost_storage.update(c_s);
+        } else {
+            // from compute
+            self.cost_compute.update(c_c);
+            self.overhead_storage.update(o_s);
+        }
+    }
+    fn get_counter(&self) -> f64 {
+        self.cost_storage.counter + self.cost_compute.counter
+    }
+    fn get_cost(&self) -> f64 {
+        let c = self.cost_compute.avg();
+        let s = self.cost_storage.avg();
+        // c.max(s)
+        c.max(s).max(12000 as f64)
+    }
+    fn merge(&mut self, other: &TypeStats) {
+        self.cost_storage.merge(&other.cost_storage);
+        self.cost_compute.merge(&other.cost_compute);
+        self.overhead_storage.merge(&other.overhead_storage);
+    }
+    // TODO:
+    // 1. return counter in get_key(counter c_s + c_c); delete type counter, use returned counter to compare with thershold
+    // 2. expose one for concurrent update, another for local sort
+    // 4. periodically snapshot stats in time window; compare with local stats(impl partial_eq); batch update local
+    // 5. sort and write to global type_order
+}
+
+#[derive(Clone)]
+struct Sampler {
+    type_stats: Vec<Arc<RwLock<TypeStats>>>,
+    type_cost: Vec<Arc<AtomicF64>>,
+    interval: u64,
+    last_rdtsc: u64,
+}
+
+impl Sampler {
+    fn new(config: &KayakConfig) -> Sampler {
+        let mut type_stats = vec![];
+        let mut type_cost = vec![];
+        for _ in 0..config.workloads.len() {
+            type_stats.push(Arc::new(RwLock::new(TypeStats::new())));
+            type_cost.push(Arc::new(AtomicF64::new(0.0)));
+        }
+        Sampler {
+            type_stats: type_stats,
+            type_cost: type_cost,
+            interval: CPU_FREQUENCY / config.sample_factor,
+            last_rdtsc: 0,
+        }
+    }
+    fn sample(&self) {
+        for i in 0..self.type_cost.len() {
+            let stats = self.type_stats[i].read().unwrap();
+            self.type_cost[i].store(stats.get_cost(), Ordering::Relaxed);
+        }
+    }
+    fn get_cost(&self, type_id: usize) -> f64 {
+        self.type_cost[type_id].load(Ordering::Relaxed)
+        // self.type_stats[type_id].read().unwrap().get_cost()
+    }
+    fn update_stats(&self, type_id: usize, c_s: f64, c_c: f64, o_s: f64) {
+        self.type_stats[type_id]
+            .write()
+            .unwrap()
+            .update(c_s, c_c, o_s);
+    }
+    fn ready(&mut self, curr_rdtsc: u64 /*, recvd: usize*/) -> bool {
+        if self.last_rdtsc == 0 {
+            self.last_rdtsc = curr_rdtsc;
+            false
+        } else if curr_rdtsc - self.last_rdtsc > self.interval {
+            self.last_rdtsc = curr_rdtsc;
+            true
+        } else {
+            false
+        }
+    }
+}
+
 /// Receives responses to PUSHBACK requests sent out by PushbackSend.
 struct LoadBalancer {
     dispatcher: KayakDispatcher,
@@ -209,7 +309,7 @@ struct LoadBalancer {
     // global_recvd: Arc<AtomicUsize>,
     global_recvd: Vec<Arc<AtomicUsize>>,
     recvd: usize,
-    latencies: Vec<u64>,
+    latencies: Vec<Vec<u64>>,
     outstanding_reqs: HashMap<u64, usize>,
     // slots: Vec<Slot>,
     // rpc control
@@ -222,6 +322,7 @@ struct LoadBalancer {
     // xloop_last_tput: f64,
     // xloop_last_X: Vec<f64>,
     xloop_max_step: f64,
+    xloop_min_step: f64,
     num_types: usize,
     // xloop_type: usize,
     xloop_history: Vec<XloopHistory>,
@@ -239,6 +340,8 @@ struct LoadBalancer {
     cfg: config::KayakConfig,
     batch_size: usize,
     iters: usize,
+    sampler: Sampler,
+    rloop: Rloop,
 }
 
 #[derive(Default)]
@@ -273,6 +376,8 @@ impl LoadBalancer {
         global_recvd: Vec<Arc<AtomicUsize>>,
         init_rdtsc: u64,
         finished: Arc<AtomicBool>,
+        sampler: Sampler,
+        rloop: Rloop,
     ) -> LoadBalancer {
         // let mut slots = vec![];
         // for _ in 0..config.max_out {
@@ -282,6 +387,10 @@ impl LoadBalancer {
         let mut xloop_history = vec![];
         for _ in 0..num_types {
             xloop_history.push(XloopHistory::default());
+        }
+        let mut latencies = vec![];
+        for _ in 0..config.workloads.len() {
+            latencies.push(Vec::with_capacity(4000000));
         }
         LoadBalancer {
             duration: config.duration * CPU_FREQUENCY,
@@ -296,7 +405,8 @@ impl LoadBalancer {
             stop: 0,
             global_recvd: global_recvd,
             recvd: 0,
-            latencies: Vec::with_capacity(64000000), // latencies: latencies,
+            // latencies: Vec::with_capacity(64000000),
+            latencies: latencies,
             outstanding_reqs: HashMap::new(),
             // slots: slots,
             max_out: config.max_out,
@@ -312,6 +422,7 @@ impl LoadBalancer {
             xloop_factor: config.xloop_factor,
             xloop_learning_rate: config.xloop_learning_rate,
             xloop_max_step: config.xloop_max_step,
+            xloop_min_step: config.xloop_min_step,
             xloop_interval: Vec::new(),
             tput_vec: Vec::new(),
             rpc_vec: Vec::new(),
@@ -321,6 +432,8 @@ impl LoadBalancer {
             cfg: config.clone(),
             batch_size: config.batch_size,
             iters: 0,
+            sampler: sampler,
+            rloop: rloop,
         }
     }
 
@@ -388,7 +501,26 @@ impl LoadBalancer {
                                     self.recvd += 1;
                                     // self.global_recvd.fetch_add(1, Ordering::Relaxed);
                                     self.global_recvd[type_id].fetch_add(1, Ordering::Relaxed);
-                                    self.latencies.push(curr_rdtsc - timestamp);
+                                    let order = self.sampler.get_cost(type_id);
+                                    if order > 0.0 {
+                                        self.latencies[type_id].push(curr_rdtsc - timestamp);
+                                        self.rloop.record_latency(curr_rdtsc - timestamp, order);
+                                    }
+                                    if hdr.overhead > 0 {
+                                        self.sampler.update_stats(
+                                            type_id,
+                                            0.0,
+                                            hdr.common_header.duration as f64,
+                                            hdr.overhead as f64,
+                                        );
+                                    } else {
+                                        self.sampler.update_stats(
+                                            type_id,
+                                            hdr.common_header.duration as f64,
+                                            0.0,
+                                            0.0,
+                                        );
+                                    }
                                     self.outstanding_reqs.remove(&timestamp);
                                     self.send_once(/*slot_id*/);
                                 } else {
@@ -405,6 +537,10 @@ impl LoadBalancer {
                 }
                 if self.id == 0 {
                     let curr_rdtsc = cycles::rdtsc();
+                    if packet_recvd_signal && self.rloop.ready(curr_rdtsc) {
+                        self.rloop.rate_control(curr_rdtsc, self.max_out as usize);
+                        debug!("{}", self.rloop);
+                    }
                     // let global_recvd = self.global_recvd.load(Ordering::Relaxed);
                     let global_recvd = self
                         .global_recvd
@@ -429,8 +565,8 @@ impl LoadBalancer {
                             .map(|x| x.load(Ordering::Relaxed).round() as u64)
                             .collect();
                         println!(
-                            "rdtsc {} tput {:.2} rpc {:?}",
-                            curr_rdtsc, output_tput, partition
+                            "rdtsc {} tput {:.2} tail {:.2}({:.2}) rpc {:?}",
+                            curr_rdtsc, output_tput, self.rloop.tail, self.rloop.std, partition
                         );
                         // self.tput_vec.push(output_tput);
                         // self.rpc_vec
@@ -474,16 +610,16 @@ impl LoadBalancer {
                         if grad > 0.0 {
                             if grad < 1.0 {
                                 bounded_offset_X = 1.0;
-                            } else if grad > 10.0 {
-                                bounded_offset_X = 5.0;
+                            } else if grad > self.xloop_max_step {
+                                bounded_offset_X = self.xloop_min_step;
                             } else {
                                 bounded_offset_X = grad;
                             }
                         } else {
                             if grad > -1.0 {
                                 bounded_offset_X = -1.0;
-                            } else if grad < -10.0 {
-                                bounded_offset_X = -5.0;
+                            } else if grad < -self.xloop_max_step {
+                                bounded_offset_X = -self.xloop_min_step;
                             } else {
                                 bounded_offset_X = grad;
                             }
@@ -496,60 +632,9 @@ impl LoadBalancer {
                         }
                         partition.store(new_X * 100.0, Ordering::Relaxed);
                         self.iters += 1;
-                        // self.xloop_last_rdtsc = curr_rdtsc;
-                        /*
-                        self.xloop_interval.push(
-                            (curr_rdtsc - self.xloop_history[self.xloop_type].xloop_last_rdtsc)
-                                as f64
-                                / (CPU_FREQUENCY / 1000) as f64,
-                        );
-                        let xloop_tput = (global_recvd as u64
-                            - self.xloop_history[self.xloop_type].xloop_last_recvd)
-                            as f64
-                            * (CPU_FREQUENCY / 1000) as f64
-                            / (curr_rdtsc - self.xloop_history[self.xloop_type].xloop_last_rdtsc)
-                                as f64;
-                        self.xloop_history[self.xloop_type].xloop_last_rdtsc = curr_rdtsc;
-                        self.xloop_history[self.xloop_type].xloop_last_recvd = global_recvd as u64;
-                        // if self.learnable {
-                        let delta_tput =
-                            xloop_tput - self.xloop_history[self.xloop_type].xloop_last_tput;
-                        self.xloop_history[self.xloop_type].xloop_last_tput = xloop_tput;
-                        // for (i, partition) in self.partition.iter().enumerate() {
-                        let x = (self.partition[self.xloop_type].load(Ordering::Relaxed) as f64)
-                            / 100.0;
-                        let delta_X = x - self.xloop_history[self.xloop_type].xloop_last_X;
-                        self.xloop_history[self.xloop_type].xloop_last_X = x;
-                        let grad = self.xloop_learning_rate * delta_tput / delta_X;
-                        let mut bounded_offset_X: f64 = -1.0;
-                        if grad > 0.0 {
-                            if grad < 1.0 {
-                                bounded_offset_X = 1.0;
-                            } else if grad > 10.0 {
-                                bounded_offset_X = 5.0;
-                            } else {
-                                bounded_offset_X = grad;
-                            }
-                        } else {
-                            if grad > -1.0 {
-                                bounded_offset_X = -1.0;
-                            } else if grad < -10.0 {
-                                bounded_offset_X = -5.0;
-                            } else {
-                                bounded_offset_X = grad;
-                            }
-                        }
-                        debug!("rpc {} delta_X {:.2} delta_tput/delta_X {:.2}, grad {:.2}, bounded_offset_X {:.2}",
-                                self.xloop_type, delta_X, delta_tput / delta_X, grad, bounded_offset_X);
-                        let mut new_X = bounded_offset_X + x;
-                        if new_X > 100.0 || new_X < 0.0 {
-                            new_X = x - bounded_offset_X;
-                        }
-                        self.partition[self.xloop_type].store(new_X * 100.0, Ordering::Relaxed);
-                        self.xloop_type = (self.xloop_type + 1) % self.num_types;
-                        // }
-                        // }
-                        */
+                    }
+                    if self.sampler.ready(curr_rdtsc) && packet_recvd_signal {
+                        self.sampler.sample();
                     }
                 }
             }
@@ -601,29 +686,46 @@ impl Drop for LoadBalancer {
             info!("client thread {} recvd {}", self.id, self.recvd);
         }
         if self.tput > 0.0 {
-            // for (type_id, lat) in self.latencies.iter_mut().enumerate() {
-            let mut lat = &mut self.latencies;
-            lat.sort();
-            let m;
-            let t = lat[(lat.len() * 99) / 100];
-            match lat.len() % 2 {
-                0 => {
-                    let n = lat.len();
-                    m = (lat[n / 2] + lat[(n / 2) + 1]) / 2;
+            std::thread::sleep(std::time::Duration::from_secs_f64(0.5));
+            let mut metric = 0.0;
+            for (i, lat) in self.latencies.iter_mut().enumerate() {
+                let len = lat.len();
+                let tail = *order_stat::kth(&mut lat[..], (len * 99 / 100) - 1);
+                let meantime = self.sampler.get_cost(i);
+                println!(
+                    ">>> {} meantime {:.0} lat99:{}({:.2})",
+                    i,
+                    meantime,
+                    tail,
+                    tail as f64 / meantime,
+                );
+                if tail as f64 / meantime > metric {
+                    metric = tail as f64 / meantime;
                 }
-
-                _ => m = lat[lat.len() / 2],
             }
-            println!(
-                ">>> lat50:{:.2} lat99:{:.2}",
-                cycles::to_seconds(m) * 1e9,
-                cycles::to_seconds(t) * 1e9
-            );
+            println!("total SLO metric {:.2}", metric);
+            // let mut lat = &mut self.latencies;
+            // lat.sort();
+            // let m;
+            // let t = lat[(lat.len() * 99) / 100];
+            // match lat.len() % 2 {
+            //     0 => {
+            //         let n = lat.len();
+            //         m = (lat[n / 2] + lat[(n / 2) + 1]) / 2;
+            //     }
+
+            //     _ => m = lat[lat.len() / 2],
+            // }
+            // println!(
+            //     ">>> lat50:{:.2} lat99:{:.2}",
+            //     cycles::to_seconds(m) * 1e9,
+            //     cycles::to_seconds(t) * 1e9
+            // );
             // println!("PUSHBACK Throughput {:.2}", self.tput.moving());
             println!("PUSHBACK Throughput {:.2}", self.tput);
         }
         if self.id == 0 {
-            std::thread::sleep(std::time::Duration::from_secs(1));
+            std::thread::sleep(std::time::Duration::from_secs(2));
             let mut avg_x_interval: f64 = 0.0;
             let mut std_x_interval: f64 = 0.0;
             // println!("xloop learning rate: {}", self.xloop_learning_rate);
@@ -645,6 +747,19 @@ impl Drop for LoadBalancer {
             //         &self.tput_vec[t as usize], &self.rpc_vec[t as usize]
             //     );
             // }
+            for (i, history) in self.sampler.type_stats.iter().enumerate() {
+                let history = history.read().unwrap();
+                println!(
+                    "type {} cnt {:.0} s {:.2}({:.0}) c {:.2}({:.0}) s' {:.2}",
+                    i,
+                    history.get_counter(),
+                    history.cost_storage.avg(),
+                    history.cost_storage.counter,
+                    history.cost_compute.avg(),
+                    history.cost_compute.counter,
+                    history.overhead_storage.avg(),
+                );
+            }
         }
     }
 }
@@ -690,6 +805,8 @@ fn setup_lb(
     global_recvd: Vec<Arc<AtomicUsize>>,
     init_rdtsc: u64,
     finished: Arc<AtomicBool>,
+    sampler: Sampler,
+    rloop: Rloop,
 ) {
     if ports.len() != 1 {
         error!("LB should be configured with exactly 1 port!");
@@ -703,6 +820,8 @@ fn setup_lb(
         global_recvd,
         init_rdtsc,
         finished,
+        sampler,
+        rloop,
     )) {
         Ok(_) => {
             info!(
@@ -745,12 +864,16 @@ fn main() {
     // let recvd = Arc::new(AtomicUsize::new(0));
     let init_rdtsc = cycles::rdtsc();
     let finished = Arc::new(AtomicBool::new(false));
+    let sampler = Sampler::new(&config);
+    let rloop = Rloop::new(&config.rloop);
     // setup lb
     for (core_id, &core) in net_context.active_cores.clone().iter().enumerate() {
         let cfg = config.clone();
         let partition_copy = partition.clone();
         let recvd_copy = recvd.clone();
         let finished_copy = finished.clone();
+        let sampler_copy = sampler.clone();
+        let rloop_copy = rloop.clone();
         net_context.add_pipeline_to_core(
             core,
             Arc::new(
@@ -764,6 +887,8 @@ fn main() {
                         recvd_copy.clone(),
                         init_rdtsc,
                         finished_copy.clone(),
+                        sampler_copy.clone(),
+                        rloop_copy.clone(),
                     )
                 },
             ),

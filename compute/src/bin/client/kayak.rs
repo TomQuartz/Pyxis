@@ -254,11 +254,14 @@ impl TypeStats {
             self.overhead_storage.update(o_s);
         }
     }
+    fn get_counter(&self) -> f64 {
+        self.cost_storage.counter + self.cost_compute.counter
+    }
     fn get_cost(&self) -> f64 {
         let c = self.cost_compute.avg();
         let s = self.cost_storage.avg();
-        // max(max(c, s), 12000 as f64)
-        c.max(s)
+        // c.max(s)
+        c.max(s).max(12000 as f64)
     }
     fn merge(&mut self, other: &TypeStats) {
         self.cost_storage.merge(&other.cost_storage);
@@ -642,6 +645,7 @@ impl Drop for LoadBalancer {
             info!("client thread {} recvd {}", self.id, self.recvd);
         }
         if self.tput > 0.0 {
+            std::thread::sleep(std::time::Duration::from_secs_f64(0.5));
             let mut metric = 0.0;
             for (i, lat) in self.latencies.iter_mut().enumerate() {
                 let len = lat.len();
@@ -696,10 +700,23 @@ impl Drop for LoadBalancer {
             std_x_interval /= (self.xloop_interval.len() - 1) as f64;
             std_x_interval = std_x_interval.sqrt();
             println!("xloop interval std: {}", std_x_interval);
-            for t in 0..self.tput_vec.len() {
+            // for t in 0..self.tput_vec.len() {
+            //     println!(
+            //         "tput {:.2} rpc {:.2}",
+            //         &self.tput_vec[t as usize], &self.rpc_vec[t as usize]
+            //     );
+            // }
+            for (i, history) in self.sampler.type_stats.iter().enumerate() {
+                let history = history.read().unwrap();
                 println!(
-                    "tput {:.2} rpc {:.2}",
-                    &self.tput_vec[t as usize], &self.rpc_vec[t as usize]
+                    "type {} cnt {:.0} s {:.2}({:.0}) c {:.2}({:.0}) s' {:.2}",
+                    i,
+                    history.get_counter(),
+                    history.cost_storage.avg(),
+                    history.cost_storage.counter,
+                    history.cost_compute.avg(),
+                    history.cost_compute.counter,
+                    history.overhead_storage.avg(),
                 );
             }
         }
