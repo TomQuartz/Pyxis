@@ -21,6 +21,7 @@ OUTPUT=${LOG_PATH}${OUTPUT_FILE}
 
 cat ${LB_PATH} >> ${OUTPUT}
 
+echo "" >> ${OUTPUT}
 echo "##############################" >> ${OUTPUT}
 sudo ../scripts/run-elastic >> ${OUTPUT}
 

@@ -6,7 +6,8 @@ duration = 15
 learnable = true
 partition = 0
 
-output_factor = 5
+output = true
+output_factor = 20
 
 [sampler]
 factor = 20
@@ -18,11 +19,11 @@ max_err = 0.25
 factor = 20
 lr = 0.2
 min_recvd = 4000
-max_step_abs = 1000
+max_step_abs = 2000
 min_step_abs = 40
 min_interval = 160
 max_err = 0.08
-tolerance = 2
+tolerance = 1
 
 [elastic]
 elastic = false
@@ -32,16 +33,16 @@ max_step = 16
 
 [rloop]
 enabled = true
+trace = true
 factor = 200
 rate_decay = 0.8
+step_size = 1
 window_size = 1000
-min_samples = 6
+min_samples = 4
 max_err_rel = 0.2
 max_err_abs = 1
-slo = 5.0
-max_out = 8
-
-# todo: increase window_size
+slo = 10
+max_out = 2
 
 ############################### LB N/W CONFIG ##############################
 
@@ -95,9 +96,28 @@ mac_addr = "9c:dc:71:56:af:b5"
 ############################### LB WORKLOAD CONFIG ##############################
 
 [[phases]]
+#ratios = [50, 50]
+#ratios = [25, 25, 25, 25]
+ratios = [12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5]
 #ratios = [6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25]
-ratios = [50, 50]
-max_out = 16
+max_out = 32
+
+#[[phases]]
+#ratios = [0, 0, 100, 0]
+#max_out = 32
+#duration = 5
+#[[phases]]
+#ratios = [0, 50, 50, 0]
+#max_out = 32
+#duration = 5
+#[[phases]]
+#ratios = [33, 33, 34, 0]
+#max_out = 32
+#duration = 5
+#[[phases]]
+#ratios = [25, 25, 25, 25]
+#max_out = 32
+#duration = 5
 
 [[tables]]
 description = "synthetic"
@@ -143,18 +163,60 @@ num_records = 100000
 
 [[workloads]]
 extension = "pushback"
+kv = 3
+order = 2400
+table_id = 5
+skew = 0.99
+
+[[workloads]]
+extension = "pushback"
 kv = 4
-order = 120
-table_id = 6
+order = 7200
+table_id = 4
+skew = 0.99
+
+[[workloads]]
+extension = "pushback"
+kv = 3
+order = 21600
+table_id = 4
 skew = 0.99
 
 [[workloads]]
 extension = "pushback"
 kv = 1
-order = 120000
+order = 1320
+table_id = 2
+skew = 0.99
+
+[[workloads]]
+extension = "pushback"
+kv = 2
+order = 16800
+table_id = 3
+skew = 0.99
+
+[[workloads]]
+extension = "pushback"
+kv = 1
+order = 24000
+table_id = 3
+skew = 0.99
+
+[[workloads]]
+extension = "pushback"
+kv = 2
+order = 67200
+table_id = 2
+skew = 0.99
+
+[[workloads]]
+extension = "pushback"
+kv = 1
+order = 115200
 table_id = 1
 skew = 0.99
 
 [[provisions]]
 storage = 8
-compute = 8
+compute = 64

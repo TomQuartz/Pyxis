@@ -1,18 +1,19 @@
 ############################### LOAD GENERATOR CONFIG ##############################
 num_tenants = 1
 tenant_skew = 0.1
-duration = 300
+duration = 20
 
 learnable = true
 partition = 50
 max_out = 8
 
+output = true
+output_factor = 20
+
 xloop_factor = 8000
-output_factor = 5
 xloop_learning_rate = 4
 xloop_max_step = 5
 xloop_min_step = 5
-
 
 batch_size = 4
 
