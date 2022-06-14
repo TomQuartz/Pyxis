@@ -329,8 +329,8 @@ impl TypeStats {
     fn get_cost(&self) -> f64 {
         let c = self.cost_compute.avg();
         let s = self.cost_storage.avg();
-        // max(max(c, s), 12000 as f64)
-        c.max(s)
+        // c.max(s)
+        c.max(s).max(12000 as f64)
     }
     fn get_key(&self) -> f64 {
         (self.cost_storage.avg() - self.overhead_storage.avg()) / (self.cost_compute.avg() + 1e-9)
@@ -1141,7 +1141,7 @@ impl Drop for LoadBalancer {
             let mut metric = 0.0;
             for (i, lat) in self.latencies.iter_mut().enumerate() {
                 let len = lat.len();
-                let tail = *order_stat::kth(&mut lat[..], (len * 99 / 100)-1);
+                let tail = *order_stat::kth(&mut lat[..], (len * 99 / 100) - 1);
                 let meantime = self.sampler.get_cost(i);
                 println!(
                     ">>> {} meantime {:.0} lat99:{}({:.2})",
@@ -1167,6 +1167,14 @@ impl Drop for LoadBalancer {
         }
         if self.id == 0 {
             std::thread::sleep(std::time::Duration::from_secs(2));
+            let mut current_types: Vec<usize> = (0..self.sampler.type_history.len()).collect();
+            current_types.sort_by(|&idx1, &idx2| {
+                self.sampler.type_history[idx1]
+                    .get_key()
+                    .partial_cmp(&self.sampler.type_history[idx2].get_key())
+                    .unwrap()
+            });
+            println!("order {:?}", current_types);
             for (i, history) in self.sampler.type_history.iter().enumerate() {
                 println!(
                     "type {} history {:.0} s {:.2}({:.0}) c {:.2}({:.0}) s' {:.2}",
@@ -1178,6 +1186,13 @@ impl Drop for LoadBalancer {
                     history.cost_compute.counter,
                     history.overhead_storage.avg(),
                 );
+            }
+            if self.rloop.enabled && self.rloop.trace {
+                let mut f = File::create("rloop.log").unwrap();
+                // writeln!(f, "{:?}\n", self.cfg);
+                for &(t, slo) in &self.rloop.log {
+                    writeln!(f, "rdtsc {} slo {:.2}", t, slo);
+                }
             }
         }
         // if self.id == 0 && cfg!(feature = "xtrace") {

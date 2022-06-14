@@ -487,6 +487,7 @@ pub struct XloopConfig {
     pub tolerance: u32,
     // not useful
     // pub min_err: f64,
+    pub trace: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -509,12 +510,14 @@ pub struct RloopConfig {
     pub enabled: bool,
     pub factor: u64,
     pub rate_decay: f64,
+    pub step_size: usize,
     pub min_samples: usize,
     pub max_err_rel: f64,
     pub max_err_abs: f64,
     pub max_out: usize,
     pub slo: f64,
     pub window_size: usize,
+    pub trace: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]

@@ -639,7 +639,8 @@ pub struct TputGrad {
     start: u64,
     elapsed: u64,
     // trace
-    pub xtrace: Vec<String>,
+    pub trace: bool,
+    pub log: Vec<(u64, f64, f64)>,
 }
 
 impl TputGrad {
@@ -685,7 +686,8 @@ impl TputGrad {
             msg: String::new(),
             start: 0,
             elapsed: 0,
-            xtrace: Vec::with_capacity(64000000),
+            log: Vec::with_capacity(40000),
+            trace: config.trace,
         }
     }
     // pub fn snapshot(&mut self,curr_rdtsc:u64){
@@ -721,6 +723,10 @@ impl TputGrad {
             delta_recvd,
             delta_t,
         );
+        // if self.trace {
+        //     self.log
+        //         .push((curr_rdtsc, delta_recvd as f64 / delta_t as f64, self.last_x));
+        // }
     }
     /// update
     pub fn update_x(
@@ -848,9 +854,13 @@ impl TputGrad {
                 self.upperbound,
             );
         }
-        if cfg!(feature = "xtrace") {
-            self.xtrace.push(self.msg.clone());
-        }
+        // if cfg!(feature = "xtrace") {
+        //     self.xtrace.push(self.msg.clone());
+        // }
+        // if self.trace {
+        //     self.log
+        //         .push((curr_rdtsc, delta_recvd as f64 / delta_t as f64, self.last_x));
+        // }
     }
 }
 
@@ -865,6 +875,7 @@ pub struct Rloop {
     interval: u64,
     last_rdtsc: u64,
     rate_decay: f64,
+    step_size: usize,
     min_samples: usize,
     // anomalies: usize,
     max_err_rel: f64,
@@ -879,6 +890,8 @@ pub struct Rloop {
     pub tail: f64,
     pub std: f64,
     msg: String,
+    pub trace: bool,
+    pub log: Vec<(u64, f64)>,
 }
 
 impl Rloop {
@@ -893,6 +906,7 @@ impl Rloop {
             interval: CPU_FREQUENCY / config.factor,
             last_rdtsc: 0,
             rate_decay: config.rate_decay,
+            step_size: config.step_size,
             min_samples: config.min_samples,
             max_err_rel: config.max_err_rel,
             max_err_abs: config.max_err_abs,
@@ -901,12 +915,14 @@ impl Rloop {
             // kth: Avg::new(),
             kth: Arc::new(RwLock::new(Avg::new())),
             // latencies: Vec::with_capacity(64000000),
-            metrics: Vec::with_capacity(64000000),
+            metrics: Vec::with_capacity(config.window_size),
             slo: config.slo,
             enabled: config.enabled,
             tail: 0.0,
             std: 0.0,
             msg: String::new(),
+            log: Vec::with_capacity(40000),
+            trace: config.trace,
         }
     }
     pub fn ready(&mut self, curr_rdtsc: u64) -> bool {
@@ -949,7 +965,7 @@ impl Rloop {
         let mut new_max_out = max_out;
         if self.enabled && rel_err > self.max_err_rel {
             if kth < self.slo {
-                new_max_out = max_out + 1;
+                new_max_out = max_out + self.step_size;
             } else {
                 new_max_out = (self.rate_decay * max_out as f64) as usize;
             }
@@ -970,6 +986,9 @@ impl Rloop {
             self.std,
         );
         self.last_rdtsc = curr;
+        if self.trace {
+            self.log.push((curr, kth));
+        }
     }
     pub fn max_out(&self) -> usize {
         self.max_out.load(Ordering::Relaxed)
