@@ -1158,7 +1158,7 @@ impl Drop for LoadBalancer {
                     metric = tail as f64 / meantime;
                 }
             }
-            println!("total SLO metric {:.2}", metric);
+            // println!("total SLO metric {:.2}", metric);
             println!(
                 "Throughput {:.2} partition {:.2}",
                 self.tput,
@@ -1168,9 +1168,22 @@ impl Drop for LoadBalancer {
                 "Core usage {}S {}C",
                 self.provision.current.0, self.provision.current.1
             );
+            let mut max_out = self.generator.max_out(self.stop);
+            if self.rloop.enabled {
+                max_out = max_out.min(self.rloop.max_out());
+            }
+            println!("maxout {}", max_out);
         }
         if self.id == 0 {
-            std::thread::sleep(std::time::Duration::from_secs(2));
+            std::thread::sleep(std::time::Duration::from_secs(2));  
+            let total_slo = self
+                .rloop
+                .log
+                .iter()
+                .map(|&(t, slo)| slo as f64)
+                .sum::<f64>()
+                / self.rloop.log.len() as f64;
+            println!("total SLO metric {:.2}", total_slo);
             let mut current_types: Vec<usize> = (0..self.sampler.type_history.len()).collect();
             current_types.sort_by(|&idx1, &idx2| {
                 self.sampler.type_history[idx1]
