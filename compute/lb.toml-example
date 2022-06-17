@@ -1,10 +1,9 @@
 ############################### LOAD GENERATOR CONFIG ##############################
 num_tenants = 1
 tenant_skew = 0.1
-duration = 15
+duration = 20
 
-learnable = true
-partition = 0
+partition = 50
 
 output = true
 output_factor = 20
@@ -16,33 +15,34 @@ history_size = 2000
 max_err = 0.25
 
 [xloop]
+learnable = false
 factor = 20
 lr = 0.2
 min_recvd = 4000
-max_step_abs = 2000
+max_step_abs = 800
 min_step_abs = 40
 min_interval = 160
 max_err = 0.08
 tolerance = 1
 
 [elastic]
-elastic = false
-max_load = 0.5
-min_load = 0.45
-max_step = 16
+elastic = true
+max_load = 0.7
+min_load = 0.6
+max_step = 8
 
 [rloop]
 enabled = true
 trace = true
 factor = 200
-rate_decay = 0.8
+rate_decay = 0.9
 step_size = 1
-window_size = 1000
-min_samples = 4
+window_size = 300
+min_samples = 8
 max_err_rel = 0.2
 max_err_abs = 1
 slo = 10
-max_out = 2
+max_out = 1
 
 ############################### LB N/W CONFIG ##############################
 
@@ -87,6 +87,38 @@ mac_addr = "9c:dc:71:56:af:f5"
 rx_queues = 8
 ip_addr = "10.10.1.9"
 mac_addr = "9c:dc:71:5c:8f:e1"
+[[compute]]
+rx_queues = 8
+ip_addr = "10.10.1.10"
+mac_addr = "9c:dc:71:5d:90:d1"
+[[compute]]
+rx_queues = 8
+ip_addr = "10.10.1.11"
+mac_addr = "9c:dc:71:5b:22:31"
+[[compute]]
+rx_queues = 8
+ip_addr = "10.10.1.12"
+mac_addr = "9c:dc:71:56:af:95"
+[[compute]]
+rx_queues = 8
+ip_addr = "10.10.1.13"
+mac_addr = "9c:dc:71:56:fd:b5"
+[[compute]]
+rx_queues = 8
+ip_addr = "10.10.1.14"
+mac_addr = "9c:dc:71:5d:d5:b1"
+[[compute]]
+rx_queues = 8
+ip_addr = "10.10.1.15"
+mac_addr = "9c:dc:71:5b:32:d1"
+[[compute]]
+rx_queues = 8
+ip_addr = "10.10.1.16"
+mac_addr = "9c:dc:71:5d:d5:91"
+[[compute]]
+rx_queues = 8
+ip_addr = "10.10.1.17"
+mac_addr = "9c:dc:71:5e:2f:a1"
 
 [[storage]]
 rx_queues = 8
@@ -95,29 +127,32 @@ mac_addr = "9c:dc:71:56:af:b5"
 
 ############################### LB WORKLOAD CONFIG ##############################
 
-[[phases]]
-#ratios = [50, 50]
+#[[phases]]
+#ratios = [100]
+#ratios = [80, 20]
+#ratios = [20, 80]
+#ratios = [80, 20]
 #ratios = [25, 25, 25, 25]
-ratios = [12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5]
+#ratios = [12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5]
 #ratios = [6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25]
-max_out = 32
+#max_out = 128
 
-#[[phases]]
-#ratios = [0, 0, 100, 0]
-#max_out = 32
-#duration = 5
-#[[phases]]
-#ratios = [0, 50, 50, 0]
-#max_out = 32
-#duration = 5
-#[[phases]]
-#ratios = [33, 33, 34, 0]
-#max_out = 32
-#duration = 5
-#[[phases]]
-#ratios = [25, 25, 25, 25]
-#max_out = 32
-#duration = 5
+[[phases]]
+ratios = [50, 50]
+max_out = 8
+duration = 5
+[[phases]]
+ratios = [50, 50]
+max_out = 16
+duration = 5
+[[phases]]
+ratios = [50, 50]
+max_out = 28
+duration = 5
+[[phases]]
+ratios = [50, 50]
+max_out = 52
+duration = 10
 
 [[tables]]
 description = "synthetic"
@@ -163,57 +198,15 @@ num_records = 100000
 
 [[workloads]]
 extension = "pushback"
-kv = 3
-order = 2400
-table_id = 5
-skew = 0.99
-
-[[workloads]]
-extension = "pushback"
 kv = 4
-order = 7200
-table_id = 4
-skew = 0.99
-
-[[workloads]]
-extension = "pushback"
-kv = 3
-order = 21600
-table_id = 4
+order = 120
+table_id = 6
 skew = 0.99
 
 [[workloads]]
 extension = "pushback"
 kv = 1
-order = 1320
-table_id = 2
-skew = 0.99
-
-[[workloads]]
-extension = "pushback"
-kv = 2
-order = 16800
-table_id = 3
-skew = 0.99
-
-[[workloads]]
-extension = "pushback"
-kv = 1
-order = 24000
-table_id = 3
-skew = 0.99
-
-[[workloads]]
-extension = "pushback"
-kv = 2
-order = 67200
-table_id = 2
-skew = 0.99
-
-[[workloads]]
-extension = "pushback"
-kv = 1
-order = 115200
+order = 120000
 table_id = 1
 skew = 0.99
 
