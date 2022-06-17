@@ -541,12 +541,11 @@ impl LoadBalancer {
 
                     _ => packet.free_packet(),
                 }
+                let curr_rdtsc = cycles::rdtsc() - self.start;
+                if packet_recvd_signal && self.rloop.ready(curr_rdtsc) {
+                    self.rloop.rate_control(self.max_out as usize);
+                }
                 if self.id == 0 {
-                    let curr_rdtsc = cycles::rdtsc() - self.start;
-                    if packet_recvd_signal && self.rloop.ready(curr_rdtsc) {
-                        self.rloop.rate_control(curr_rdtsc, self.max_out as usize);
-                        debug!("{}", self.rloop);
-                    }
                     // let global_recvd = self.global_recvd.load(Ordering::Relaxed);
                     let global_recvd = self
                         .global_recvd
@@ -565,6 +564,7 @@ impl LoadBalancer {
                             / (curr_rdtsc - self.output_last_rdtsc) as f64;
                         self.output_last_recvd = global_recvd;
                         self.output_last_rdtsc = curr_rdtsc;
+                        let tail = self.rloop.tail.load(Ordering::Relaxed);
                         let partition: Vec<u64> = self
                             .partition
                             .iter()
@@ -572,11 +572,11 @@ impl LoadBalancer {
                             .collect();
                         if self.output {
                             println!(
-                                "rdtsc {} tput {:.2} tail {:.2}({:.2}) rpc {:?}",
-                                curr_rdtsc, output_tput, self.rloop.tail, self.rloop.std, partition
+                                "rdtsc {} tput {:.2} tail {:.2} rpc {:?}",
+                                curr_rdtsc, output_tput, tail, partition
                             );
                         }
-                        self.log.push((output_tput, self.rloop.tail));
+                        self.log.push((output_tput, tail));
                         // self.tput_vec.push(output_tput);
                         // self.rpc_vec
                         //     .push((self.partition.load(Ordering::Relaxed) as f64) / 100.0);
@@ -730,7 +730,7 @@ impl Drop for LoadBalancer {
             //     cycles::to_seconds(t) * 1e9
             // );
             // println!("PUSHBACK Throughput {:.2}", self.tput.moving());
-            println!("Average Throughput {:.2}", self.tput);
+            // println!("Average Throughput {:.2}", self.tput);
         }
         if self.id == 0 {
             std::thread::sleep(std::time::Duration::from_secs(2));
@@ -747,6 +747,11 @@ impl Drop for LoadBalancer {
             //     .sum::<f64>()
             //     / self.rloop.log.len() as f64;
             // println!("total SLO metric {:.2}", total_slo);
+            let len = self.log.len();
+            let tput = self.log.iter().map(|&(tput, slo)| tput).sum::<f64>() / len as f64;
+            let slo = self.log.iter().map(|&(tput, slo)| slo).sum::<f64>() / len as f64;
+            println!("Average Throughput {:.2}", tput);
+            println!("Average SLO metric {:.2}", slo);
             println!("Best Throughput {:.2}", best_tput);
             println!("Best SLO metric {:.2}", best_slo);
             let mut avg_x_interval: f64 = 0.0;

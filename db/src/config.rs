@@ -489,6 +489,7 @@ pub struct XloopConfig {
     // not useful
     // pub min_err: f64,
     pub trace: bool,
+    pub learnable: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
@@ -541,7 +542,7 @@ pub struct LBConfig {
     pub rloop: RloopConfig,
     // stop after duration
     pub duration: u64,
-    pub learnable: bool,
+    // pub learnable: bool,
     pub partition: f64,
     // pub max_out: u32,
     pub output_factor: u64,

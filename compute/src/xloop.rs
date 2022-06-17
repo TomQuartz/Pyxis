@@ -1,3 +1,4 @@
+use atomic_float::AtomicF64;
 use db::config::*;
 use db::cycles::rdtsc;
 use std::cell::RefCell;
@@ -641,6 +642,8 @@ pub struct TputGrad {
     // trace
     pub trace: bool,
     pub log: Vec<(u64, f64, f64)>,
+    last_phase: isize,
+    pub learnable: bool,
 }
 
 impl TputGrad {
@@ -688,6 +691,8 @@ impl TputGrad {
             elapsed: 0,
             log: Vec::with_capacity(40000),
             trace: config.trace,
+            last_phase: -1,
+            learnable: config.learnable,
         }
     }
     // pub fn snapshot(&mut self,curr_rdtsc:u64){
@@ -733,6 +738,7 @@ impl TputGrad {
         &mut self,
         xinterface: &impl XInterface<X = f64>,
         curr_rdtsc: u64,
+        // phase: isize,
         recvd: usize,
     ) {
         let x = xinterface.get();
@@ -767,15 +773,20 @@ impl TputGrad {
         // NOTE: we do not always update last_inv_tput after introducing tolerance, so copy before update
         let last_inv_tput = self.last_inv_tput;
         self.last_inv_tput = inv_tput;
+        if !self.learnable {
+            return;
+        }
         // convergence
         if self.converged {
             // avoid updating if this is within #tolerance steps after jumping out of convergence
+            // if rel_err > self.max_err && phase != self.last_phase {
             if rel_err > self.max_err {
                 self.anomalies += 1;
                 if self.start == 0 {
                     self.start = curr_rdtsc;
                 }
                 if self.anomalies == self.tolerance || last_inv_tput == 0f64 {
+                    // self.last_phase = phase;
                     self.converged = false;
                     // anomalies still equals tolerance, will be reset to 0 after convergence
                     // compute gradient next time
@@ -835,7 +846,11 @@ impl TputGrad {
                 // step_raw = -self.lr * interval * delta_inv_tput / (delta_x + 1e-9);
                 // let max_step = self.max_step_abs.min(self.max_step_rel * interval);
                 // let min_step = self.min_step_abs.max(self.min_step_rel * interval);
-                step_raw = -self.lr * interval * (delta_inv_tput / (delta_x + 1e-9)).signum();
+                if delta_x == 0.0 {
+                    step_raw = -self.lr * interval * (x - 5000.0 - 1e-9).signum();
+                } else {
+                    step_raw = -self.lr * interval * (delta_inv_tput / (delta_x + 1e-9)).signum();
+                }
                 let max_step = self.max_step_abs;
                 let min_step = self.min_step_abs;
                 step = clamp(step_raw, min_step, max_step);
@@ -887,11 +902,13 @@ pub struct Rloop {
     pub metrics: Vec<f64>,
     pub slo: f64,
     pub enabled: bool,
-    pub tail: f64,
-    pub std: f64,
+    // pub tail: f64,
+    // pub std: f64,
+    pub tail: Arc<AtomicF64>,
+    // pub std: Arc<AtomicF64>,
     msg: String,
-    pub trace: bool,
-    pub log: Vec<(u64, f64)>,
+    // pub trace: bool,
+    // pub log: Vec<(u64, f64)>,
 }
 
 impl Rloop {
@@ -918,11 +935,12 @@ impl Rloop {
             metrics: Vec::with_capacity(config.window_size),
             slo: config.slo,
             enabled: config.enabled,
-            tail: 0.0,
-            std: 0.0,
+            // tail: 0.0,
+            // std: 0.0,
+            tail: Arc::new(AtomicF64::new(0.0)),
             msg: String::new(),
-            log: Vec::with_capacity(40000),
-            trace: config.trace,
+            // log: Vec::with_capacity(40000),
+            // trace: config.trace,
         }
     }
     pub fn ready(&mut self, curr_rdtsc: u64) -> bool {
@@ -930,35 +948,59 @@ impl Rloop {
             self.last_rdtsc = curr_rdtsc;
             return false;
         } else if curr_rdtsc - self.last_rdtsc > self.interval {
-            let mut kth = self.kth.write().unwrap();
-            if kth.counter >= self.min_samples as f64 {
-                self.tail = kth.avg();
-                self.std = kth.std();
-                kth.reset();
-                return true;
-            }
+            // let mut kth = self.kth.write().unwrap();
+            // if kth.counter >= self.min_samples as f64 {
+            //     self.tail = kth.avg();
+            //     self.std = kth.std();
+            //     kth.reset();
+            //     return true;
+            // }
+            self.last_rdtsc = curr_rdtsc;
+            return true;
         }
         false
     }
     pub fn record_latency(&mut self, lat: u64, ord: f64) {
         // self.latencies.push(lat);
         self.metrics.push(lat as f64 / ord);
-        if self.metrics.len() % self.window_size == 0 {
-            let kth = *order_stat::kth_by(
-                &mut self.metrics[..],
-                98 * self.window_size / 100,
-                |x, y| x.partial_cmp(y).unwrap(),
-            );
-            self.kth.write().unwrap().update(kth);
-            self.metrics.clear();
-        }
+        // if self.metrics.len() % self.window_size == 0 {
+        //     let kth = *order_stat::kth_by(
+        //         &mut self.metrics[..],
+        //         98 * self.window_size / 100,
+        //         |x, y| x.partial_cmp(y).unwrap(),
+        //     );
+        //     self.kth.write().unwrap().update(kth);
+        //     self.metrics.clear();
+        // }
     }
-    pub fn rate_control(&mut self, curr: u64, upperbound: usize) {
+    pub fn kth(&mut self) -> Option<f64> {
+        let len = self.metrics.len();
+        if len >= self.window_size {
+            let tail = *order_stat::kth_by(&mut self.metrics[..], 99 * len / 100 - 1, |x, y| {
+                x.partial_cmp(y).unwrap()
+            });
+            self.metrics.clear();
+            let mut kth = self.kth.write().unwrap();
+            kth.update(tail);
+            if kth.counter >= self.min_samples as f64 {
+                let avg = kth.avg();
+                kth.reset();
+                self.tail.store(avg, Ordering::Relaxed);
+                return Some(avg);
+            }
+        }
+        None
+    }
+    pub fn rate_control(&mut self, upperbound: usize) -> bool {
         // let len = self.latencies.len();
         // let mut tmp = &self.latencies[(len - self.window_size)..len];
         // let mut tmpvec = tmp.to_vec();
         // self.kth = *order_stat::kth(&mut tmpvec, 98);
-        let kth = self.tail;
+        let kth = self.kth();
+        if kth == None {
+            return false;
+        }
+        let kth = kth.unwrap();
         let rel_err = relative_err(kth, self.slo);
         let max_err = self.max_err_abs.max(self.slo * self.max_err_rel);
         let max_out = self.max_out.load(Ordering::Relaxed);
@@ -967,28 +1009,31 @@ impl Rloop {
             if kth < self.slo {
                 new_max_out = max_out + self.step_size;
             } else {
-                new_max_out = (self.rate_decay * max_out as f64) as usize;
+                // new_max_out = (self.rate_decay * max_out as f64) as usize;
+                new_max_out = max_out - self.step_size;
             }
         }
         if new_max_out != max_out && new_max_out <= upperbound && new_max_out > 0 {
             self.max_out.store(new_max_out, Ordering::Relaxed);
+        } else if upperbound < max_out {
+            self.max_out.store(upperbound, Ordering::Relaxed);
         }
         self.msg.clear();
         write!(
             self.msg,
-            "rdtsc {} max_out {}({}) slo {:.1}/{:.1}({:.1}%) std {}",
-            curr,
+            "rdtsc {} max_out {}({}) slo {:.1}/{:.1}({:.1}%)",
+            self.last_rdtsc,
             new_max_out,
             max_out,
             kth,
             self.slo,
             rel_err * 100.0,
-            self.std,
+            // self.std,
         );
-        self.last_rdtsc = curr;
         // if self.trace {
-        self.log.push((curr, kth));
+        // self.log.push((curr, kth));
         // }
+        true
     }
     pub fn max_out(&self) -> usize {
         self.max_out.load(Ordering::Relaxed)
@@ -1158,7 +1203,7 @@ impl ElasticScaling {
     fn bounded_step(&self) -> i32 {
         self.max_step.min((self.upperbound - self.lowerbound) / 2)
     }
-    pub fn scaling(&mut self) -> bool {
+    pub fn scaling(&mut self, throttled: bool) -> bool {
         let (load_compute, load_storage) = self.calc_load();
         self.load_summary = (load_compute, load_storage);
         // provision
@@ -1180,7 +1225,7 @@ impl ElasticScaling {
                     step = -self.max_step;
                 }
                 // step = -self.bounded_step();
-            } else if load_compute > self.max_load {
+            } else if load_compute > self.max_load || throttled {
                 // self.confidence = 0;
                 self.lowerbound = provision;
                 if self.upperbound > self.lowerbound {

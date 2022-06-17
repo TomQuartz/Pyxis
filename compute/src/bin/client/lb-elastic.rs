@@ -611,7 +611,7 @@ struct LoadBalancer {
     // max_out: u32,
     partition: Partition,
     // xloop
-    learnable: bool,
+    // learnable: bool,
     xloop: TputGrad,
     elastic: ElasticScaling,
     // // bimodal
@@ -638,6 +638,7 @@ struct LoadBalancer {
     // outs_compute: usize,
     cfg: config::LBConfig,
     rloop: Rloop,
+    log: Vec<(f64, f64)>,
 }
 
 // Implementation of methods on LoadBalancer.
@@ -719,7 +720,7 @@ impl LoadBalancer {
                 upperbound: 10000.0,
                 lowerbound: 0.0,
             },
-            learnable: config.learnable,
+            // learnable: config.learnable,
             xloop: TputGrad::new(
                 &config.xloop,
                 config.partition, /*, storage_load, compute_load*/
@@ -739,6 +740,7 @@ impl LoadBalancer {
             // rloop_factor: config.rloop_factor,
             // rloop_last_rdtsc: 0,
             rloop: rloop,
+            log: Vec::with_capacity(40000),
         }
     }
     fn adjust_provision(&mut self, curr_rdtsc: u64) {
@@ -987,28 +989,39 @@ impl LoadBalancer {
                 // }
             }
             let curr_rdtsc = cycles::rdtsc() - self.start;
-            if self.id == 0 {
-                if packet_recvd_signal && self.rloop.ready(curr_rdtsc) {
-                    if !self.sampler.undetermined() {
-                        self.rloop
-                            .rate_control(curr_rdtsc, self.generator.max_out(curr_rdtsc));
-                        debug!("{}", self.rloop);
+            if packet_recvd_signal && self.rloop.ready(curr_rdtsc) {
+                if !self.sampler.undetermined() {
+                    if self.rloop.rate_control(self.generator.max_out(curr_rdtsc)) {
+                        // debug!("{}", self.rloop);
                     }
                 }
+            }
+            if self.id == 0 {
+                // if packet_recvd_signal && self.rloop.ready(curr_rdtsc) {
+                //     if !self.sampler.undetermined() {
+                //         self.rloop
+                //             .rate_control(curr_rdtsc, self.generator.max_out(curr_rdtsc));
+                //         debug!("{}", self.rloop);
+                //     }
+                // }
                 let global_recvd = self.global_recvd.load(Ordering::Relaxed);
                 // xloop
-                if self.learnable
-                    // TODO: move min_recvd into xloop
-                    && self.xloop.ready(curr_rdtsc)
+                if self.xloop.ready(curr_rdtsc)
                     && packet_recvd_signal
                     && global_recvd - self.xloop.last_recvd > self.cfg.xloop.min_recvd
                 // && global_recvd > 1000
                 {
                     if !self.sampler.undetermined() {
-                        self.xloop
-                            .update_x(&self.partition, curr_rdtsc, global_recvd);
+                        self.xloop.update_x(
+                            &self.partition,
+                            curr_rdtsc,
+                            // self.generator.phase(curr_rdtsc) as isize,
+                            global_recvd,
+                        );
                         // short circuit scaling if anomalies > 0, which is always true if not converged
-                        if self.xloop.anomalies > 0 || self.elastic.scaling() {
+                        let throttled = self.rloop.enabled
+                            && self.rloop.max_out() < self.generator.max_out(curr_rdtsc);
+                        if self.xloop.anomalies > 0 || self.elastic.scaling(throttled) {
                             self.elastic.reset();
                             // self.elastic.compute_load.reset();
                             // self.elastic.compute_outs.reset();
@@ -1046,14 +1059,17 @@ impl LoadBalancer {
                         / (curr_rdtsc - self.output_last_rdtsc) as f64;
                     self.output_last_recvd = global_recvd;
                     self.output_last_rdtsc = curr_rdtsc;
+                    let tail = self.rloop.tail.load(Ordering::Relaxed);
+                    self.log.push((output_tput, tail));
                     if self.output {
                         println!(
-                            "rdtsc {} tput {:.2} x {:.2} tail {:.2}({:.2}) outs {}/{} cores {},{} load {:.3},{:.3} phase {}",
+                            "rdtsc {} tput {:.2} x {:.2} tail {:.2} outs {}/{} cores {},{} load {:.3},{:.3} phase {}",
                             curr_rdtsc,
                             output_tput,
                             self.partition.get(),
-                            self.rloop.tail,
-                            self.rloop.std,
+                            // self.rloop.tail,
+                            tail,
+                            // self.rloop.std,
                             self.rloop.max_out(),
                             self.generator.max_out(curr_rdtsc),
                             self.provision.current.0,
@@ -1159,11 +1175,11 @@ impl Drop for LoadBalancer {
                 }
             }
             // println!("total SLO metric {:.2}", metric);
-            println!(
-                "Throughput {:.2} partition {:.2}",
-                self.tput,
-                self.partition.get() / 100.0
-            );
+            // println!(
+            //     "Throughput {:.2} partition {:.2}",
+            //     self.tput,
+            //     self.partition.get() / 100.0
+            // );
             println!(
                 "Core usage {}S {}C",
                 self.provision.current.0, self.provision.current.1
@@ -1175,15 +1191,23 @@ impl Drop for LoadBalancer {
             println!("maxout {}", max_out);
         }
         if self.id == 0 {
-            std::thread::sleep(std::time::Duration::from_secs(2));  
-            let total_slo = self
-                .rloop
-                .log
-                .iter()
-                .map(|&(t, slo)| slo as f64)
-                .sum::<f64>()
-                / self.rloop.log.len() as f64;
-            println!("total SLO metric {:.2}", total_slo);
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            let len = self.log.len();
+            let tput = self.log.iter().map(|&(tput, slo)| tput).sum::<f64>() / len as f64;
+            let slo = self.log.iter().map(|&(tput, slo)| slo).sum::<f64>() / len as f64;
+            // let total_slo = self
+            //     .rloop
+            //     .log
+            //     .iter()
+            //     .map(|&(t, slo)| slo as f64)
+            //     .sum::<f64>()
+            //     / self.rloop.log.len() as f64;
+            println!(
+                "Throughput {:.2} partition {:.2}",
+                tput,
+                self.partition.get() / 100.0
+            );
+            println!("total SLO metric {:.2}", slo);
             let mut current_types: Vec<usize> = (0..self.sampler.type_history.len()).collect();
             current_types.sort_by(|&idx1, &idx2| {
                 self.sampler.type_history[idx1]
@@ -1204,13 +1228,13 @@ impl Drop for LoadBalancer {
                     history.overhead_storage.avg(),
                 );
             }
-            if self.rloop.enabled && self.rloop.trace {
-                let mut f = File::create("rloop.log").unwrap();
-                // writeln!(f, "{:?}\n", self.cfg);
-                for &(t, slo) in &self.rloop.log {
-                    writeln!(f, "rdtsc {} slo {:.2}", t, slo);
-                }
-            }
+            // if self.rloop.enabled && self.rloop.trace {
+            //     let mut f = File::create("rloop.log").unwrap();
+            //     // writeln!(f, "{:?}\n", self.cfg);
+            //     for &(t, slo) in &self.rloop.log {
+            //         writeln!(f, "rdtsc {} slo {:.2}", t, slo);
+            //     }
+            // }
         }
         // if self.id == 0 && cfg!(feature = "xtrace") {
         //     let mut f = File::create("xtrace.log").unwrap();

@@ -24,7 +24,7 @@ line_learnable_lb=6
 line_partition_lb=7
 # line_max_out_lb=123
 
-sed -i -e "${line_learnable_lb}c learnable = false" ${LB_PATH}
+sed -i -e "${line_learnable_lb}c learnable = true" ${LB_PATH}
 partition=(50)
 for p in ${partition[@]}
 do

@@ -367,6 +367,7 @@ struct LoadBalancer {
     cfg: config::KayakConfig,
     sampler: Sampler,
     rloop: Rloop,
+    log: Vec<(f64, f64)>,
 }
 
 // Implementation of methods on LoadBalancer.
@@ -440,6 +441,7 @@ impl LoadBalancer {
             cfg: config.clone(),
             sampler: sampler,
             rloop: rloop,
+            log: Vec::with_capacity(40000),
         }
     }
 
@@ -539,12 +541,11 @@ impl LoadBalancer {
 
                     _ => packet.free_packet(),
                 }
+                let curr_rdtsc = cycles::rdtsc() - self.start;
+                if packet_recvd_signal && self.rloop.ready(curr_rdtsc) {
+                    self.rloop.rate_control(self.max_out as usize);
+                }
                 if self.id == 0 {
-                    let curr_rdtsc = cycles::rdtsc() - self.start;
-                    if packet_recvd_signal && self.rloop.ready(curr_rdtsc) {
-                        self.rloop.rate_control(curr_rdtsc, self.max_out as usize);
-                        debug!("{}", self.rloop);
-                    }
                     let global_recvd = self.global_recvd.load(Ordering::Relaxed);
                     // TODO: impl kayak xloop here
                     // if self.learnable && xxxx
@@ -558,19 +559,21 @@ impl LoadBalancer {
                             / (curr_rdtsc - self.output_last_rdtsc) as f64;
                         self.output_last_recvd = global_recvd;
                         self.output_last_rdtsc = curr_rdtsc;
+                        let tail = self.rloop.tail.load(Ordering::Relaxed);
                         if self.output {
                             println!(
-                                "rdtsc {} tput {:.2} tail {:.2}({:.2}) rpc {:.2}",
+                                "rdtsc {} tput {:.2} tail {:.2} rpc {:.2}",
                                 curr_rdtsc / (CPU_FREQUENCY / 1000),
                                 output_tput,
-                                self.rloop.tail,
-                                self.rloop.std,
+                                tail,
+                                // self.rloop.std,
                                 self.partition.load(Ordering::Relaxed),
                             );
                         }
-                        self.tput_vec.push(output_tput);
-                        self.rpc_vec
-                            .push((self.partition.load(Ordering::Relaxed) as f64) / 100.0);
+                        self.log.push((output_tput, tail));
+                        // self.tput_vec.push(output_tput);
+                        // self.rpc_vec
+                        //     .push((self.partition.load(Ordering::Relaxed) as f64) / 100.0);
                     }
 
                     if self.xloop_factor != 0
@@ -704,18 +707,22 @@ impl Drop for LoadBalancer {
             //     cycles::to_seconds(t) * 1e9
             // );
             // println!("PUSHBACK Throughput {:.2}", self.tput.moving());
-            println!("PUSHBACK Throughput {:.2}", self.tput);
+            // println!("PUSHBACK Throughput {:.2}", self.tput);
         }
         if self.id == 0 {
             std::thread::sleep(std::time::Duration::from_secs(2));
-            let total_slo = self
-                .rloop
-                .log
-                .iter()
-                .map(|&(t, slo)| slo as f64)
-                .sum::<f64>()
-                / self.rloop.log.len() as f64;
-            println!("total SLO metric {:.2}", total_slo);
+            // let total_slo = self
+            //     .rloop
+            //     .log
+            //     .iter()
+            //     .map(|&(t, slo)| slo as f64)
+            //     .sum::<f64>()
+            //     / self.rloop.log.len() as f64;
+            let len = self.log.len();
+            let tput = self.log.iter().map(|&(tput, slo)| tput).sum::<f64>() / len as f64;
+            let slo = self.log.iter().map(|&(tput, slo)| slo).sum::<f64>() / len as f64;
+            println!("PUSHBACK Throughput {:.2}", tput);
+            println!("total SLO metric {:.2}", slo);
             let mut avg_x_interval: f64 = 0.0;
             let mut std_x_interval: f64 = 0.0;
             // println!("xloop learning rate: {}", self.xloop_learning_rate);
