@@ -24,7 +24,7 @@ OUTPUT=${LOG_PATH}${OUTPUT_FILE}
 
 
 # lb
-line_learnable_lb=6
+line_learnable_lb=18
 line_partition_lb=7
 line_output_lb=9
 line_num_cores_lb=52

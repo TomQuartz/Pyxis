@@ -754,6 +754,35 @@ impl Drop for LoadBalancer {
             println!("Average SLO metric {:.2}", slo);
             println!("Best Throughput {:.2}", best_tput);
             println!("Best SLO metric {:.2}", best_slo);
+            let perf = vec![0.5, 0.6, 0.7, 0.8, 0.9];
+            print!("Avg SLO@perf: ");
+            for &p in &perf {
+                let idx = self
+                    .log
+                    .iter()
+                    .position(|&(tput, slo)| tput > p * best_tput)
+                    .unwrap();
+                let slo_perf = self.log[idx..].iter().map(|&(tput, slo)| slo).sum::<f64>()
+                    / (len - idx) as f64;
+                // slo_perf.push(slo);
+                print!("{:.0}%:{:.2} ", p * 100.0, slo_perf);
+            }
+            println!("");
+            print!("Avg SLO>perf: ");
+            for &p in &perf {
+                let mut sum = 0.0;
+                let mut cnt = 0;
+                for &(tput, slo) in &self.log {
+                    if tput > p * best_tput {
+                        cnt += 1;
+                        sum += slo;
+                    }
+                }
+                let slo_perf = sum / cnt as f64;
+                // slo_perf.push(slo);
+                print!("{:.0}%:{:.2} ", p * 100.0, slo_perf);
+            }
+            println!("");
             let mut avg_x_interval: f64 = 0.0;
             let mut std_x_interval: f64 = 0.0;
             // println!("xloop learning rate: {}", self.xloop_learning_rate);

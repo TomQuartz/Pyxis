@@ -22,7 +22,7 @@ OUTPUT=${LOG_PATH}${OUTPUT_FILE}
 
 
 # lb
-line_learnable_lb=6
+line_learnable_lb=18
 line_partition_lb=7
 line_output_lb=9
 line_num_cores_lb=52
@@ -39,7 +39,7 @@ for c in ${cores[@]}
 do
     sed -i -e "${line_num_cores_lb}c num_cores = ${c}" ${LB_PATH}
     echo "num_cores = ${c}" >> ${OUTPUT}
-    sudo ../scripts/run-elastic >> ${OUTPUT}
+    # sudo ../scripts/run-elastic >> ${OUTPUT}
     echo "" >> ${OUTPUT}
 done
 sed -i -e "${line_num_cores_lb}c num_cores = 8" ${LB_PATH}
@@ -47,7 +47,7 @@ for t in ${slo[@]}
 do
     sed -i -e "${line_slo_lb}c slo = ${t}" ${LB_PATH}
     echo "slo = ${t}" >> ${OUTPUT}
-    sudo ../scripts/run-elastic >> ${OUTPUT}
+    # sudo ../scripts/run-elastic >> ${OUTPUT}
     echo "" >> ${OUTPUT}
 done
 
@@ -70,7 +70,7 @@ for c in ${cores[@]}
 do
     sed -i -e "${line_num_cores_kayak}c num_cores = ${c}" ${KAYAK_PATH}
     echo "num_cores = ${c}" >> ${OUTPUT}
-    sudo ../scripts/run-kayak >> ${OUTPUT}
+    # sudo ../scripts/run-kayak >> ${OUTPUT}
     echo "" >> ${OUTPUT}
 done
 sed -i -e "${line_num_cores_kayak}c num_cores = 8" ${KAYAK_PATH}
@@ -79,14 +79,14 @@ for t in ${maxout[@]}
 do
     sed -i -e "${line_max_out_kayak}c max_out = ${t}" ${KAYAK_PATH}
     echo "max_out = ${t}" >> ${OUTPUT}
-    sudo ../scripts/run-kayak >> ${OUTPUT}
+    # sudo ../scripts/run-kayak >> ${OUTPUT}
     echo "" >> ${OUTPUT}
 done
 
 
 # kayak-plus
 line_duration=4
-sed -i -e "${line_duration}c duration = 90" ${KAYAK_PATH}
+sed -i -e "${line_duration}c duration = 300" ${KAYAK_PATH}
 echo "kayakplus:" >> ${OUTPUT}
 sed -i -e "${line_learnable}c learnable = true" ${KAYAK_PATH}
 sed -i -e "${line_partition}c partition = 50" ${KAYAK_PATH}
@@ -101,7 +101,8 @@ do
     echo "" >> ${OUTPUT}
 done
 sed -i -e "${line_num_cores_kayak}c num_cores = 8" ${KAYAK_PATH}
-maxout=(1 2 4 8 16 32 64 128)
+maxout=(1 2 4 8 16 32 64)
+maxout=(1 2)
 for q in ${maxout[@]}
 do
     sed -i -e "${line_max_out_kayak}c max_out = ${q}" ${KAYAK_PATH}
