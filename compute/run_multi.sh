@@ -35,19 +35,19 @@ sed -i -e "${line_compute_kayak}c compute = 16" ${KAYAK_PATH}
 
 cp lb-4.toml lb.toml
 cp kayak-4.toml kayak.toml
-./multi_type.sh 1
+# ./multi_type.sh 1
 
 cp lb-8.toml lb.toml
 cp kayak-8.toml kayak.toml
-./multi_type.sh 2
+# ./multi_type.sh 2
 
 cp lb-12.toml lb.toml
 cp kayak-12.toml kayak.toml
-./multi_type.sh 3
+# ./multi_type.sh 3
 
 cp lb-16.toml lb.toml
 cp kayak-16.toml kayak.toml
-./multi_type.sh 4
+# ./multi_type.sh 4
 
 # 50-50, 80-20
 cp lb-2.toml lb.toml
@@ -87,3 +87,22 @@ sed -i -e "${line_compute_kayak}c compute = 32" ${KAYAK_PATH}
 sed -i -e "${line_compute_lb}c compute = 16" ${LB_PATH}
 sed -i -e "${line_compute_kayak}c compute = 16" ${KAYAK_PATH}
 # ./nCmS-noplus.sh 8
+
+
+# real workload
+cp lb-real.toml lb.toml
+cp kayak-real.toml kayak.toml
+line_ratio_lb=99
+line_ratio_kayak=89
+sed -i -e "${line_ratio_lb}c ratios = [50, 20, 20, 10]" ${LB_PATH}
+sed -i -e "${line_ratio_kayak}c ratios = [50, 20, 20, 10]" ${KAYAK_PATH}
+# ./nCmS.sh 5
+sed -i -e "${line_ratio_lb}c ratios = [20, 50, 20, 10]" ${LB_PATH}
+sed -i -e "${line_ratio_kayak}c ratios = [20, 50, 20, 10]" ${KAYAK_PATH}
+# ./nCmS.sh 6
+sed -i -e "${line_ratio_lb}c ratios = [20, 20, 50, 10]" ${LB_PATH}
+sed -i -e "${line_ratio_kayak}c ratios = [20, 20, 50, 10]" ${KAYAK_PATH}
+# ./nCmS.sh 9
+sed -i -e "${line_ratio_lb}c ratios = [30, 30, 30, 10]" ${LB_PATH}
+sed -i -e "${line_ratio_kayak}c ratios = [30, 30, 30, 10]" ${KAYAK_PATH}
+# ./nCmS.sh 8

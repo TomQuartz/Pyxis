@@ -23,8 +23,8 @@ OUTPUT=${LOG_PATH}${OUTPUT_FILE}
 
 # lb
 line_learnable_lb=18
-line_partition_lb=7
-line_output_lb=9
+line_partition_lb=6
+line_output_lb=8
 line_num_cores_lb=52
 line_max_out_lb=85
 line_slo_lb=44
@@ -102,7 +102,6 @@ do
 done
 sed -i -e "${line_num_cores_kayak}c num_cores = 8" ${KAYAK_PATH}
 maxout=(1 2 4 8 16 32 64)
-maxout=(1 2)
 for q in ${maxout[@]}
 do
     sed -i -e "${line_max_out_kayak}c max_out = ${q}" ${KAYAK_PATH}

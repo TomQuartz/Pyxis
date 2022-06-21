@@ -992,7 +992,7 @@ impl LoadBalancer {
             if packet_recvd_signal && self.rloop.ready(curr_rdtsc) {
                 if !self.sampler.undetermined() {
                     if self.rloop.rate_control(self.generator.max_out(curr_rdtsc)) {
-                        // debug!("{}", self.rloop);
+                        debug!("{}", self.rloop);
                     }
                 }
             }
