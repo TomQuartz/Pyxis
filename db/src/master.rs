@@ -13,7 +13,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-use bincode::serialize;
+// use bincode::serialize;
 // use crypto::bcrypt::bcrypt;
 use crypto::scrypt::{scrypt, ScryptParams};
 use hashbrown::HashMap;
@@ -39,8 +39,8 @@ use super::tenant::Tenant;
 use super::tx::TX;
 use super::wireformat::*;
 
-use util::common::TESTING_DATASET;
-use util::model::{get_raw_data, insert_global_model, run_ml_application, GLOBAL_MODEL};
+// use util::common::TESTING_DATASET;
+// use util::model::{get_raw_data, insert_global_model, run_ml_application, GLOBAL_MODEL};
 
 use e2d2::common::EmptyMetadata;
 use e2d2::headers::UdpHeader;
@@ -2117,16 +2117,16 @@ impl Master {
             // setting the RPC status appropriately.
             status = RpcStatus::StatusInvalidExtension;
 
-            // Get the model for the given extension.
-            let mut model = None;
-            // If the extension doesn't need an ML model, don't waste CPU cycles in lookup.
-            if cfg!(feature = "ml-model") {
-                GLOBAL_MODEL.with(|a_model| {
-                    if let Some(a_model) = (*a_model).borrow().get(&name) {
-                        model = Some(Arc::clone(a_model));
-                    }
-                });
-            }
+            // // Get the model for the given extension.
+            // let mut model = None;
+            // // If the extension doesn't need an ML model, don't waste CPU cycles in lookup.
+            // if cfg!(feature = "ml-model") {
+            //     GLOBAL_MODEL.with(|a_model| {
+            //         if let Some(a_model) = (*a_model).borrow().get(&name) {
+            //             model = Some(Arc::clone(a_model));
+            //         }
+            //     });
+            // }
 
             // Create a Container for an extension and return.
             if let Some(ext) = self.extensions.get(tenant_id, name) {
@@ -2137,7 +2137,7 @@ impl Master {
                     res,
                     tenant,
                     alloc,
-                    model,
+                    // model,
                 ));
                 let gen = ext.get(Rc::clone(&db) as Rc<DB>);
 

@@ -46,7 +46,7 @@ use std::sync::RwLock;
 
 use libc::ucontext_t;
 use nix::sys::signal;
-use util::model::{insert_model, MODEL};
+// use util::model::{insert_model, MODEL};
 
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -411,11 +411,11 @@ fn print_info() {
     } else {
         info!("Fast path for native operations is DISABLED");
     }
-    if cfg!(feature = "ml-model") {
-        info!("ML Model generation for invoke operations is ENABLED");
-    } else {
-        info!("ML Model generation for invoke operations is DISABLED");
-    }
+    // if cfg!(feature = "ml-model") {
+    //     info!("ML Model generation for invoke operations is ENABLED");
+    // } else {
+    //     info!("ML Model generation for invoke operations is DISABLED");
+    // }
     println!("\n");
 }
 

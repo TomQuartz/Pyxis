@@ -17,17 +17,6 @@ path = "src/bin/server.rs"
 #name = "test"
 #path = "src/bin/test.rs"
 
-#[[bin]]
-#name = "ext_bench"
-#path = "src/bin/ext_bench.rs"
-
-#[[bin]]
-#name = "table_bench"
-#path = "src/bin/table_bench.rs"
-
-#[[bin]]
-#name = "net_bench"
-#path = "src/bin/net_bench.rs"
 
 [dependencies]
 hashbrown    = "0.1.8"
@@ -42,8 +31,8 @@ env_logger   = "0.3"
 libloading   = "0.3"
 serde        = "1.0.37"
 serde_derive = "1.0.37"
-toml         = "0.4.5"
-bincode      = "1.0"
+toml         = "0.4.2"
+# bincode      = "1.0"
 rust-crypto  = "0.2.36"
 sandstorm    = {path = "../sandstorm"}
 e2d2         = {path = "../net/framework"}

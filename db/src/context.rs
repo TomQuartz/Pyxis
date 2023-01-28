@@ -86,7 +86,7 @@ pub struct Context<'a> {
     db_credit: RefCell<u64>,
 
     // The model for a given extension which is stored based on the name of the extension.
-    model: Option<Arc<Model>>,
+    // model: Option<Arc<Model>>,
 }
 
 // Methods on Context.
@@ -116,7 +116,7 @@ impl<'a> Context<'a> {
         res: Packet<InvokeResponse, EmptyMetadata>,
         tenant: Arc<Tenant>,
         alloc: &'a Allocator,
-        model: Option<Arc<Model>>,
+        // model: Option<Arc<Model>>,
     ) -> Context<'a> {
         Context {
             request: req,
@@ -128,7 +128,7 @@ impl<'a> Context<'a> {
             allocs: Cell::new(0),
             tx: RefCell::new(TX::new(alloc)),
             db_credit: RefCell::new(0),
-            model: model,
+            // model: model,
         }
     }
 
@@ -471,9 +471,10 @@ impl<'a> DB for Context<'a> {
     }
 
     fn get_model(&self) -> Option<Arc<Model>> {
-        match self.model {
-            Some(ref model) => Some(Arc::clone(&model)),
-            None => None,
-        }
+        // match self.model {
+        //     Some(ref model) => Some(Arc::clone(&model)),
+        //     None => None,
+        // }
+        None
     }
 }

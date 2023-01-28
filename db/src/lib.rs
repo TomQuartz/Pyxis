@@ -15,7 +15,7 @@
 
 //! This crate is useful in writing a new client and handling pushback
 //! extension on the client side.
-#![feature(generators, generator_trait, llvm_asm, integer_atomics)]
+#![feature(generators, generator_trait, integer_atomics)]
 #![allow(bare_trait_objects)]
 #![warn(missing_docs)]
 
@@ -24,7 +24,7 @@ extern crate sandstorm;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-extern crate bincode;
+// extern crate bincode;
 extern crate crypto;
 extern crate hashbrown;
 extern crate spin;

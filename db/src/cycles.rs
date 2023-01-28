@@ -15,6 +15,7 @@
 
 use std::sync::Once;
 use time::PreciseTime;
+use std::arch::asm;
 
 static mut CYCLES_PER_SECOND: u64 = 0;
 static INIT: Once = Once::new();
@@ -70,14 +71,29 @@ pub fn cycles_per_second() -> u64 {
 
 /// Return a 64-bit timestamp using the rdtsc instruction.
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[inline]
 pub fn rdtsc() -> u64 {
     unsafe {
-        let lo: u32;
-        let hi: u32;
-        llvm_asm!("rdtsc" : "={eax}"(lo), "={edx}"(hi) : : : "volatile");
-        ((hi as u64) << 32) | lo as u64
+        let low: u32;
+        let high: u32;
+        asm!(
+            "rdtsc",
+            lateout("eax") low,
+            lateout("edx") high,
+            options(nomem, nostack)
+        );
+        ((high as u64) << 32) | (low as u64)
     }
 }
+
+// pub fn rdtsc() -> u64 {
+//     unsafe {
+//         let lo: u32;
+//         let hi: u32;
+//         llvm_asm!("rdtsc" : "={eax}"(lo), "={edx}"(hi) : : : "volatile");
+//         ((hi as u64) << 32) | lo as u64
+//     }
+// }
 
 /// Converts the number of CPU cycles to seconds.
 ///

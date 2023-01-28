@@ -1,5 +1,5 @@
 #![recursion_limit = "1024"]
-#![feature(llvm_asm)]
+// #![feature(llvm_asm)]
 #![feature(log_syntax)]
 #![feature(box_syntax)]
 #![feature(specialization)]
@@ -8,7 +8,7 @@
 //#![feature(alloc)]
 //#![feature(heap_api)]
 //#![feature(unique)]
-#![feature(const_fn)]
+// #![feature(const_fn)]
 // Used for cache alignment.
 #![feature(allocator_api)]
 #![feature(ptr_internals)]

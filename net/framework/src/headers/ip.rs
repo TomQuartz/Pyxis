@@ -9,7 +9,7 @@ use std::slice;
 use utils::Flow;
 
 /// IP header using SSE
-#[derive(Default,Debug)]
+#[derive(Default,Clone,Copy,Debug)]
 #[repr(C, packed)]
 pub struct IpHeader {
     version_to_len: u32,

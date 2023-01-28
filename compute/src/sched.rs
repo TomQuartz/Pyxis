@@ -27,7 +27,7 @@ use db::master::Master;
 use db::task::{Task, TaskPriority, TaskState, TaskState::*};
 
 use sandstorm::common::{self, *};
-use util::model::GLOBAL_MODEL;
+// use util::model::GLOBAL_MODEL;
 
 use db::cycles;
 use db::e2d2::allocators::*;
@@ -126,16 +126,16 @@ impl TaskManager {
         name.extend_from_slice(req.get_payload().split_at(name_length).0);
         let name: String = String::from_utf8(name).expect("ERROR: Failed to get ext name.");
 
-        // Get the model for the given extension.
-        let mut model = None;
-        // If the extension doesn't need an ML model, don't waste CPU cycles in lookup.
-        if cfg!(feature = "ml-model") {
-            GLOBAL_MODEL.with(|a_model| {
-                if let Some(a_model) = (*a_model).borrow().get(&name) {
-                    model = Some(Arc::clone(a_model));
-                }
-            });
-        }
+        // // Get the model for the given extension.
+        // let mut model = None;
+        // // If the extension doesn't need an ML model, don't waste CPU cycles in lookup.
+        // if cfg!(feature = "ml-model") {
+        //     GLOBAL_MODEL.with(|a_model| {
+        //         if let Some(a_model) = (*a_model).borrow().get(&name) {
+        //             model = Some(Arc::clone(a_model));
+        //         }
+        //     });
+        // }
 
         if let Some(ext) = self.master.extensions.get(tenant_id, name.clone()) {
             let db = Rc::new(ProxyDB::new(
@@ -145,7 +145,7 @@ impl TaskManager {
                 resp,
                 name_length as usize,
                 sender_service,
-                model,
+                // model,
             ));
             // self.waiting.insert(
             //     id,

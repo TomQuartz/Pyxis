@@ -14,16 +14,16 @@
  */
 
 //! This crate contains common utility code which is used on both client and server.
-#![feature(llvm_asm)]
+// #![feature(llvm_asm)]
 #![warn(missing_docs)]
 #![allow(non_snake_case)]
-extern crate bincode;
-#[macro_use]
-extern crate lazy_static;
-extern crate hashbrown;
-extern crate rustlearn;
+// extern crate bincode;
+// #[macro_use]
+// extern crate lazy_static;
+// extern crate hashbrown;
+// extern crate rustlearn;
 
 /// This module contains the code for Machine Learning model.
 pub mod model;
-/// Common constants used for the ML model, like dataset file path etc.
-pub mod common;
+// /// Common constants used for the ML model, like dataset file path etc.
+// pub mod common;

@@ -173,7 +173,7 @@ pub struct ProxyDB {
     // The credit which the extension has earned by making the db calls.
     db_credit: RefCell<u64>,
     // The model for a given extension which is stored based on the name of the extension.
-    model: Option<Arc<Model>>,
+    // model: Option<Arc<Model>>,
     // This maintains the read-write records accessed by the extension.
     // kv_buffer: RefCell<Vec<u8>>,
     /// number of responses to wait for
@@ -215,7 +215,7 @@ impl ProxyDB {
         resp: Packet<InvokeResponse, EmptyMetadata>,
         name_length: usize,
         sender_service: Rc<Sender>,
-        model: Option<Arc<Model>>,
+        // model: Option<Arc<Model>>,
     ) -> ProxyDB {
         ProxyDB {
             tenant: tenant_id,
@@ -230,7 +230,7 @@ impl ProxyDB {
             cache: RefCell::new(Vec::with_capacity(4)),
             writeset: RefCell::new(Vec::with_capacity(4)),
             db_credit: RefCell::new(0),
-            model: model,
+            // model: model,
             // commit_payload: RefCell::new(Vec::new()),
             buffer: RefCell::new(KVBuffer::default()),
             // // key_len: Cell::new(0),
@@ -646,9 +646,10 @@ impl DB for ProxyDB {
 
     /// Lookup the `DB` trait for documentation on this method.
     fn get_model(&self) -> Option<Arc<Model>> {
-        match self.model {
-            Some(ref model) => Some(Arc::clone(&model)),
-            None => None,
-        }
+        // match self.model {
+        //     Some(ref model) => Some(Arc::clone(&model)),
+        //     None => None,
+        // }
+        None
     }
 }
