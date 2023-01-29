@@ -16,13 +16,9 @@ path = "src/bin/client/compute.rs"
 name = "lb-elastic"
 path = "src/bin/client/lb-elastic.rs"
 
-#[[bin]]
-#name = "lb-dyn"
-#path = "src/bin/client/lb-dyn.rs"
-
-#[[bin]]
-#name = "lb-static"
-#path = "src/bin/client/lb-static.rs"
+[[bin]]
+name = "lb-group"
+path = "src/bin/client/lb-group.rs"
 
 [[bin]]
 name = "kayak"
@@ -35,10 +31,6 @@ path = "src/bin/client/kayak-2.rs"
 [[bin]]
 name = "kayak_plus"
 path = "src/bin/client/kayak_plus.rs"
-
-#[[bin]]
-#name = "lb-qgrad"
-#path = "src/bin/client/lb-qgrad.rs"
 
 [dependencies]
 order-stat   = "0.1.3"

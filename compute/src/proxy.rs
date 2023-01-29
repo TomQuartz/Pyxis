@@ -137,6 +137,7 @@ struct CacheEntry {
 /// local cache before issuing the operations to the server.
 pub struct ProxyDB {
     // The tenant-id for which the invoke() function was called for the parent request.
+    shard_id: usize,
     tenant: u32,
 
     // After pushback, each subsequent request(get/put) will have the same packet identifier
@@ -208,6 +209,7 @@ impl ProxyDB {
     ///
     /// A DB object which either manipulates the record in RW set or perform remote RPCs.
     pub fn new(
+        shard_id: usize,
         tenant_id: u32,
         id: u64,
         // request: Vec<u8>,
@@ -218,6 +220,7 @@ impl ProxyDB {
         // model: Option<Arc<Model>>,
     ) -> ProxyDB {
         ProxyDB {
+            shard_id: shard_id,
             tenant: tenant_id,
             parent_id: id,
             req: req,
@@ -560,8 +563,14 @@ impl DB for ProxyDB {
             return (false, true, unsafe { Some(ReadBuf::new(value)) });
         }
         trace!("ext id: {} yield due to missing key in GET", self.parent_id);
-        self.sender
-            .send_get_from_extension(self.tenant, table, key, size as u32, self.parent_id);
+        self.sender.send_get_from_extension(
+            self.shard_id,
+            self.tenant,
+            table,
+            key,
+            size as u32,
+            self.parent_id,
+        );
         self.set_waiting(true);
         self.buffer.borrow_mut().reset(table, key.len(), key, size);
         // self.sender
@@ -594,6 +603,7 @@ impl DB for ProxyDB {
                 self.parent_id
             );
             self.sender.send_multiget(
+                self.shard_id,
                 self.tenant,
                 table,
                 key_len,

@@ -2,17 +2,18 @@
 set -exu
 
 workspace=$PWD
-# cd ..
-# wget https://content.mellanox.com/ofed/MLNX_OFED-4.9-2.2.4.0/MLNX_OFED_LINUX-4.9-2.2.4.0-ubuntu18.04-x86_64.tgz
-# tar xvf MLNX_OFED_LINUX-4.9-2.2.4.0-ubuntu18.04-x86_64.tgz
-# cd MLNX_OFED_LINUX-4.9-2.2.4.0-ubuntu18.04-x86_64
-# echo "y" | sudo ./mlnxofedinstall 
-# sudo /etc/init.d/openibd restart
-# cd $workspace
 
-# sudo apt-get update && sudo apt-get install -y libnuma-dev clang numactl
+cd ..
+wget https://content.mellanox.com/ofed/MLNX_OFED-4.9-2.2.4.0/MLNX_OFED_LINUX-4.9-2.2.4.0-ubuntu18.04-x86_64.tgz
+tar xvf MLNX_OFED_LINUX-4.9-2.2.4.0-ubuntu18.04-x86_64.tgz
+cd MLNX_OFED_LINUX-4.9-2.2.4.0-ubuntu18.04-x86_64
+echo "y" | sudo ./mlnxofedinstall 
+sudo /etc/init.d/openibd restart
+cd $workspace
 
-# bash ./net/3rdparty/get-dpdk.sh
+sudo apt-get update && sudo apt-get install -y libnuma-dev clang numactl
+
+bash ./net/3rdparty/get-dpdk.sh
 
 # cd net/native
 # make
@@ -20,14 +21,11 @@ workspace=$PWD
 # mkdir -p net/target/native
 # cp net/native/libzcsi.so net/target/native/libzcsi.so
 
-# if [ -f $HOME/.cargo/env ]; then
-#     source $HOME/.cargo/env
-# fi
-
-# # Make sure rust is up-to-date
-# if [ ! -x "$(command -v rustup)" ] ; then
-#     curl https://sh.rustup.rs -sSf | sh -s -- -y
-# fi
+# Make sure rust is up-to-date
+if [ ! -x "$(command -v rustup)" ] ; then
+    # curl https://sh.rustup.rs -sSf | sh -s -- -y
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain none -y
+fi
 
 source $HOME/.cargo/env
 # Use nightly-2021-03-24

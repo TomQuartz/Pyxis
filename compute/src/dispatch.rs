@@ -960,17 +960,39 @@ pub struct LBDispatcher {
 
 impl LBDispatcher {
     pub fn new(config: &LBConfig, net_port: CacheAligned<PortQueue>) -> LBDispatcher {
+        let mut groups = config.placement_groups;
+        if groups == 0 {
+            groups = 1;
+        }
+        assert!(
+            groups <= config.storage.len(),
+            "placement_groups should be less than or equal to the number of storage servers"
+        );
+        let mut compute_groups = vec![];
+        let mut storage_groups = vec![];
+        let compute_group_size = config.provisions[0].compute as usize / config.storage.len();
+        let storage_group_size = config.provisions[0].storage as usize / config.storage.len();
+        for _ in 0..groups {
+            compute_groups.push(compute_group_size);
+            storage_groups.push(storage_group_size);
+        }
+        compute_groups[groups - 1] +=
+            config.provisions[0].compute as usize - compute_group_size * groups;
+        storage_groups[groups - 1] +=
+            config.provisions[0].storage as usize - storage_group_size * groups;
         LBDispatcher {
-            sender2compute: Sender::new(
+            sender2compute: Sender::new_with_groups(
                 net_port.clone(),
                 &config.lb.server,
                 &config.compute,
+                compute_groups,
                 // Arc::new(RwLock::new(0)),
             ),
-            sender2storage: Sender::new(
+            sender2storage: Sender::new_with_groups(
                 net_port.clone(),
                 &config.lb.server,
                 &config.storage,
+                storage_groups,
                 // Arc::new(RwLock::new(0)),
             ),
             receiver: Receiver::new(
@@ -978,16 +1000,15 @@ impl LBDispatcher {
                 // None,
                 config.lb.max_rx_packets,
                 &config.lb.server.ip_addr,
-            )
-            // receiver: Receiver {
-            //     net_port: net_port,
-            //     sib_port: None,
-            //     stealing: false,
-            //     max_rx_packets: config.lb.max_rx_packets,
-            //     ip_addr: u32::from(
-            //         Ipv4Addr::from_str(&config.lb.server.ip_addr).expect("missing src ip for LB"),
-            //     ),
-            // },
+            ), // receiver: Receiver {
+               //     net_port: net_port,
+               //     sib_port: None,
+               //     stealing: false,
+               //     max_rx_packets: config.lb.max_rx_packets,
+               //     ip_addr: u32::from(
+               //         Ipv4Addr::from_str(&config.lb.server.ip_addr).expect("missing src ip for LB"),
+               //     ),
+               // },
         }
     }
 }
@@ -1018,16 +1039,15 @@ impl KayakDispatcher {
                 // None,
                 config.lb.max_rx_packets,
                 &config.lb.server.ip_addr,
-            )
-            // receiver: Receiver {
-            //     net_port: net_port,
-            //     sib_port: None,
-            //     stealing: false,
-            //     max_rx_packets: config.lb.max_rx_packets,
-            //     ip_addr: u32::from(
-            //         Ipv4Addr::from_str(&config.lb.server.ip_addr).expect("missing src ip for LB"),
-            //     ),
-            // },
+            ), // receiver: Receiver {
+               //     net_port: net_port,
+               //     sib_port: None,
+               //     stealing: false,
+               //     max_rx_packets: config.lb.max_rx_packets,
+               //     ip_addr: u32::from(
+               //         Ipv4Addr::from_str(&config.lb.server.ip_addr).expect("missing src ip for LB"),
+               //     ),
+               // },
         }
     }
 }

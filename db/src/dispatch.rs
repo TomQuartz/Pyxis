@@ -144,7 +144,7 @@ pub struct Sender {
     net_port: CacheAligned<PortQueue>,
     // number of endpoints, either storage or compute
     // unit is core
-    num_endpoints: Cell<usize>,
+    num_endpoints: Vec<Cell<usize>>,
     // udp+ip+mac header for sending reqs
     req_hdrs: Vec<PacketHeaders>,
     // The number of destination UDP ports a req can be sent to.
@@ -158,6 +158,7 @@ pub struct Sender {
     // requests_sent: Cell<u64>,
     // shared_credits: Arc<RwLock<u32>>,
     // buffer: RefCell<VecDeque<Packet<IpHeader, EmptyMetadata>>>,
+    cumsum_groups: Vec<usize>,
 }
 
 impl Sender {
@@ -181,7 +182,7 @@ impl Sender {
         }
         Sender {
             // id: net_port.rxq() as usize,
-            num_endpoints: Cell::new(sum),
+            num_endpoints: vec![Cell::new(sum)],
             req_hdrs: req_hdrs,
             net_port: net_port, //.clone()
             // TODO: make this a vector, different number of ports for each storage endpoint
@@ -193,16 +194,88 @@ impl Sender {
             },
             // shared_credits: shared_credits,
             // buffer: RefCell::new(VecDeque::new()),
+            cumsum_groups: vec![sum],
         }
     }
 
+    pub fn new_with_groups(
+        net_port: CacheAligned<PortQueue>,
+        src: &NetConfig,
+        endpoints: &Vec<NetConfig>,
+        group_sizes: Vec<usize>,
+        // shared_credits: Arc<RwLock<u32>>,
+    ) -> Sender {
+        // assume that endpoints is sorted by ip
+        // let mut endpoints = endpoints.clone();
+        // PacketHeaders::sort(&mut endpoints);
+        let dst_ports = endpoints.iter().map(|x| x.rx_queues as u16).collect();
+        let req_hdrs = PacketHeaders::create_hdrs(src, net_port.txq() as u16, endpoints);
+        let mut sum = 0usize;
+        let mut cumsum_ports = vec![];
+        for &nports in &dst_ports {
+            sum += nports as usize;
+            cumsum_ports.push(sum);
+        }
+        let mut sum = 0usize;
+        let mut cumsum_groups = vec![];
+        for &nports in &group_sizes {
+            sum += nports;
+            cumsum_groups.push(sum);
+        }
+        Sender {
+            // id: net_port.rxq() as usize,
+            num_endpoints: group_sizes.iter().map(|x| Cell::new(*x)).collect(),
+            req_hdrs: req_hdrs,
+            net_port: net_port, //.clone()
+            // TODO: make this a vector, different number of ports for each storage endpoint
+            dst_ports: dst_ports,
+            cumsum_ports: cumsum_ports,
+            rng: {
+                let seed: [u32; 4] = rand::random::<[u32; 4]>();
+                RefCell::new(XorShiftRng::from_seed(seed))
+            },
+            // shared_credits: shared_credits,
+            // buffer: RefCell::new(VecDeque::new()),
+            cumsum_groups: cumsum_groups,
+        }
+    }
+
+    pub fn set_endpoints_for_group(&self, group_id: usize, num_endpoints: usize) {
+        self.num_endpoints[group_id].set(num_endpoints);
+    }
+
     pub fn set_endpoints(&self, num_endpoints: usize) {
-        self.num_endpoints.set(num_endpoints);
+        self.num_endpoints[0].set(num_endpoints);
     }
 
     fn get_endpoint(&self) -> (usize, u16) {
-        let num_endpoints = self.num_endpoints.get();
+        let num_endpoints = self.num_endpoints[0].get();
         let endpoint_idx = self.rng.borrow_mut().gen::<usize>() % num_endpoints;
+        let server_idx = self
+            .cumsum_ports
+            .partition_point(|&cumsum| cumsum <= endpoint_idx);
+        let port_idx = endpoint_idx
+            - if server_idx > 0 {
+                self.cumsum_ports[server_idx - 1]
+            } else {
+                0
+            };
+        (server_idx, port_idx as u16)
+    }
+
+    fn get_endpoint_from_shard(&self, shard_id: usize) -> (usize, u16) {
+        let num_ports = self.dst_ports[shard_id];
+        let port_idx = self.rng.borrow_mut().gen::<usize>() % num_ports as usize;
+        (shard_id, port_idx as u16)
+    }
+
+    fn get_endpoint_from_group(&self, group_id: usize) -> (usize, u16) {
+        let num_endpoints = self.num_endpoints[group_id].get();
+        let endpoint_idx = if group_id > 0 {
+            self.cumsum_groups[group_id - 1]
+        } else {
+            0
+        } + self.rng.borrow_mut().gen::<usize>() % num_endpoints;
         let server_idx = self
             .cumsum_ports
             .partition_point(|&cumsum| cumsum <= endpoint_idx);
@@ -257,6 +330,36 @@ impl Sender {
     }
     */
 
+    // /// Creates and sends out a get() RPC request. Network headers are populated based on arguments
+    // /// passed into new() above.
+    // ///
+    // /// # Arguments
+    // ///
+    // /// * `tenant`: Id of the tenant requesting the item.
+    // /// * `table`:  Id of the table from which the key is looked up.
+    // /// * `key`:    Byte string of key whose value is to be fetched. Limit 64 KB.
+    // /// * `id`:     RPC identifier.
+    // #[allow(dead_code)]
+    // // TODO: hash the target storage with LSB in key
+    // // for now, the vec len of req_hdrs=1
+    // pub fn send_get(&self, tenant: u32, table: u64, key: &[u8], size: u32, id: u64) {
+    //     let (server_idx, port_idx) = self.get_endpoint();
+    //     let request = rpc::create_get_rpc(
+    //         &self.req_hdrs[server_idx].mac_header,
+    //         &self.req_hdrs[server_idx].ip_header,
+    //         &self.req_hdrs[server_idx].udp_header,
+    //         tenant,
+    //         table,
+    //         key,
+    //         size,
+    //         id,
+    //         port_idx,
+    //         GetGenerator::SandstormClient,
+    //     );
+
+    //     self.send_pkt(request);
+    // }
+
     /// Creates and sends out a get() RPC request. Network headers are populated based on arguments
     /// passed into new() above.
     ///
@@ -267,38 +370,20 @@ impl Sender {
     /// * `key`:    Byte string of key whose value is to be fetched. Limit 64 KB.
     /// * `id`:     RPC identifier.
     #[allow(dead_code)]
-    // TODO: hash the target storage with LSB in key
-    // for now, the vec len of req_hdrs=1
-    pub fn send_get(&self, tenant: u32, table: u64, key: &[u8], size: u32, id: u64) {
-        let (server_idx, port_idx) = self.get_endpoint();
-        let request = rpc::create_get_rpc(
-            &self.req_hdrs[server_idx].mac_header,
-            &self.req_hdrs[server_idx].ip_header,
-            &self.req_hdrs[server_idx].udp_header,
-            tenant,
-            table,
-            key,
-            size,
-            id,
-            port_idx,
-            GetGenerator::SandstormClient,
-        );
-
-        self.send_pkt(request);
-    }
-
-    /// Creates and sends out a get() RPC request. Network headers are populated based on arguments
-    /// passed into new() above.
-    ///
-    /// # Arguments
-    ///
-    /// * `tenant`: Id of the tenant requesting the item.
-    /// * `table`:  Id of the table from which the key is looked up.
-    /// * `key`:    Byte string of key whose value is to be fetched. Limit 64 KB.
-    /// * `id`:     RPC identifier.
-    #[allow(dead_code)]
-    pub fn send_get_from_extension(&self, tenant: u32, table: u64, key: &[u8], size: u32, id: u64) {
-        let (server_idx, port_idx) = self.get_endpoint();
+    pub fn send_get_from_extension(
+        &self,
+        shard_id: usize,
+        tenant: u32,
+        table: u64,
+        key: &[u8],
+        size: u32,
+        id: u64,
+    ) {
+        let (server_idx, port_idx) = if shard_id != usize::MAX {
+            self.get_endpoint_from_shard(shard_id)
+        } else {
+            self.get_endpoint()
+        };
         let request = rpc::create_get_rpc(
             &self.req_hdrs[server_idx].mac_header,
             &self.req_hdrs[server_idx].ip_header,
@@ -362,8 +447,20 @@ impl Sender {
     /// * `val`:    Byte string of the value to be inserted.
     /// * `id`:     RPC identifier.
     #[allow(dead_code)]
-    pub fn send_put(&self, tenant: u32, table: u64, key: &[u8], val: &[u8], id: u64) {
-        let (server_idx, port_idx) = self.get_endpoint();
+    pub fn send_put(
+        &self,
+        shard_id: usize,
+        tenant: u32,
+        table: u64,
+        key: &[u8],
+        val: &[u8],
+        id: u64,
+    ) {
+        let (server_idx, port_idx) = if shard_id != usize::MAX {
+            self.get_endpoint_from_shard(shard_id)
+        } else {
+            self.get_endpoint()
+        };
         let request = rpc::create_put_rpc(
             &self.req_hdrs[server_idx].mac_header,
             &self.req_hdrs[server_idx].ip_header,
@@ -394,6 +491,7 @@ impl Sender {
     #[allow(dead_code)]
     pub fn send_multiget(
         &self,
+        shard_id: usize,
         tenant: u32,
         table: u64,
         k_len: u16,
@@ -402,7 +500,12 @@ impl Sender {
         size: u32,
         id: u64,
     ) {
-        let (server_idx, port_idx) = self.get_endpoint();
+        // we never specify shard_id in experiment though
+        let (server_idx, port_idx) = if shard_id != usize::MAX {
+            self.get_endpoint_from_shard(shard_id)
+        } else {
+            self.get_endpoint()
+        };
         let request = rpc::create_multiget_rpc(
             &self.req_hdrs[server_idx].mac_header,
             &self.req_hdrs[server_idx].ip_header,
@@ -437,8 +540,14 @@ impl Sender {
         name_len: u32,
         payload: &[u8],
         id: u64,
-        _type_id: usize,
+        // shard_id: usize,
+        // to_storage: bool,
     ) -> (u32, u16) {
+        // let (server_idx, port_idx) = if to_storage && shard_id != usize::MAX {
+        //     self.get_endpoint_from_shard(shard_id)
+        // } else {
+        //     self.get_endpoint()
+        // };
         let (server_idx, port_idx) = self.get_endpoint();
         let request = rpc::create_invoke_rpc(
             &self.req_hdrs[server_idx].mac_header,
@@ -450,6 +559,71 @@ impl Sender {
             id,
             // self.get_dst_port(endpoint),
             port_idx,
+            // shard_id,
+            usize::MAX,
+            // self.get_dst_port_by_type(type_id),
+            // (id & 0xffff) as u16 & (self.dst_ports - 1),
+        );
+        trace!(
+            "send req to dst ip {}",
+            self.req_hdrs[server_idx].ip_header.dst()
+        );
+        self.send_pkt(request);
+        (self.req_hdrs[server_idx].ip_header.dst(), port_idx)
+    }
+
+    pub fn send_invoke_to_shard(
+        &self,
+        tenant: u32,
+        name_len: u32,
+        payload: &[u8],
+        id: u64,
+        shard_id: usize,
+    ) -> (u32, u16) {
+        let (server_idx, port_idx) = self.get_endpoint_from_shard(shard_id);
+        let request = rpc::create_invoke_rpc(
+            &self.req_hdrs[server_idx].mac_header,
+            &self.req_hdrs[server_idx].ip_header,
+            &self.req_hdrs[server_idx].udp_header,
+            tenant,
+            name_len,
+            payload,
+            id,
+            // self.get_dst_port(endpoint),
+            port_idx,
+            shard_id,
+            // self.get_dst_port_by_type(type_id),
+            // (id & 0xffff) as u16 & (self.dst_ports - 1),
+        );
+        trace!(
+            "send req to dst ip {}",
+            self.req_hdrs[server_idx].ip_header.dst()
+        );
+        self.send_pkt(request);
+        (self.req_hdrs[server_idx].ip_header.dst(), port_idx)
+    }
+
+    pub fn send_invoke_to_group(
+        &self,
+        tenant: u32,
+        name_len: u32,
+        payload: &[u8],
+        id: u64,
+        shard_id: usize,
+        group_id: usize,
+    ) -> (u32, u16) {
+        let (server_idx, port_idx) = self.get_endpoint_from_group(group_id);
+        let request = rpc::create_invoke_rpc(
+            &self.req_hdrs[server_idx].mac_header,
+            &self.req_hdrs[server_idx].ip_header,
+            &self.req_hdrs[server_idx].udp_header,
+            tenant,
+            name_len,
+            payload,
+            id,
+            // self.get_dst_port(endpoint),
+            port_idx,
+            shard_id,
             // self.get_dst_port_by_type(type_id),
             // (id & 0xffff) as u16 & (self.dst_ports - 1),
         );
@@ -476,6 +650,34 @@ impl Sender {
             }
         }
     }
+
+    pub fn send_reset_to_group(&self, group_id: usize) {
+        let group_start = if group_id > 0 {
+            self.cumsum_groups[group_id - 1]
+        } else {
+            0
+        };
+        let mut server_idx = self
+            .cumsum_ports
+            .partition_point(|&cumsum| cumsum <= group_start);
+        while server_idx < self.dst_ports.len()
+            && self.cumsum_ports[server_idx] <= self.cumsum_groups[group_id]
+        {
+            for port_idx in 0..self.dst_ports[server_idx] {
+                let request = rpc::create_reset_rpc(
+                    &self.req_hdrs[server_idx].mac_header,
+                    &self.req_hdrs[server_idx].ip_header,
+                    &self.req_hdrs[server_idx].udp_header,
+                    port_idx,
+                    // self.get_dst_port_by_type(type_id),
+                    // (id & 0xffff) as u16 & (self.dst_ports - 1),
+                );
+                self.send_pkt(request);
+            }
+            server_idx += 1;
+        }
+    }
+
     pub fn send_terminate(&self) {
         for server_idx in 0..self.dst_ports.len() {
             for port_idx in 0..self.dst_ports[server_idx] {

@@ -562,6 +562,8 @@ pub struct InvokeRequest {
     /// to deserialize the arguments to the procedure from the request packet
     /// at the server.
     pub args_length: u32,
+
+    pub shard_id: usize,
 }
 
 impl InvokeRequest {
@@ -582,7 +584,13 @@ impl InvokeRequest {
     /// # Return
     ///
     /// An RPC request header of type `InvokeRequest`.
-    pub fn new(tenant: u32, name_length: u32, args_length: u32, req_stamp: u64) -> InvokeRequest {
+    pub fn new(
+        tenant: u32,
+        name_length: u32,
+        args_length: u32,
+        req_stamp: u64,
+        shard_id: usize,
+    ) -> InvokeRequest {
         InvokeRequest {
             common_header: RpcRequestHeader::new(
                 Service::MasterService,
@@ -592,6 +600,7 @@ impl InvokeRequest {
             ),
             name_length: name_length,
             args_length: args_length,
+            shard_id: shard_id,
         }
     }
 }

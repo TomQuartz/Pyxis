@@ -113,6 +113,7 @@ impl TaskManager {
         // req: &[u8],
         req: Packet<InvokeRequest, EmptyMetadata>,
         resp: Packet<InvokeResponse, EmptyMetadata>,
+        shard_id: usize,
         tenant: u32,
         name_length: usize,
         sender_service: Rc<Sender>,
@@ -139,6 +140,7 @@ impl TaskManager {
 
         if let Some(ext) = self.master.extensions.get(tenant_id, name.clone()) {
             let db = Rc::new(ProxyDB::new(
+                shard_id,
                 tenant,
                 id,
                 req,
@@ -931,6 +933,8 @@ impl ComputeNodeWorker {
         let name_length = hdr.name_length as usize;
         let args_length = hdr.args_length as usize;
         let rpc_stamp = hdr.common_header.stamp;
+        // invalid if == usize::MAX
+        let shard_id = hdr.shard_id;
 
         let res = res
             .push_header(&InvokeResponse::new(
@@ -943,6 +947,7 @@ impl ComputeNodeWorker {
             cycles::rdtsc(),
             req,
             res,
+            shard_id,
             tenant_id,
             name_length,
             self.dispatcher.sender.clone(),

@@ -451,21 +451,15 @@ impl LoadBalancer {
         let (to_storage, type_id, tenant, name_len, request_payload) =
             self.generator.gen_request(curr, partition);
         if to_storage {
-            let (ip, port) = self.dispatcher.sender2storage.send_invoke(
-                tenant,
-                name_len,
-                request_payload,
-                curr,
-                0, // not used
-            );
+            let (ip, port) =
+                self.dispatcher
+                    .sender2storage
+                    .send_invoke(tenant, name_len, request_payload, curr);
         } else {
-            let (ip, port) = self.dispatcher.sender2compute.send_invoke(
-                tenant,
-                name_len,
-                request_payload,
-                curr,
-                0, // not used
-            );
+            let (ip, port) =
+                self.dispatcher
+                    .sender2compute
+                    .send_invoke(tenant, name_len, request_payload, curr);
         }
         // self.slots[slot_id].counter += 1;
         // self.slots[slot_id].type_id = workload_id;

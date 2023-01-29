@@ -29,6 +29,7 @@ const AES_IV: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D
 
 pub trait Workload {
     fn gen(&mut self, rng: &mut XorShiftRng) -> &[u8];
+    fn get_shard(&self, rng: &mut XorShiftRng) -> usize;
     fn name_len(&self) -> u32;
 }
 
@@ -48,6 +49,7 @@ struct Synthetic {
     name_len: u32,
     // key_len: usize,
     key_offset: usize,
+    num_shards: usize,
 }
 // TODO: add intra-type variation
 impl Synthetic {
@@ -86,6 +88,7 @@ impl Synthetic {
             name_len: extension.len() as u32,
             // key_len: config.key_len,
             key_offset: key_offset,
+            num_shards: config.num_shards,
         }
     }
 }
@@ -100,6 +103,13 @@ impl Workload for Synthetic {
         self.payload[self.key_offset..self.key_offset + 4].copy_from_slice(&key);
         &self.payload
     }
+    fn get_shard(&self, rng: &mut XorShiftRng) -> usize {
+        if self.num_shards != 0 {
+            rng.gen::<usize>() % self.num_shards
+        } else {
+            usize::MAX
+        }
+    }
 }
 
 struct VectorQuery {
@@ -110,6 +120,7 @@ struct VectorQuery {
     name_len: u32,
     key_len: usize,
     key_offset: usize,
+    num_shards: usize,
     opcode: u8,
     // table: TableConfig,
 }
@@ -150,6 +161,7 @@ impl VectorQuery {
             name_len: extension.len() as u32,
             key_len: table.key_len,
             key_offset: key_offset,
+            num_shards: config.num_shards,
             opcode: config.opcode,
             // table: table.clone(),
         }
@@ -183,6 +195,13 @@ impl Workload for VectorQuery {
             self.payload[offset..offset + 16].copy_from_slice(&encrpyted);
         }
         &self.payload
+    }
+    fn get_shard(&self, rng: &mut XorShiftRng) -> usize {
+        if self.num_shards != 0 {
+            rng.gen::<usize>() % self.num_shards
+        } else {
+            usize::MAX
+        }
     }
 }
 

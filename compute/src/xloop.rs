@@ -1121,6 +1121,54 @@ impl ElasticScaling {
             load_summary: (0.0, 0.0),
         }
     }
+    pub fn new_with_group(config: &LBConfig, compute_group_size:usize) -> ElasticScaling {
+        let compute_servers: Vec<_> = config
+            .compute
+            .iter()
+            .map(|x| (&x.ip_addr, x.rx_queues))
+            .collect();
+        let compute_load = ServerLoad::new("compute", compute_servers);
+        let storage_servers: Vec<_> = config
+            .storage
+            .iter()
+            .map(|x| (&x.ip_addr, x.rx_queues))
+            .collect();
+        let storage_load = ServerLoad::new("storage", storage_servers);
+        // TODO: if elastic then set initial provision to 32 cores
+        // let initial_provision = config.provisions[0].compute as i32;
+        let max_quota = config.compute.iter().map(|cfg| cfg.rx_queues).sum::<i32>();
+        // let mut placement_groups = vec![];
+        // let group_size = config.provisions[0].compute as usize / config.storage.len();
+        // for i in 0..groups {
+        //     placement_groups.push(group_size);
+        // }
+        // placement_groups[groups - 1] += config.provisions[0].compute as usize - group_size * groups;
+        ElasticScaling {
+            compute_load: Arc::new(compute_load),
+            compute_outs: Avg::new(),
+            storage_load: Arc::new(storage_load),
+            storage_outs: Avg::new(),
+            compute_cores: Arc::new(AtomicI32::new(compute_group_size as i32)),
+            storage_cores: config.provisions[0].storage,
+            // last_provision: initial_provision,
+            upperbound: 0,
+            lowerbound: max_quota,
+            max_quota: max_quota,
+            min_quota: 8,
+            // max_load_abs: config.max_load_abs,
+            // max_load_rel: config.max_load_rel,
+            // min_load_abs: config.min_load_abs,
+            // min_load_rel: config.min_load_rel,
+            max_load: config.elastic.max_load,
+            min_load: config.elastic.min_load,
+            max_step: config.elastic.max_step,
+            // confidence: 0,
+            // convergence: config.elastic.convergence,
+            msg: String::new(),
+            elastic: config.elastic.elastic,
+            load_summary: (0.0, 0.0),
+        }
+    }
     pub fn reset(&mut self) {
         self.compute_load.reset();
         self.compute_outs.reset();

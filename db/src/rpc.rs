@@ -362,6 +362,7 @@ pub fn create_invoke_rpc(
     payload: &[u8],
     id: u64,
     dst: u16,
+    shard_id: usize,
 ) -> Packet<IpHeader, EmptyMetadata> {
     // The Arguments to the procedure cannot be more that 4 GB long.
     if payload.len() - name_len as usize > u32::max_value() as usize {
@@ -380,6 +381,7 @@ pub fn create_invoke_rpc(
             name_len,
             (payload.len() - name_len as usize) as u32,
             id,
+            shard_id,
         ))
         .expect("Failed to push RPC header into request!");
 
@@ -419,7 +421,7 @@ pub fn create_reset_rpc(
     // header. Since the payload contains both, the name and arguments in it, args_len can be
     // calculated as payload length - name_len.
     let mut request = create_request(mac, ip, udp, dst)
-        .push_header(&InvokeRequest::new(0, 0, 0, 0))
+        .push_header(&InvokeRequest::new(0, 0, 0, 0, 0))
         .expect("Failed to push RPC header into request!");
     request.get_mut_header().common_header.opcode = OpCode::ResetRpc;
     fixup_header_length_fields(request.deparse_header(size_of::<UdpHeader>()))
@@ -436,7 +438,7 @@ pub fn create_terminate_rpc(
     // header. Since the payload contains both, the name and arguments in it, args_len can be
     // calculated as payload length - name_len.
     let mut request = create_request(mac, ip, udp, dst)
-        .push_header(&InvokeRequest::new(0, 0, 0, 0))
+        .push_header(&InvokeRequest::new(0, 0, 0, 0, 0))
         .expect("Failed to push RPC header into request!");
     request.get_mut_header().common_header.opcode = OpCode::TerminateRpc;
     fixup_header_length_fields(request.deparse_header(size_of::<UdpHeader>()))
@@ -454,7 +456,7 @@ pub fn create_scaling_rpc(
     // header. Since the payload contains both, the name and arguments in it, args_len can be
     // calculated as payload length - name_len.
     let mut request = create_request(mac, ip, udp, dst)
-        .push_header(&InvokeRequest::new(0, 0, provision, 0))
+        .push_header(&InvokeRequest::new(0, 0, provision, 0, 0))
         .expect("Failed to push RPC header into request!");
     request.get_mut_header().common_header.opcode = OpCode::ScalingRpc;
     fixup_header_length_fields(request.deparse_header(size_of::<UdpHeader>()))

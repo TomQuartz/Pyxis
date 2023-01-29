@@ -111,6 +111,11 @@ impl XInterface for Partition {
         self.x.load(Ordering::Relaxed)
     }
 }
+impl fmt::Debug for Partition {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:.2} ", self.get() / 100.0)
+    }
+}
 
 #[derive(Default)]
 struct Slot {
@@ -216,6 +221,9 @@ impl LoadGenerator {
             let table_id = workload.table_id as usize;
             let table = &config.tables[table_id - 1];
             // workloads.push(Workload::new(workload, table));
+            // if workload.num_shards == 0 {
+            //     workload.num_shards = config.storage.len();
+            // }
             workloads.push(create_workload(workload, table));
         }
         // phases
@@ -263,13 +271,14 @@ impl LoadGenerator {
             0
         }
     }
-    fn gen_request(&mut self, mut curr_rdtsc: u64) -> usize {
+    fn gen_request(&mut self, mut curr_rdtsc: u64) -> (usize, usize) {
         let phase_id = self.phase(curr_rdtsc);
         let cum_ratio = &self.cum_ratios[phase_id];
         let rand_ratio = (self.rng.gen::<u32>() % 10000) as f32;
         // let type_id = cum_ratio.iter().position(|&p| p > rand_ratio).unwrap();
         let type_id = cum_ratio.partition_point(|&p| p <= rand_ratio);
-        type_id
+        let shard_id = self.workloads[type_id].get_shard(&mut self.rng);
+        (type_id, shard_id)
     }
     fn gen_payload(&mut self, type_id: usize) -> (u32, u32, &[u8]) {
         (
@@ -360,6 +369,7 @@ impl TypeStats {
 #[derive(Clone)]
 struct Sampler {
     num_types: usize,
+    types_in_groups: Vec<HashSet<usize>>,
     type_stats: Vec<Arc<RwLock<TypeStats>>>,
     // TODO: detects out-of-date type
     type_history: Vec<TypeStats>,
@@ -367,7 +377,7 @@ struct Sampler {
     batch_size: f64,
     history_size: f64,
     max_err: f64,
-    type_order: Vec<Arc<AtomicUsize>>,
+    type_order_by_group: Vec<Vec<Arc<AtomicUsize>>>,
     // TODO: remove this
     // type_counter: Vec<Arc<AtomicUsize>>,
     // sample factor
@@ -375,18 +385,22 @@ struct Sampler {
     // last_recvd: usize,
     interval: u64,
     // cum_ratio: Vec<Arc<(AtomicF64, AtomicF64)>>,
-    current_types: Arc<AtomicUsize>,
+    current_types_by_group: Vec<Arc<AtomicUsize>>,
     // undetermined: Arc<AtomicUsize>,
     undetermined: Vec<Arc<AtomicBool>>,
     msg: String,
 }
 impl Sampler {
     // TODO: reset, store cum_ratio
-    fn new(config: &SamplerConfig, num_types: usize) -> Sampler {
+    fn new(
+        config: &SamplerConfig,
+        num_types: usize,
+        // types_in_groups: Vec<HashSet<usize>>,
+        num_groups: usize,
+    ) -> Sampler {
         let mut type_stats = vec![];
         let mut type_history = vec![];
         // let mut type_counter = vec![];
-        let mut type_order = vec![];
         let mut undetermined = vec![];
         let mut type_cost = vec![];
         // let mut cum_ratio = vec![];
@@ -395,12 +409,23 @@ impl Sampler {
             type_history.push(TypeStats::new());
             // type_counter.push(Arc::new(AtomicUsize::new(0)));
             type_cost.push(Arc::new(AtomicF64::new(0.0)));
-            type_order.push(Arc::new(AtomicUsize::new(0)));
+            // type_order.push(Arc::new(AtomicUsize::new(0)));
             undetermined.push(Arc::new(AtomicBool::new(false)));
             // cum_ratio.push(Arc::new((AtomicF64::new(0.0), AtomicF64::new(0.0))));
         }
+        let mut type_order_by_group = vec![];
+        let mut current_types_by_group = vec![];
+        for _ in 0..num_groups {
+            let mut type_order = vec![];
+            for _ in 0..num_types {
+                type_order.push(Arc::new(AtomicUsize::new(0)));
+            }
+            type_order_by_group.push(type_order);
+            current_types_by_group.push(Arc::new(AtomicUsize::new(0)));
+        }
         Sampler {
             num_types: num_types,
+            types_in_groups: vec![HashSet::new(); num_groups],
             type_stats: type_stats,
             type_history: type_history,
             type_cost: type_cost,
@@ -408,8 +433,8 @@ impl Sampler {
             history_size: config.history_size as f64,
             max_err: config.max_err,
             // type_order: (0..num_types).collect(),
-            type_order: type_order,
-            current_types: Arc::new(AtomicUsize::new(0)),
+            type_order_by_group: type_order_by_group,
+            current_types_by_group: current_types_by_group,
             // type_counter: type_counter,
             // cum_ratio: cum_ratio,
             undetermined: undetermined,
@@ -420,9 +445,13 @@ impl Sampler {
             msg: String::new(),
         }
     }
-    fn get_range(&self, type_id: usize) -> (f64, f64) {
-        let current_types = self.current_types.load(Ordering::Acquire);
-        let order = self.type_order[type_id].load(Ordering::Acquire);
+    fn add_type_to_group(&mut self, type_id: usize, group_id: usize) {
+        self.types_in_groups[group_id].insert(type_id);
+    }
+
+    fn get_range(&self, type_id: usize, group_id: usize) -> (f64, f64) {
+        let current_types = self.current_types_by_group[group_id].load(Ordering::Acquire);
+        let order = self.type_order_by_group[group_id][type_id].load(Ordering::Acquire);
         if current_types == 0 || order == 0 {
             (0.0, 0.0)
         } else {
@@ -468,15 +497,22 @@ impl Sampler {
         // self.msg.clear();
         // write!(self.msg, "order {:?}", current_types);
         // debug!("rdtsc {} order {:?}", curr, current_types);
-        let mut order = 0usize;
+        for group_id in 0..self.types_in_groups.len() {
+            let mut local_order = 0usize;
+            for &type_id in &current_types {
+                if self.types_in_groups[group_id].contains(&type_id) {
+                    local_order += 1;
+                    self.type_order_by_group[group_id][type_id]
+                        .store(local_order, Ordering::Release);
+                }
+            }
+            self.current_types_by_group[group_id].store(local_order, Ordering::Release);
+        }
         for type_id in current_types {
-            order += 1;
-            self.type_order[type_id].store(order, Ordering::Release);
             // weak concurrency
             self.undetermined[type_id].store(false, Ordering::Release);
             self.type_cost[type_id].store(self.type_history[type_id].get_cost(), Ordering::Release);
         }
-        self.current_types.store(order, Ordering::Release);
     }
     fn update_stats(&self, type_id: usize, c_s: f64, c_c: f64, o_s: f64) {
         self.type_stats[type_id]
@@ -524,7 +560,8 @@ impl Sampler {
             } else if cnt > 0f64 && history.get_counter() > 0f64 {
                 current_types.push(type_id);
             } else {
-                self.type_order[type_id].store(0, Ordering::Release);
+                // does not support reduction of types
+                // self.type_order[type_id].store(0, Ordering::Release);
             }
         }
         current_types
@@ -594,26 +631,28 @@ struct LoadBalancer {
     start: u64,
     stop: u64,
     duration: u64, // stop when curr - start > duration
+    shard2group: HashMap<usize, usize>,
+    managed_groups: Vec<usize>,
     // requests: usize,
-    global_recvd: Arc<AtomicUsize>,
+    global_recvd: Vec<Arc<AtomicUsize>>,
     recvd: usize,
     latencies: Vec<Vec<u64>>,
     // latencies: Vec<u64>,
     // kth: Vec<Vec<Arc<AtomicUsize>>>,
     // avg_lat: Vec<usize>,
     // outstanding_reqs: HashSet<u64>,
-    outstanding_reqs: HashMap<u64, usize>,
+    outstanding_reqs: HashMap<u64, (usize, usize)>,
     // slots: Vec<Slot>,
     // load balancing
     // storage_load: Arc<ServerLoad>,
     // compute_load: Arc<ServerLoad>,
     // rpc control
     // max_out: u32,
-    partition: Partition,
+    partition: Vec<Partition>,
     // xloop
     // learnable: bool,
-    xloop: TputGrad,
-    elastic: ElasticScaling,
+    xloop: Vec<TputGrad>,
+    elastic: Vec<ElasticScaling>,
     // // bimodal
     // bimodal: bool,
     // bimodal_interval: u64,
@@ -661,13 +700,13 @@ impl LoadBalancer {
         config: &config::LBConfig,
         net_port: CacheAligned<PortQueue>,
         // num_types: usize,
-        partition: Arc<AtomicF64>,
+        partition: Vec<Arc<AtomicF64>>,
         sampler: Sampler,
-        elastic: ElasticScaling,
+        elastic: Vec<ElasticScaling>,
         // storage_load: Arc<ServerLoad>,
         // compute_load: Arc<ServerLoad>,
         // kth: Vec<Vec<Arc<AtomicUsize>>>,
-        global_recvd: Arc<AtomicUsize>,
+        global_recvd: Vec<Arc<AtomicUsize>>,
         init_rdtsc: u64,
         finished: Arc<AtomicUsize>,
         rloop: Rloop,
@@ -681,7 +720,36 @@ impl LoadBalancer {
         // for _ in 0..config.max_out {
         //     slots.push(Slot::default());
         // }
-
+        let mut shard2group = HashMap::new();
+        for i in 0..config.storage.len() {
+            let mut group_id = if i >= config.placement_groups {
+                config.placement_groups - 1
+            } else {
+                i
+            };
+            shard2group.insert(i, group_id);
+        }
+        let mut group_partition = vec![];
+        for i in 0..config.placement_groups {
+            group_partition.push(Partition {
+                x: partition[i].clone(),
+                upperbound: 10000.0,
+                lowerbound: 0.0,
+            });
+        }
+        let mut group_xloop = vec![];
+        for _ in 0..config.placement_groups {
+            group_xloop.push(TputGrad::new(
+                &config.xloop,
+                config.partition, /*, storage_load, compute_load*/
+            ));
+        }
+        let mut managed_groups = vec![];
+        for group_id in 0..config.placement_groups {
+            if group_id % config.lb.num_cores as usize == id {
+                managed_groups.push(group_id);
+            }
+        }
         LoadBalancer {
             cfg: config.clone(),
             duration: config.duration * CPU_FREQUENCY,
@@ -695,6 +763,8 @@ impl LoadBalancer {
             generator: LoadGenerator::new(config),
             sampler: sampler,
             elastic: elastic,
+            shard2group: shard2group,
+            managed_groups: managed_groups,
             // num_types: num_types,
             // multi_types: MultiType::new(&config.multi_kv, &config.multi_ord),
             // cum_prob: cum_prob,
@@ -715,16 +785,9 @@ impl LoadBalancer {
             outstanding_reqs: HashMap::new(),
             // slots: slots,
             // max_out: config.max_out,
-            partition: Partition {
-                x: partition,
-                upperbound: 10000.0,
-                lowerbound: 0.0,
-            },
+            partition: group_partition,
             // learnable: config.learnable,
-            xloop: TputGrad::new(
-                &config.xloop,
-                config.partition, /*, storage_load, compute_load*/
-            ),
+            xloop: group_xloop,
             // not used
             // bimodal: config.bimodal,
             // bimodal_interval: config.bimodal_interval,
@@ -743,36 +806,24 @@ impl LoadBalancer {
             log: Vec::with_capacity(40000),
         }
     }
+    // must restart
     fn adjust_provision(&mut self, curr_rdtsc: u64) {
-        // get provision
-        let (prev_storage, prev_compute) = self.provision.current;
-        let (current_storage, mut current_compute) = self.provision.adjust(curr_rdtsc);
-        if self.elastic.elastic {
-            current_compute = self.elastic.compute_cores.load(Ordering::Relaxed) as u32;
-            self.provision.current.1 = current_compute;
-        }
-        // storage
-        if prev_storage != current_storage {
-            if self.id == 0 {
-                // this message is sent to all compute nodes, regardless of compute provision
-                self.dispatcher.sender2compute.send_scaling(current_storage);
+        // // get provision
+        // let (prev_storage, prev_compute) = self.provision.current;
+        // let (current_storage, mut current_compute) = self.provision.adjust(curr_rdtsc);
+        for i in 0..self.elastic.len() {
+            if !self.elastic[i].elastic {
+                continue;
             }
-            self.dispatcher
-                .sender2storage
-                .set_endpoints(current_storage as usize);
-            self.elastic.storage_cores = current_storage;
-        }
-        // compute
-        // let current_compute = self.elastic.compute_cores.load(Ordering::Relaxed);
-        if prev_compute != current_compute {
+            let current_compute = self.elastic[i].compute_cores.load(Ordering::Relaxed) as usize;
             self.dispatcher
                 .sender2compute
-                .set_endpoints(current_compute as usize);
+                .set_endpoints_for_group(i, current_compute);
         }
     }
-    fn storage_or_compute(&mut self, type_id: usize) -> bool {
-        let partition = self.partition.get();
-        let (lowerbound, upperbound) = self.sampler.get_range(type_id);
+    fn storage_or_compute(&mut self, type_id: usize, group_id: usize) -> bool {
+        let partition = self.partition[group_id].get();
+        let (lowerbound, upperbound) = self.sampler.get_range(type_id, group_id);
         if upperbound == 0f64 {
             // self.sampler.undetermined.fetch_add(1, Ordering::Relaxed);
             self.sampler.undetermined[type_id].store(true, Ordering::Relaxed);
@@ -825,27 +876,35 @@ impl LoadBalancer {
         //     // self.sampler.sort_type();
         //     self.sampler.sample_ratio(curr);
         // }
-        let type_id = self.generator.gen_request(curr);
-        // self.sampler.inc_counter(type_id);
-        let to_storage = self.storage_or_compute(type_id);
+        let (type_id, shard_id) = self.generator.gen_request(curr);
+        let group_id = *self.shard2group.get(&shard_id).unwrap();
+        let to_storage = self.storage_or_compute(type_id, group_id);
         let (tenant, name_len, request_payload) = self.generator.gen_payload(type_id);
+        // self.sampler.inc_counter(type_id);
         if to_storage {
-            let (ip, port) =
-                self.dispatcher
-                    .sender2storage
-                    .send_invoke(tenant, name_len, request_payload, curr);
-            self.elastic.storage_load.inc_outstanding(/*ip, port*/);
+            let (ip, port) = self.dispatcher.sender2storage.send_invoke_to_shard(
+                tenant,
+                name_len,
+                request_payload,
+                curr,
+                shard_id,
+            );
+            self.elastic[group_id].storage_load.inc_outstanding(/*ip, port*/);
         } else {
-            let (ip, port) =
-                self.dispatcher
-                    .sender2compute
-                    .send_invoke(tenant, name_len, request_payload, curr);
-            self.elastic.compute_load.inc_outstanding(/*ip, port*/);
+            let (ip, port) = self.dispatcher.sender2compute.send_invoke_to_group(
+                tenant,
+                name_len,
+                request_payload,
+                curr,
+                shard_id,
+                group_id,
+            );
+            self.elastic[group_id].compute_load.inc_outstanding(/*ip, port*/);
         }
         // self.slots[slot_id].counter += 1;
         // self.slots[slot_id].type_id = type_id;
         // self.outstanding_reqs.insert(curr, slot_id);
-        self.outstanding_reqs.insert(curr, type_id);
+        self.outstanding_reqs.insert(curr, (type_id, group_id));
     }
     // fn send_all(&mut self) {
     //     self.start = cycles::rdtsc();
@@ -909,12 +968,14 @@ impl LoadBalancer {
                             // free the packet.
                             RpcStatus::StatusOk => {
                                 let timestamp = hdr.common_header.stamp;
-                                if let Some(&type_id) = self.outstanding_reqs.get(&timestamp) {
+                                if let Some(&(type_id, group_id)) =
+                                    self.outstanding_reqs.get(&timestamp)
+                                {
                                     // let type_id = self.slots[slot_id].type_id;
                                     trace!("req type {} finished", type_id);
                                     packet_recvd_signal = true;
                                     self.recvd += 1;
-                                    self.global_recvd.fetch_add(1, Ordering::Relaxed);
+                                    self.global_recvd[group_id].fetch_add(1, Ordering::Relaxed);
                                     // // TODO: reimpl update, server will do smoothing and return avg
                                     // self.update_load(
                                     //     src_ip,
@@ -925,7 +986,7 @@ impl LoadBalancer {
                                     //     // #[cfg(feature = "server_stats")]
                                     //     // (curr_rdtsc - self.init_rdtsc),
                                     // );
-                                    self.elastic.update_load(
+                                    self.elastic[group_id].update_load(
                                         src_ip,
                                         src_port,
                                         hdr.server_load,
@@ -938,8 +999,12 @@ impl LoadBalancer {
                                         self.rloop.record_latency(curr_rdtsc - timestamp, order);
                                     }
                                     self.outstanding_reqs.remove(&timestamp);
-                                    if self.elastic.storage_load.ip2load.contains_key(&src_ip) {
-                                        self.elastic.storage_load.dec_outstanding(/*src_ip, src_port*/);
+                                    if self.elastic[group_id]
+                                        .storage_load
+                                        .ip2load
+                                        .contains_key(&src_ip)
+                                    {
+                                        self.elastic[group_id].storage_load.dec_outstanding(/*src_ip, src_port*/);
                                         self.sampler.update_stats(
                                             type_id,
                                             hdr.common_header.duration as f64,
@@ -947,7 +1012,7 @@ impl LoadBalancer {
                                             0.0,
                                         );
                                     } else {
-                                        self.elastic.compute_load.dec_outstanding(/*src_ip, src_port*/);
+                                        self.elastic[group_id].compute_load.dec_outstanding(/*src_ip, src_port*/);
                                         self.sampler.update_stats(
                                             type_id,
                                             0.0,
@@ -990,24 +1055,15 @@ impl LoadBalancer {
                     }
                 }
             }
-            if self.id == 0 {
-                // if packet_recvd_signal && self.rloop.ready(curr_rdtsc) {
-                //     if !self.sampler.undetermined() {
-                //         self.rloop
-                //             .rate_control(curr_rdtsc, self.generator.max_out(curr_rdtsc));
-                //         debug!("{}", self.rloop);
-                //     }
-                // }
-                let global_recvd = self.global_recvd.load(Ordering::Relaxed);
-                // xloop
-                if self.xloop.ready(curr_rdtsc)
+            for &group_id in &self.managed_groups {
+                let global_recvd = self.global_recvd[group_id].load(Ordering::Relaxed);
+                if self.xloop[group_id].ready(curr_rdtsc)
                     && packet_recvd_signal
-                    && global_recvd - self.xloop.last_recvd > self.cfg.xloop.min_recvd
-                // && global_recvd > 1000
+                    && global_recvd - self.xloop[group_id].last_recvd > self.cfg.xloop.min_recvd
                 {
                     if !self.sampler.undetermined() {
-                        self.xloop.update_x(
-                            &self.partition,
+                        self.xloop[group_id].update_x(
+                            &self.partition[group_id],
                             curr_rdtsc,
                             // self.generator.phase(curr_rdtsc) as isize,
                             global_recvd,
@@ -1015,87 +1071,90 @@ impl LoadBalancer {
                         // short circuit scaling if anomalies > 0, which is always true if not converged
                         let throttled = self.rloop.enabled
                             && self.rloop.max_out() < self.generator.max_out(curr_rdtsc);
-                        if self.xloop.anomalies > 0 || self.elastic.scaling(throttled) {
-                            self.elastic.reset();
-                            // self.elastic.compute_load.reset();
-                            // self.elastic.compute_outs.reset();
-                            self.dispatcher.sender2compute.send_reset();
-                            // self.elastic.storage_load.reset();
-                            // self.elastic.storage_outs.reset();
-                            self.dispatcher.sender2storage.send_reset();
+                        if self.xloop[group_id].anomalies > 0
+                            || self.elastic[group_id].scaling(throttled)
+                        {
+                            self.elastic[group_id].reset();
+                            self.dispatcher.sender2compute.send_reset_to_group(group_id);
+                            self.dispatcher.sender2storage.send_reset_to_group(group_id);
                         }
                         // self.elastic.reset();
                         // self.dispatcher.sender2compute.send_reset();
                         // self.dispatcher.sender2storage.send_reset();
                         // skip reset if anomalies==0(implies convergence) and scaling has no update
                     } else {
-                        self.xloop.sync(curr_rdtsc, global_recvd);
+                        self.xloop[group_id].sync(curr_rdtsc, global_recvd);
                     }
                     debug!(
-                        "{} {} phase {}",
-                        self.xloop,
-                        self.elastic,
+                        "group{}: {} {} phase {}",
+                        group_id,
+                        self.xloop[group_id],
+                        self.elastic[group_id],
                         self.generator.phase(curr_rdtsc),
                     );
-                    // self.xloop.msg.clear();
-                    self.elastic.msg.clear();
+                    self.elastic[group_id].msg.clear();
                 }
+            }
+            if self.id == 0 {
                 // sort types
                 if self.sampler.ready(curr_rdtsc) && packet_recvd_signal {
                     self.sampler.sort_type(curr_rdtsc);
                 }
                 // output
+                let output_recvd = self
+                    .global_recvd
+                    .iter()
+                    .map(|recvd| recvd.load(Ordering::Relaxed))
+                    .sum();
                 if self.output_factor != 0
                     && (curr_rdtsc - self.output_last_rdtsc > CPU_FREQUENCY / self.output_factor)
                 {
-                    let output_tput = (global_recvd - self.output_last_recvd) as f64
+                    let output_tput = (output_recvd - self.output_last_recvd) as f64
                         * (CPU_FREQUENCY / 1000) as f64
                         / (curr_rdtsc - self.output_last_rdtsc) as f64;
-                    self.output_last_recvd = global_recvd;
+                    self.output_last_recvd = output_recvd;
                     self.output_last_rdtsc = curr_rdtsc;
                     let tail = self.rloop.tail.load(Ordering::Relaxed);
                     self.log.push((output_tput, tail));
                     if self.output {
                         println!(
-                            "rdtsc {} tput {:.2} x {:.2} tail {:.2} outs {}/{} cores {},{} load {:.3},{:.3} phase {}",
+                            "rdtsc {} tput {:.2} tail {:.2} outs {}/{} phase {}",
                             curr_rdtsc,
                             output_tput,
-                            self.partition.get(),
-                            // self.rloop.tail,
                             tail,
-                            // self.rloop.std,
                             self.rloop.max_out(),
                             self.generator.max_out(curr_rdtsc),
-                            self.provision.current.0,
-                            self.provision.current.1,
-                            self.elastic.load_summary.0,
-                            self.elastic.load_summary.1,
                             self.generator.phase(curr_rdtsc),
-                        )
+                        );
+                        for group_id in 0..self.cfg.placement_groups {
+                            println!(
+                                "[{}] rdtsc {} x {:.2} cores {} load {:.3},{:.3}",
+                                group_id,
+                                curr_rdtsc,
+                                self.partition[group_id].get(),
+                                self.elastic[group_id].compute_cores.load(Ordering::Relaxed),
+                                self.elastic[group_id].load_summary.0,
+                                self.elastic[group_id].load_summary.1,
+                            )
+                        }
                     }
-                    // self.tput.update(output_tput);
-                    // if self.output {
-                    //     println!(
-                    //         "rdtsc {} tput {:.2}",
-                    //         (1000 * curr_rdtsc) / CPU_FREQUENCY,
-                    //         output_tput
-                    //     )
-                    // }
                 }
             }
         }
 
-        if self.id == 0 {
-            self.elastic.snapshot();
+        for &group_id in &self.managed_groups {
+            self.elastic[group_id].snapshot();
         }
         let curr_rdtsc = cycles::rdtsc() - self.start;
         if curr_rdtsc > self.duration && self.stop == 0 {
             self.stop = curr_rdtsc;
             let remaining = self.finished.fetch_sub(1, Ordering::Relaxed);
             if remaining == self.cfg.lb.num_cores as usize {
-                self.tput = (self.global_recvd.load(Ordering::Relaxed) as f64)
-                    * CPU_FREQUENCY as f64
-                    / self.stop as f64;
+                // self.tput = (self.global_recvd.load(Ordering::Relaxed) as f64)
+                //     * CPU_FREQUENCY as f64
+                //     / self.stop as f64;
+                self.tput = self.output_last_recvd as f64 * CPU_FREQUENCY as f64
+                    / self.output_last_rdtsc as f64;
                 // self.dispatcher.sender2storage.send_reset();
                 // self.dispatcher.sender2compute.send_reset();
                 // // reset storage cores available to compute to max_quota
@@ -1152,6 +1211,11 @@ impl Drop for LoadBalancer {
             info!("client thread {} recvd {}", self.id, self.recvd);
         }
         if self.tput > 0.0 {
+            let mut max_out = self.generator.max_out(self.stop);
+            if self.rloop.enabled {
+                max_out = max_out.min(self.rloop.max_out());
+            }
+            println!("maxout {}", max_out);
             let mut metric = 0.0;
             for (i, lat) in self.latencies.iter_mut().enumerate() {
                 let len = lat.len();
@@ -1168,21 +1232,16 @@ impl Drop for LoadBalancer {
                     metric = tail as f64 / meantime;
                 }
             }
-            // println!("total SLO metric {:.2}", metric);
-            // println!(
-            //     "Throughput {:.2} partition {:.2}",
-            //     self.tput,
-            //     self.partition.get() / 100.0
-            // );
-            println!(
-                "Core usage {}S {}C",
-                self.provision.current.0, self.provision.current.1
-            );
-            let mut max_out = self.generator.max_out(self.stop);
-            if self.rloop.enabled {
-                max_out = max_out.min(self.rloop.max_out());
+            for group_id in 0..self.cfg.placement_groups {
+                println!(
+                    "[{}] x {:.2} cores {} load {:.3},{:.3}",
+                    group_id,
+                    self.partition[group_id].get(),
+                    self.elastic[group_id].compute_cores.load(Ordering::Relaxed),
+                    self.elastic[group_id].load_summary.0,
+                    self.elastic[group_id].load_summary.1,
+                );
             }
-            println!("maxout {}", max_out);
         }
         if self.id == 0 {
             std::thread::sleep(std::time::Duration::from_secs(2));
@@ -1196,11 +1255,7 @@ impl Drop for LoadBalancer {
             //     .map(|&(t, slo)| slo as f64)
             //     .sum::<f64>()
             //     / self.rloop.log.len() as f64;
-            println!(
-                "Throughput {:.2} partition {:.2}",
-                tput,
-                self.partition.get() / 100.0
-            );
+            println!("Throughput {:.2}", tput);
             println!("total SLO metric {:.2}", slo);
             let mut current_types: Vec<usize> = (0..self.sampler.type_history.len()).collect();
             current_types.sort_by(|&idx1, &idx2| {
@@ -1265,13 +1320,13 @@ fn setup_lb(
     ports: Vec<CacheAligned<PortQueue>>,
     core_id: usize,
     // num_types: usize,
-    partition: Arc<AtomicF64>,
+    partition: Vec<Arc<AtomicF64>>,
     sampler: Sampler,
-    elastic: ElasticScaling,
+    elastic: Vec<ElasticScaling>,
     // storage_load: Arc<ServerLoad>,
     // compute_load: Arc<ServerLoad>,
     // kth: Vec<Vec<Arc<AtomicUsize>>>,
-    global_recvd: Arc<AtomicUsize>,
+    global_recvd: Vec<Arc<AtomicUsize>>,
     init_rdtsc: u64,
     finished: Arc<AtomicUsize>,
     rloop: Rloop,
@@ -1326,15 +1381,16 @@ fn main() {
     let mut net_context = config_and_init_netbricks(&config.lb);
     net_context.start_schedulers();
     // setup shared data
-    // let partition = if config.learnable {
-    //     5000.0
-    // } else {
-    //     config.partition * 100.0
-    // };
     let partition = config.partition * 100.0;
-    let partition = Arc::new(AtomicF64::new(partition));
-    // let sampler = Sampler::new(config.workloads.len(), config.sample_factor);
-    let sampler = Sampler::new(&config.sampler, config.workloads.len());
+    let mut group_partitions = vec![];
+    for _ in 0..config.placement_groups {
+        group_partitions.push(Arc::new(AtomicF64::new(partition)));
+    }
+    let sampler = Sampler::new(
+        &config.sampler,
+        config.workloads.len(),
+        config.placement_groups,
+    );
     /*
     let storage_servers: Vec<_> = config
         .storage
@@ -1357,7 +1413,14 @@ fn main() {
         // config.moving_exp,
     ));
     */
-    let elastic = ElasticScaling::new(&config);
+    let compute_group_size = config.provisions[0].compute as usize / config.storage.len();
+    let mut compute_groups = vec![compute_group_size; config.placement_groups];
+    compute_groups[config.placement_groups - 1] +=
+        config.provisions[0].compute as usize - compute_group_size * config.placement_groups;
+    let mut group_elastic = vec![];
+    for i in 0..config.placement_groups {
+        group_elastic.push(ElasticScaling::new_with_group(&config, compute_groups[i]));
+    }
     // let num_types = config.multi_kv.len();
     // let mut kth = vec![];
     // for _ in 0..num_types {
@@ -1367,19 +1430,21 @@ fn main() {
     //     }
     //     kth.push(kth_type);
     // }
-    let recvd = Arc::new(AtomicUsize::new(0));
-    let init_rdtsc = cycles::rdtsc();
-    // let finished = Arc::new(AtomicBool::new(false));
+    let mut group_recvd = vec![];
+    for _ in 0..config.placement_groups {
+        group_recvd.push(Arc::new(AtomicUsize::new(0)));
+    }
+    let init_rdtsc = cycles::rdtsc(); // not used
     let finished = Arc::new(AtomicUsize::new(config.lb.num_cores as usize));
     let rloop = Rloop::new(&config.rloop);
     // setup lb
     for (core_id, &core) in net_context.active_cores.clone().iter().enumerate() {
         let cfg = config.clone();
         // let kth_copy = kth.clone();
-        let partition_copy = partition.clone();
+        let partition_copy = group_partitions.clone();
         let sampler_copy = sampler.clone();
-        let elastic_copy = elastic.clone();
-        let recvd_copy = recvd.clone();
+        let elastic_copy = group_elastic.clone();
+        let recvd_copy = group_recvd.clone();
         // let storage_load_copy = storage_load.clone();
         // let compute_load_copy = compute_load.clone();
         let finished_copy = finished.clone();

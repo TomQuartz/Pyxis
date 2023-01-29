@@ -556,12 +556,9 @@ pub struct LBConfig {
     pub elastic: ElasticConfig,
     // network configuration
     pub lb: ServerConfig,
-    // TODO: add utilization config
-    // NOTE: this is the number of storage ports, equal duration
-    // NOTE: assumes no workstealing
-    // [[]]
     pub compute: Vec<NetConfig>,
     pub storage: Vec<NetConfig>,
+    pub placement_groups: usize,
     // workload configuration
     pub tables: Vec<TableConfig>,
     pub workloads: Vec<WorkloadConfig>,
@@ -604,6 +601,8 @@ pub struct WorkloadConfig {
     pub table_id: u64,
     pub opcode: u8,
     pub skew: f64,
+    // uniform distribution; default value should be num_storage
+    pub num_shards: usize,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
