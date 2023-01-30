@@ -1068,8 +1068,8 @@ impl LoadBalancer {
                             self.generator.max_out(curr_rdtsc),
                             self.provision.current.0,
                             self.provision.current.1,
-                            self.elastic.load_summary.0,
-                            self.elastic.load_summary.1,
+                            self.elastic.load_summary.0.load(Ordering::Relaxed),
+                            self.elastic.load_summary.1.load(Ordering::Relaxed),
                             self.generator.phase(curr_rdtsc),
                         )
                     }

@@ -175,14 +175,14 @@ impl Avg {
     }
     pub fn merge(&mut self, other: &Avg) {
         if other.counter > 0.0 {
-            self.batch_update(other.avg(), other.counter);
+            self.batch_update(other.avg(), other.std(), other.counter);
         }
     }
-    fn batch_update(&mut self, delta: f64, cnt: f64) {
+    fn batch_update(&mut self, avg: f64, std: f64, cnt: f64) {
         self.counter += cnt;
-        self.E_x = self.E_x * ((self.counter - cnt) / self.counter) + delta * (cnt / self.counter);
+        self.E_x = self.E_x * ((self.counter - cnt) / self.counter) + avg * (cnt / self.counter);
         self.E_x2 = self.E_x2 * ((self.counter - cnt) / self.counter)
-            + delta * delta * (cnt / self.counter);
+            + (std * std + avg * avg) * (cnt / self.counter);
     }
     pub fn avg(&self) -> f64 {
         self.E_x
@@ -1057,6 +1057,9 @@ pub struct ElasticScaling {
     // if elastic then use this, else use config.provision
     pub compute_cores: Arc<AtomicI32>,
     pub storage_cores: u32,
+    compute_offset: usize,
+    storage_offset: usize,
+    pub group_id: usize,
     max_quota: i32,
     min_quota: i32,
     // max_load_abs: f64,
@@ -1075,7 +1078,7 @@ pub struct ElasticScaling {
     lowerbound: i32,
     pub msg: String,
     pub elastic: bool,
-    pub load_summary: (f64, f64),
+    pub load_summary: Arc<(AtomicF64, AtomicF64)>,
 }
 
 impl ElasticScaling {
@@ -1102,6 +1105,9 @@ impl ElasticScaling {
             storage_outs: Avg::new(),
             compute_cores: Arc::new(AtomicI32::new(config.provisions[0].compute as i32)),
             storage_cores: config.provisions[0].storage,
+            compute_offset: 0,
+            storage_offset: 0,
+            group_id: 0,
             // last_provision: initial_provision,
             upperbound: 0,
             lowerbound: max_quota,
@@ -1118,10 +1124,25 @@ impl ElasticScaling {
             // convergence: config.elastic.convergence,
             msg: String::new(),
             elastic: config.elastic.elastic,
-            load_summary: (0.0, 0.0),
+            load_summary: Arc::new((AtomicF64::new(0.0), AtomicF64::new(0.0))),
         }
     }
-    pub fn new_with_group(config: &LBConfig, compute_group_size:usize) -> ElasticScaling {
+    pub fn new_with_group(
+        config: &LBConfig,
+        group_id: usize,
+        compute_offset: usize,
+        compute_group_size: usize,
+        storage_offset: usize,
+        storage_group_size: usize,
+    ) -> ElasticScaling {
+        println!(
+            "group {} compute {}-{} storage {}-{}",
+            group_id,
+            compute_offset,
+            compute_offset + compute_group_size,
+            storage_offset,
+            storage_offset + storage_group_size
+        );
         let compute_servers: Vec<_> = config
             .compute
             .iter()
@@ -1136,7 +1157,7 @@ impl ElasticScaling {
         let storage_load = ServerLoad::new("storage", storage_servers);
         // TODO: if elastic then set initial provision to 32 cores
         // let initial_provision = config.provisions[0].compute as i32;
-        let max_quota = config.compute.iter().map(|cfg| cfg.rx_queues).sum::<i32>();
+        let max_quota = compute_group_size as i32;
         // let mut placement_groups = vec![];
         // let group_size = config.provisions[0].compute as usize / config.storage.len();
         // for i in 0..groups {
@@ -1149,7 +1170,10 @@ impl ElasticScaling {
             storage_load: Arc::new(storage_load),
             storage_outs: Avg::new(),
             compute_cores: Arc::new(AtomicI32::new(compute_group_size as i32)),
-            storage_cores: config.provisions[0].storage,
+            storage_cores: storage_group_size as u32,
+            compute_offset: compute_offset,
+            storage_offset: storage_offset,
+            group_id: group_id,
             // last_provision: initial_provision,
             upperbound: 0,
             lowerbound: max_quota,
@@ -1166,7 +1190,7 @@ impl ElasticScaling {
             // convergence: config.elastic.convergence,
             msg: String::new(),
             elastic: config.elastic.elastic,
-            load_summary: (0.0, 0.0),
+            load_summary: Arc::new((AtomicF64::new(0.0), AtomicF64::new(0.0))),
         }
     }
     pub fn reset(&mut self) {
@@ -1211,15 +1235,18 @@ impl ElasticScaling {
                 task_duration_cv
             );
             let core_idx = self.compute_load.cumsum_ports[server_idx] + src_port as usize;
-            if core_idx < self.compute_cores.load(Ordering::Relaxed) as usize {
+            if core_idx < self.compute_cores.load(Ordering::Relaxed) as usize + self.compute_offset
+            {
                 self.compute_load
                     .update_load(src_ip, src_port, queue_length, task_duration_cv);
+                // debug!("[elastic-{}] compute load updated", self.group_id);
             }
         } else if let Ok(server_idx) = self.storage_load.ip_addrs.binary_search(&src_ip) {
             let core_idx = self.storage_load.cumsum_ports[server_idx] + src_port as usize;
-            if core_idx < self.storage_cores as usize {
+            if core_idx < self.storage_cores as usize + self.storage_offset {
                 self.storage_load
                     .update_load(src_ip, src_port, queue_length, task_duration_cv);
+                // debug!("[elastic-{}] storage load updated", self.group_id);
             }
         }
     }
@@ -1239,7 +1266,10 @@ impl ElasticScaling {
         let load_compute = Self::ql2load(ql_compute, cv_compute);
         let load_storage = Self::ql2load(ql_storage, cv_storage);
         debug!(
-            "outs {:.2} waiting {:.2} cores {:.0} ql {:.2} cv {:.2}",
+            "[elastic-{}] load {:.3},{:.3} outs {:.2} waiting {:.2} cores {:.0} ql {:.2} cv {:.2}",
+            self.group_id,
+            load_compute,
+            load_storage,
             out_compute / (ncores_compute + 1e-9),
             w_compute / (ncores_compute + 1e-9),
             ncores_compute,
@@ -1253,7 +1283,9 @@ impl ElasticScaling {
     }
     pub fn scaling(&mut self, throttled: bool) -> bool {
         let (load_compute, load_storage) = self.calc_load();
-        self.load_summary = (load_compute, load_storage);
+        // self.load_summary = (load_compute, load_storage);
+        self.load_summary.0.store(load_compute, Ordering::Relaxed);
+        self.load_summary.1.store(load_storage, Ordering::Relaxed);
         // provision
         let provision = self.compute_cores.load(Ordering::Relaxed);
         // let delta_provision = provision - self.last_provision;

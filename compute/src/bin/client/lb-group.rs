@@ -207,14 +207,15 @@ struct LoadGenerator {
     tenant_rng: Box<ZipfDistribution>,
     // workloads: Vec<Workload>,
     workloads: Vec<Box<dyn Workload>>,
-    loop_interval: u64,
-    junctures: Vec<u64>,
-    cum_ratios: Vec<Vec<f32>>, // 0-10000
-    max_outs: Vec<usize>,
+    group_cum_ratios: Vec<Vec<f32>>, // 0-10000
+    group_max_outs: Vec<usize>,
+    shards_in_group: Vec<Vec<usize>>,
+    workload_cfgs: Vec<WorkloadConfig>,
+    types_in_groups: Vec<Vec<usize>>,
 }
 
 impl LoadGenerator {
-    fn new(config: &LBConfig) -> LoadGenerator {
+    fn new(config: &LBConfig, shard2group: &HashMap<usize, usize>) -> LoadGenerator {
         // workloads
         let mut workloads = vec![];
         for workload in &config.workloads {
@@ -226,26 +227,45 @@ impl LoadGenerator {
             // }
             workloads.push(create_workload(workload, table));
         }
-        // phases
-        let mut sum_time = 0u64;
-        let mut junctures = vec![];
-        let mut cum_ratios = vec![];
-        let mut max_outs = vec![];
-        for phase in &config.phases {
-            sum_time += phase.duration * CPU_FREQUENCY;
-            junctures.push(sum_time);
-            let mut cum_sum = 0f32;
-            let cum_ratio = phase
-                .ratios
-                .iter()
-                .map(|&x| {
-                    cum_sum += x;
-                    cum_sum * 100.0
-                })
-                .collect();
-            cum_ratios.push(cum_ratio);
-            max_outs.push(phase.max_out);
+        assert!(config.phases.len() == 1);
+        let ratios = &config.phases[0].ratios;
+        let maxout = config.phases[0].max_out;
+        let mut shards_in_group = vec![vec![]; config.placement_groups];
+        for (&shard_id, &group_id) in shard2group {
+            shards_in_group[group_id].push(shard_id);
         }
+        for group in &mut shards_in_group {
+            group.sort();
+        }
+        let mut types_in_groups = vec![vec![]; config.placement_groups];
+        let mut group_ratios = vec![vec![]; config.placement_groups];
+        for type_id in 0..config.workloads.len() {
+            let num_shards = config.workloads[type_id].num_shards;
+            for shard_id in 0..num_shards {
+                let group_id = shard2group[&shard_id];
+                if types_in_groups[group_id].last() != Some(&type_id) {
+                    types_in_groups[group_id].push(type_id);
+                    group_ratios[group_id].push(ratios[type_id] / num_shards as f32);
+                } else {
+                    let ratio = group_ratios[group_id].last_mut().unwrap();
+                    *ratio = *ratio + ratios[type_id] / num_shards as f32;
+                }
+            }
+        }
+        let mut group_cum_ratios = vec![vec![]; config.placement_groups];
+        let mut group_maxouts = vec![];
+        for group_id in 0..config.placement_groups {
+            let mut cum_sum = 0f32;
+            for &ratio in &group_ratios[group_id] {
+                cum_sum += ratio;
+                group_cum_ratios[group_id].push(cum_sum * 100.0);
+            }
+            group_maxouts.push((maxout as f32 * cum_sum / 100.0) as usize);
+        }
+        // println!(
+        //     "shards_in_group: {:?}\ngroup_cum_ratios: {:?}\n group_maxouts: {:?}\n types_in_group: {:?}",
+        //     shards_in_group, group_cum_ratios, group_maxouts, types_in_groups,
+        // );
         LoadGenerator {
             rng: {
                 let seed: [u32; 4] = rand::random::<[u32; 4]>();
@@ -256,28 +276,34 @@ impl LoadGenerator {
                     .expect("Couldn't create key RNG."),
             ),
             workloads: workloads,
-            loop_interval: sum_time,
-            junctures: junctures,
-            cum_ratios: cum_ratios,
-            max_outs: max_outs,
+            group_cum_ratios: group_cum_ratios,
+            group_max_outs: group_maxouts,
+            shards_in_group: shards_in_group,
+            workload_cfgs: config.workloads.clone(),
+            types_in_groups: types_in_groups,
         }
     }
-    fn phase(&self, mut curr_rdtsc: u64) -> usize {
-        if self.loop_interval > 0 {
-            curr_rdtsc %= self.loop_interval;
-            // self.junctures.iter().position(|&t| t > curr_rdtsc).unwrap()
-            self.junctures.partition_point(|&t| t <= curr_rdtsc)
-        } else {
-            0
-        }
-    }
-    fn gen_request(&mut self, mut curr_rdtsc: u64) -> (usize, usize) {
-        let phase_id = self.phase(curr_rdtsc);
-        let cum_ratio = &self.cum_ratios[phase_id];
-        let rand_ratio = (self.rng.gen::<u32>() % 10000) as f32;
+    // fn phase(&self, mut curr_rdtsc: u64) -> usize {
+    //     if self.loop_interval > 0 {
+    //         curr_rdtsc %= self.loop_interval;
+    //         // self.junctures.iter().position(|&t| t > curr_rdtsc).unwrap()
+    //         self.junctures.partition_point(|&t| t <= curr_rdtsc)
+    //     } else {
+    //         0
+    //     }
+    // }
+    fn gen_request(&mut self, group_id: usize) -> (usize, usize) {
+        let num_types = self.group_cum_ratios[group_id].len();
+        let group_total_ratio = self.group_cum_ratios[group_id][num_types - 1];
+        let rand_ratio = group_total_ratio * self.rng.gen::<f32>();
         // let type_id = cum_ratio.iter().position(|&p| p > rand_ratio).unwrap();
-        let type_id = cum_ratio.partition_point(|&p| p <= rand_ratio);
-        let shard_id = self.workloads[type_id].get_shard(&mut self.rng);
+        let idx_in_group = self.group_cum_ratios[group_id].partition_point(|&p| p <= rand_ratio);
+        let type_id = self.types_in_groups[group_id][idx_in_group];
+        // let shard_id = self.workloads[type_id].get_shard(&mut self.rng);
+        let shard_id = self.rng.gen_range(
+            self.shards_in_group[group_id][0],
+            self.workload_cfgs[type_id].num_shards,
+        );
         (type_id, shard_id)
     }
     fn gen_payload(&mut self, type_id: usize) -> (u32, u32, &[u8]) {
@@ -290,9 +316,8 @@ impl LoadGenerator {
             self.workloads[type_id].gen(&mut self.rng),
         )
     }
-    fn max_out(&self, mut curr_rdtsc: u64) -> usize {
-        let phase_id = self.phase(curr_rdtsc);
-        self.max_outs[phase_id]
+    fn max_out(&self, group_id: usize) -> usize {
+        self.group_max_outs[group_id]
     }
 }
 
@@ -642,6 +667,7 @@ struct LoadBalancer {
     // avg_lat: Vec<usize>,
     // outstanding_reqs: HashSet<u64>,
     outstanding_reqs: HashMap<u64, (usize, usize)>,
+    group_outstanding: Vec<usize>,
     // slots: Vec<Slot>,
     // load balancing
     // storage_load: Arc<ServerLoad>,
@@ -676,7 +702,7 @@ struct LoadBalancer {
     // outs_storage: usize,
     // outs_compute: usize,
     cfg: config::LBConfig,
-    rloop: Rloop,
+    rloop: Vec<Rloop>,
     log: Vec<(f64, f64)>,
 }
 
@@ -701,7 +727,7 @@ impl LoadBalancer {
         net_port: CacheAligned<PortQueue>,
         // num_types: usize,
         partition: Vec<Arc<AtomicF64>>,
-        sampler: Sampler,
+        mut sampler: Sampler,
         elastic: Vec<ElasticScaling>,
         // storage_load: Arc<ServerLoad>,
         // compute_load: Arc<ServerLoad>,
@@ -709,7 +735,7 @@ impl LoadBalancer {
         global_recvd: Vec<Arc<AtomicUsize>>,
         init_rdtsc: u64,
         finished: Arc<AtomicUsize>,
-        rloop: Rloop,
+        rloop: Vec<Rloop>,
     ) -> LoadBalancer {
         let num_types = config.workloads.len();
         let mut latencies: Vec<Vec<u64>> = Vec::with_capacity(num_types);
@@ -722,12 +748,15 @@ impl LoadBalancer {
         // }
         let mut shard2group = HashMap::new();
         for i in 0..config.storage.len() {
-            let mut group_id = if i >= config.placement_groups {
+            let group_id = if i >= config.placement_groups {
                 config.placement_groups - 1
             } else {
                 i
             };
             shard2group.insert(i, group_id);
+        }
+        if id == 0 {
+            println!("shard2group: {:?}", shard2group);
         }
         let mut group_partition = vec![];
         for i in 0..config.placement_groups {
@@ -750,6 +779,14 @@ impl LoadBalancer {
                 managed_groups.push(group_id);
             }
         }
+        for (type_id, workload) in config.workloads.iter().enumerate() {
+            assert!(workload.num_shards > 0 && workload.num_shards <= config.storage.len());
+            for shard_id in 0..workload.num_shards {
+                let group_id = *shard2group.get(&shard_id).unwrap();
+                sampler.add_type_to_group(type_id, group_id);
+            }
+        }
+        // TODO: decouple maxout for different groups
         LoadBalancer {
             cfg: config.clone(),
             duration: config.duration * CPU_FREQUENCY,
@@ -760,7 +797,7 @@ impl LoadBalancer {
             // compute_load: compute_load,
             dispatcher: LBDispatcher::new(config, net_port),
             provision: Provision::new(config),
-            generator: LoadGenerator::new(config),
+            generator: LoadGenerator::new(config, &shard2group),
             sampler: sampler,
             elastic: elastic,
             shard2group: shard2group,
@@ -783,6 +820,7 @@ impl LoadBalancer {
             // avg_lat: vec![0; num_types],
             // outstanding_reqs: HashSet::new(),
             outstanding_reqs: HashMap::new(),
+            group_outstanding: vec![0; config.placement_groups],
             // slots: slots,
             // max_out: config.max_out,
             partition: group_partition,
@@ -806,8 +844,8 @@ impl LoadBalancer {
             log: Vec::with_capacity(40000),
         }
     }
-    // must restart
-    fn adjust_provision(&mut self, curr_rdtsc: u64) {
+    // must restart cluster for group experiments
+    fn adjust_provision(&mut self) {
         // // get provision
         // let (prev_storage, prev_compute) = self.provision.current;
         // let (current_storage, mut current_compute) = self.provision.adjust(curr_rdtsc);
@@ -839,31 +877,22 @@ impl LoadBalancer {
     }
     // send in event loop
     fn send(&mut self) {
-        let mut curr = cycles::rdtsc();
         if self.start == 0 {
-            self.start = curr;
+            self.start = cycles::rdtsc();
         }
-        curr -= self.start;
         // change storage cores
-        self.adjust_provision(curr);
-        // if self.id == 0 && self.sampler.ready(curr /*, recvd*/) {
-        //     self.sampler.sort_type();
-        //     // self.sampler.sample_ratio(curr);
-        // }
-        let mut max_out = self.generator.max_out(curr);
-        if self.rloop.enabled {
-            max_out = std::cmp::min(max_out, self.rloop.max_out());
-        }
-        while self.outstanding_reqs.len() < max_out {
-            // println!(
-            //     "len {} outs {}",
-            //     self.outstanding_reqs.len(),
-            //     self.generator.max_out(curr)
-            // );
-            self.send_once();
+        self.adjust_provision();
+        for group_id in 0..self.cfg.placement_groups {
+            let mut max_out = self.generator.max_out(group_id);
+            if self.rloop[group_id].enabled {
+                max_out = std::cmp::min(max_out, self.rloop[group_id].max_out());
+            }
+            while self.group_outstanding[group_id] < max_out {
+                self.send_once(group_id);
+            }
         }
     }
-    fn send_once(&mut self /*, slot_id: usize*/) {
+    fn send_once(&mut self, group_id: usize /*, slot_id: usize*/) {
         let curr = cycles::rdtsc() - self.start;
         // // change storage cores
         // self.adjust_provision(curr);
@@ -876,8 +905,8 @@ impl LoadBalancer {
         //     // self.sampler.sort_type();
         //     self.sampler.sample_ratio(curr);
         // }
-        let (type_id, shard_id) = self.generator.gen_request(curr);
-        let group_id = *self.shard2group.get(&shard_id).unwrap();
+        let (type_id, shard_id) = self.generator.gen_request(group_id);
+        // let group_id = *self.shard2group.get(&shard_id).unwrap();
         let to_storage = self.storage_or_compute(type_id, group_id);
         let (tenant, name_len, request_payload) = self.generator.gen_payload(type_id);
         // self.sampler.inc_counter(type_id);
@@ -905,6 +934,7 @@ impl LoadBalancer {
         // self.slots[slot_id].type_id = type_id;
         // self.outstanding_reqs.insert(curr, slot_id);
         self.outstanding_reqs.insert(curr, (type_id, group_id));
+        self.group_outstanding[group_id] += 1;
     }
     // fn send_all(&mut self) {
     //     self.start = cycles::rdtsc();
@@ -996,9 +1026,11 @@ impl LoadBalancer {
                                     let order = self.sampler.get_cost(type_id);
                                     if order > 0.0 {
                                         self.latencies[type_id].push(curr_rdtsc - timestamp);
-                                        self.rloop.record_latency(curr_rdtsc - timestamp, order);
+                                        self.rloop[group_id]
+                                            .record_latency(curr_rdtsc - timestamp, order);
                                     }
                                     self.outstanding_reqs.remove(&timestamp);
+                                    self.group_outstanding[group_id] -= 1;
                                     if self.elastic[group_id]
                                         .storage_load
                                         .ip2load
@@ -1048,10 +1080,14 @@ impl LoadBalancer {
                 // }
             }
             let curr_rdtsc = cycles::rdtsc() - self.start;
-            if packet_recvd_signal && self.rloop.ready(curr_rdtsc) {
-                if !self.sampler.undetermined() {
-                    if self.rloop.rate_control(self.generator.max_out(curr_rdtsc)) {
-                        debug!("{}", self.rloop);
+            if packet_recvd_signal && !self.sampler.undetermined() {
+                for group_id in 0..self.cfg.placement_groups {
+                    if self.rloop[group_id].ready(curr_rdtsc) {
+                        if self.rloop[group_id].rate_control(self.generator.max_out(group_id))
+                            && self.rloop[group_id].enabled
+                        {
+                            debug!("{}", self.rloop[group_id]);
+                        }
                     }
                 }
             }
@@ -1069,10 +1105,10 @@ impl LoadBalancer {
                             global_recvd,
                         );
                         // short circuit scaling if anomalies > 0, which is always true if not converged
-                        let throttled = self.rloop.enabled
-                            && self.rloop.max_out() < self.generator.max_out(curr_rdtsc);
+                        // let throttled = self.rloop.enabled
+                        //     && self.rloop.max_out() < self.generator.max_out(curr_rdtsc);
                         if self.xloop[group_id].anomalies > 0
-                            || self.elastic[group_id].scaling(throttled)
+                            || self.elastic[group_id].scaling(false)
                         {
                             self.elastic[group_id].reset();
                             self.dispatcher.sender2compute.send_reset_to_group(group_id);
@@ -1086,11 +1122,8 @@ impl LoadBalancer {
                         self.xloop[group_id].sync(curr_rdtsc, global_recvd);
                     }
                     debug!(
-                        "group{}: {} {} phase {}",
-                        group_id,
-                        self.xloop[group_id],
-                        self.elastic[group_id],
-                        self.generator.phase(curr_rdtsc),
+                        "[{}]: {} {}",
+                        group_id, self.xloop[group_id], self.elastic[group_id],
                     );
                     self.elastic[group_id].msg.clear();
                 }
@@ -1101,40 +1134,48 @@ impl LoadBalancer {
                     self.sampler.sort_type(curr_rdtsc);
                 }
                 // output
-                let output_recvd = self
-                    .global_recvd
-                    .iter()
-                    .map(|recvd| recvd.load(Ordering::Relaxed))
-                    .sum();
                 if self.output_factor != 0
                     && (curr_rdtsc - self.output_last_rdtsc > CPU_FREQUENCY / self.output_factor)
                 {
+                    let output_recvd = self
+                        .global_recvd
+                        .iter()
+                        .map(|recvd| recvd.load(Ordering::Relaxed))
+                        .sum();
+                    let output_slo = self
+                        .rloop
+                        .iter()
+                        .map(|r| r.tail.load(Ordering::Relaxed))
+                        .sum::<f64>()
+                        / self.rloop.len() as f64;
                     let output_tput = (output_recvd - self.output_last_recvd) as f64
                         * (CPU_FREQUENCY / 1000) as f64
                         / (curr_rdtsc - self.output_last_rdtsc) as f64;
                     self.output_last_recvd = output_recvd;
                     self.output_last_rdtsc = curr_rdtsc;
-                    let tail = self.rloop.tail.load(Ordering::Relaxed);
-                    self.log.push((output_tput, tail));
+                    self.log.push((output_tput, output_slo));
                     if self.output {
                         println!(
-                            "rdtsc {} tput {:.2} tail {:.2} outs {}/{} phase {}",
-                            curr_rdtsc,
-                            output_tput,
-                            tail,
-                            self.rloop.max_out(),
-                            self.generator.max_out(curr_rdtsc),
-                            self.generator.phase(curr_rdtsc),
+                            "rdtsc {} tput {:.2} tail {:.2}",
+                            curr_rdtsc, output_tput, output_slo,
                         );
                         for group_id in 0..self.cfg.placement_groups {
                             println!(
-                                "[{}] rdtsc {} x {:.2} cores {} load {:.3},{:.3}",
+                                "[{}] rdtsc {} x {:.2} outs {}/{} cores {} load {:.3},{:.3}",
                                 group_id,
                                 curr_rdtsc,
                                 self.partition[group_id].get(),
+                                self.rloop[group_id].max_out(),
+                                self.generator.max_out(group_id),
                                 self.elastic[group_id].compute_cores.load(Ordering::Relaxed),
-                                self.elastic[group_id].load_summary.0,
-                                self.elastic[group_id].load_summary.1,
+                                self.elastic[group_id]
+                                    .load_summary
+                                    .0
+                                    .load(Ordering::Relaxed),
+                                self.elastic[group_id]
+                                    .load_summary
+                                    .1
+                                    .load(Ordering::Relaxed),
                             )
                         }
                     }
@@ -1211,11 +1252,6 @@ impl Drop for LoadBalancer {
             info!("client thread {} recvd {}", self.id, self.recvd);
         }
         if self.tput > 0.0 {
-            let mut max_out = self.generator.max_out(self.stop);
-            if self.rloop.enabled {
-                max_out = max_out.min(self.rloop.max_out());
-            }
-            println!("maxout {}", max_out);
             let mut metric = 0.0;
             for (i, lat) in self.latencies.iter_mut().enumerate() {
                 let len = lat.len();
@@ -1234,12 +1270,20 @@ impl Drop for LoadBalancer {
             }
             for group_id in 0..self.cfg.placement_groups {
                 println!(
-                    "[{}] x {:.2} cores {} load {:.3},{:.3}",
+                    "[{}] x {:.2} outs {}/{} cores {} load {:.3},{:.3}",
                     group_id,
                     self.partition[group_id].get(),
+                    self.rloop[group_id].max_out(),
+                    self.generator.max_out(group_id),
                     self.elastic[group_id].compute_cores.load(Ordering::Relaxed),
-                    self.elastic[group_id].load_summary.0,
-                    self.elastic[group_id].load_summary.1,
+                    self.elastic[group_id]
+                        .load_summary
+                        .0
+                        .load(Ordering::Relaxed),
+                    self.elastic[group_id]
+                        .load_summary
+                        .1
+                        .load(Ordering::Relaxed),
                 );
             }
         }
@@ -1265,6 +1309,16 @@ impl Drop for LoadBalancer {
                     .unwrap()
             });
             println!("order {:?}", current_types);
+            for group_id in 0..self.sampler.type_order_by_group.len() {
+                println!(
+                    "group {} order {:?}",
+                    group_id,
+                    self.sampler.type_order_by_group[group_id]
+                        .iter()
+                        .map(|o| o.load(Ordering::Relaxed))
+                        .collect::<Vec<_>>()
+                );
+            }
             for (i, history) in self.sampler.type_history.iter().enumerate() {
                 println!(
                     "type {} history {:.0} s {:.2}({:.0}) c {:.2}({:.0}) s' {:.2}",
@@ -1329,7 +1383,7 @@ fn setup_lb(
     global_recvd: Vec<Arc<AtomicUsize>>,
     init_rdtsc: u64,
     finished: Arc<AtomicUsize>,
-    rloop: Rloop,
+    rloop: Vec<Rloop>,
 ) {
     if ports.len() != 1 {
         error!("LB should be configured with exactly 1 port!");
@@ -1417,9 +1471,28 @@ fn main() {
     let mut compute_groups = vec![compute_group_size; config.placement_groups];
     compute_groups[config.placement_groups - 1] +=
         config.provisions[0].compute as usize - compute_group_size * config.placement_groups;
+    let storage_group_size = config.provisions[0].storage as usize / config.storage.len();
+    let mut storage_groups = vec![storage_group_size; config.placement_groups];
+    storage_groups[config.placement_groups - 1] +=
+        config.provisions[0].storage as usize - storage_group_size * config.placement_groups;
+    println!(
+        "compute groups: {:?} storage groups: {:?}",
+        compute_groups, storage_groups
+    );
     let mut group_elastic = vec![];
+    let mut compute_offset = 0;
+    let mut storage_offset = 0;
     for i in 0..config.placement_groups {
-        group_elastic.push(ElasticScaling::new_with_group(&config, compute_groups[i]));
+        group_elastic.push(ElasticScaling::new_with_group(
+            &config,
+            i,
+            compute_offset,
+            compute_groups[i],
+            storage_offset,
+            storage_groups[i],
+        ));
+        compute_offset += compute_groups[i];
+        storage_offset += storage_groups[i];
     }
     // let num_types = config.multi_kv.len();
     // let mut kth = vec![];
@@ -1436,7 +1509,10 @@ fn main() {
     }
     let init_rdtsc = cycles::rdtsc(); // not used
     let finished = Arc::new(AtomicUsize::new(config.lb.num_cores as usize));
-    let rloop = Rloop::new(&config.rloop);
+    let mut group_rloop = vec![];
+    for _ in 0..config.placement_groups {
+        group_rloop.push(Rloop::new(&config.rloop));
+    }
     // setup lb
     for (core_id, &core) in net_context.active_cores.clone().iter().enumerate() {
         let cfg = config.clone();
@@ -1448,7 +1524,7 @@ fn main() {
         // let storage_load_copy = storage_load.clone();
         // let compute_load_copy = compute_load.clone();
         let finished_copy = finished.clone();
-        let rloop_copy = rloop.clone();
+        let rloop_copy = group_rloop.clone();
         net_context.add_pipeline_to_core(
             core,
             Arc::new(
