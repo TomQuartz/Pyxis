@@ -260,7 +260,7 @@ impl LoadGenerator {
                 cum_sum += ratio;
                 group_cum_ratios[group_id].push(cum_sum * 100.0);
             }
-            group_maxouts.push((maxout as f32 * cum_sum / 100.0) as usize);
+            group_maxouts.push((maxout as f32 * cum_sum / 100.0).round() as usize);
         }
         // println!(
         //     "shards_in_group: {:?}\ngroup_cum_ratios: {:?}\n group_maxouts: {:?}\n types_in_group: {:?}",

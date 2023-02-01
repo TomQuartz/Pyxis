@@ -1,0 +1,191 @@
+############################### LOAD GENERATOR CONFIG ##############################
+num_tenants = 1
+tenant_skew = 0.1
+duration = 10
+
+partition = 20
+
+output = true
+output_factor = 10
+
+placement_groups = 2
+
+[sampler]
+factor = 20
+batch_size = 1000
+history_size = 2000
+max_err = 0.25
+
+[xloop]
+learnable = true
+factor = 20
+lr = 0.2
+min_recvd = 4000
+max_step_abs = 800
+min_step_abs = 40
+min_interval = 160
+max_err = 0.08
+tolerance = 1
+
+[elastic]
+elastic = false
+max_load = 0.7
+min_load = 0.6
+max_step = 8
+
+[rloop]
+enabled = false
+factor = 200
+rate_decay = 0.9
+step_size = 1
+window_size = 300
+min_samples = 8
+max_err_rel = 0.2
+max_err_abs = 1
+slo = 10
+max_out = 1
+
+############################### LB N/W CONFIG ##############################
+
+[lb]
+max_rx_packets = 32
+nic_pci = "0000:03:00.1"
+num_cores = 8
+[lb.server]
+rx_queues = 8
+ip_addr = "10.10.1.1"
+mac_addr = "9c:dc:71:49:a8:51"
+
+[[compute]]
+rx_queues = 8
+ip_addr = "10.10.1.2"
+mac_addr = "9c:dc:71:5b:42:d1"
+[[compute]]
+rx_queues = 8
+ip_addr = "10.10.1.3"
+mac_addr = "9c:dc:71:5f:e0:a1"
+[[compute]]
+rx_queues = 8
+ip_addr = "10.10.1.4"
+mac_addr = "9c:dc:71:56:af:45"
+[[compute]]
+rx_queues = 8
+ip_addr = "10.10.1.5"
+mac_addr = "9c:dc:71:5b:22:91"
+[[compute]]
+rx_queues = 8
+ip_addr = "10.10.1.6"
+mac_addr = "9c:dc:71:5d:01:71"
+[[compute]]
+rx_queues = 8
+ip_addr = "10.10.1.7"
+mac_addr = "9c:dc:71:5d:57:d1"
+[[compute]]
+rx_queues = 8
+ip_addr = "10.10.1.10"
+mac_addr = "9c:dc:71:5d:51:81"
+[[compute]]
+rx_queues = 8
+ip_addr = "10.10.1.9"
+mac_addr = "9c:dc:71:5d:d5:a1"
+
+[[storage]]
+rx_queues = 4
+ip_addr = "10.10.1.15"
+mac_addr = "9c:dc:71:4c:43:01"
+[[storage]]
+rx_queues = 4
+ip_addr = "10.10.1.16"
+mac_addr = "9c:dc:71:4b:a3:81"
+[[storage]]
+rx_queues = 4
+ip_addr = "10.10.1.17"
+mac_addr = "9c:dc:71:4b:a3:91"
+[[storage]]
+rx_queues = 4
+ip_addr = "10.10.1.18"
+mac_addr = "9c:dc:71:5d:41:51"
+
+############################### LB WORKLOAD CONFIG ##############################
+
+[[phases]]
+ratios = [25, 25, 25, 25]
+max_out = 16
+
+[[tables]]
+description = "synthetic"
+key_len = 30
+value_len = 64
+record_len = 64
+num_records = 100000
+
+[[tables]]
+description = "synthetic"
+key_len = 30
+value_len = 256
+record_len = 256
+num_records = 100000
+
+[[tables]]
+description = "synthetic"
+key_len = 30
+value_len = 1024
+record_len = 1024
+num_records = 100000
+
+[[tables]]
+description = "synthetic"
+key_len = 30
+value_len = 4096
+record_len = 1024
+num_records = 100000
+
+[[tables]]
+description = "synthetic"
+key_len = 30
+value_len = 16384
+record_len = 1024
+num_records = 100000
+
+[[tables]]
+description = "synthetic"
+key_len = 30
+value_len = 49152
+record_len = 1024
+num_records = 100000
+
+[[workloads]]
+extension = "pushback"
+kv = 3
+order = 10800
+table_id = 5
+skew = 0.99
+num_shards = 1
+
+[[workloads]]
+extension = "pushback"
+kv = 1
+order = 2400
+table_id = 4
+skew = 0.99
+num_shards = 2
+
+[[workloads]]
+extension = "pushback"
+kv = 1
+order = 3600
+table_id = 4
+skew = 0.99
+num_shards = 3
+
+[[workloads]]
+extension = "pushback"
+kv = 1
+order = 4800
+table_id = 4
+skew = 0.99
+num_shards = 4
+
+[[provisions]]
+storage = 16
+compute = 64
