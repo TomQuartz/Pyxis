@@ -15,7 +15,7 @@ history_size = 2000
 max_err = 0.25
 
 [xloop]
-learnable = false
+learnable = true
 factor = 20
 lr = 0.2
 min_recvd = 4000
@@ -26,7 +26,7 @@ max_err = 0.08
 tolerance = 1
 
 [elastic]
-elastic = true
+elastic = false
 max_load = 0.7
 min_load = 0.6
 max_step = 8
@@ -126,16 +126,6 @@ ip_addr = "10.10.1.18"
 mac_addr = "9c:dc:71:56:af:b5"
 
 ############################### LB WORKLOAD CONFIG ##############################
-
-#[[phases]]
-#ratios = [100]
-#ratios = [80, 20]
-#ratios = [20, 80]
-#ratios = [80, 20]
-#ratios = [25, 25, 25, 25]
-#ratios = [12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5]
-#ratios = [6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25, 6.25]
-#max_out = 128
 
 [[phases]]
 ratios = [50, 50]

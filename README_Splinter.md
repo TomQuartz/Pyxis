@@ -1,4 +1,4 @@
-
+# Splinter
 
 ## Running Splinter on CloudLab
 To run Sandstorm on [CloudLab](https://www.cloudlab.us/login.php), do the

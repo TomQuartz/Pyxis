@@ -1,51 +1,46 @@
-# Kayak
-Kayak is a prototype for proactive-adaptive arbitration between shipping compute and shipping data. Kayak is a fork of [Splinter](https://github.com/utah-scs/splinter).
+# Pyxis
 
-## Setting up Kayak
-To run Kayak on [CloudLab](https://www.cloudlab.us/) using `xl170` machine, follow these steps:
+Pyxis is scheduler for heterogenous workloads in disaggregated datacenter. Pyxis is a fork of [Kayak](https://github.com/SymbioticLab/Kayak) that overcomes its limitation of supporting only homogenous tasks with a novel "all-or-nothing" scheduling algorithm.
+
+## Setting up Pyxis
+
+Pyxis is deployed on [CloudLab](https://www.cloudlab.us/) using `xl170` machine in Utah cluster:
 1. Instantiate a CloudLab cluster using the python profile `cloudlab_profile.py`. This should provide a cluster of bare-metal machines running Ubuntu 18.04 with kernel 4.15.0-147 and gcc 7.5.0.
-1. Install MLNX OFED driver. For compatibility, check [here](https://www.mellanox.com/support/mlnx-ofed-matrix?mtag=linux_sw_drivers). The [LTS version](https://content.mellanox.com/ofed/MLNX_OFED-4.9-2.2.4.0/MLNX_OFED_LINUX-4.9-2.2.4.0-ubuntu18.04-x86_64.tgz) is recommended.
-2. Run the provided `setup.sh`. This will install DPDK as well as the latest version of Rust.
+2. Run the provided `setup.sh`. This will install [MLNX OFED driver]((https://content.mellanox.com/ofed/MLNX_OFED-4.9-2.2.4.0/MLNX_OFED_LINUX-4.9-2.2.4.0-ubuntu18.04-x86_64.tgz)), DPDK as well as the latest version of Rust.
 3. `make`.
-4. Create `splinter/client.toml` for client configuration and `db/server.toml` for server configuration.
 
-You can also refer to the README.md of splinter [here](https://github.com/utah-scs/splinter/blob/master/README.md) or [here](README_Splinter.md).
+## Running Pyxis
 
-### Running Baseline
-To run the YCSB-T workload:
-Inside `splinter/`, run
-`sudo env RUST_LOG=debug LD_LIBRARY_PATH=../net/target/native ./target/release/ycsb-t`
+### Configuration
 
-To run the synthetic workload:
-Inside `splinter/`, run
-`sudo env RUST_LOG=debug LD_LIBRARY_PATH=../net/target/native ./target/release/pushback`
+Pyxis consists of three parts: the scheduler (with load generator colocated), the compute nodes, and storage nodes. Each takes a configuration file in the TOML format.
 
+- Load balancer: `compute/lb-elastic.toml`
+- Compute Nodes: `compute/compute.toml`
+- Storage Nodes: `db/storage.toml`
 
-### Running Kayak
-To run the YCSB-T workload: 
-Inside `splinter/`, run
-`sudo env RUST_LOG=debug LD_LIBRARY_PATH=../net/target/native ./target/release/ycsb-t-kayak`
+You may find in the respective directories example TOML config files. Please copy and modify these files as needed. Note that the config files should be placed on the respective machines where components run.
 
-To run the synthetic workload:
-Inside `splinter/`, run
-`sudo env RUST_LOG=debug LD_LIBRARY_PATH=../net/target/native ./target/release/pushback-kayak`
+### Compute and storage nodes
 
+The compute and storage nodes are long-running processes that should be started on the respective machines. 
 
+- To start one compute node, run
+  `./scripts/run-compute`
+- To start one storage node, run
+  `./scripts/run-storage`
 
-## Notes
-please consider to cite our paper if you use the code or data in your research project.
-```
-@inproceedings{kayak-nsdi21,
-  author    = {Jie You and Jingfeng Wu and Xin Jin and Mosharaf Chowdhury},
-  booktitle = {USENIX NSDI},
-  title     = {Ship Compute or Ship Data? Why Not Both?},
-  year      = {2021}
-}
-```
+### Pyxis scheduler
+
+After the compute and storage nodes are running, start the Pyxis scheduler with `./scripts/run-elastic`
+
+### Kayak
+
+Alternatively, start the Kayak scheduler with `./scripts/run-kayak`
+
 
 ## Acknowledgements
 
-Thanks to Chinmay Kulkarni, Ankit Bhardwaj and Ryan Stutsman for the [Splinter repo](https://github.com/utah-scs/splinter).
+Thanks to Jie You, Jingfeng Wu, Xin Jin, and Mosharaf Chowdhury for the [Kayak repo](https://github.com/SymbioticLab/Kayak).
 
-## Contact
-Jie You (jieyou@umich.edu)
+Thanks to Chinmay Kulkarni, Ankit Bhardwaj and Ryan Stutsman for the [Splinter repo](https://github.com/utah-scs/splinter).
